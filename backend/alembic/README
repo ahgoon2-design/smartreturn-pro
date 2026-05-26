@@ -1,0 +1,7 @@
+SmartReturn Pro Alembic migration 기준 폴더다.
+
+- DB 스키마 변경은 Alembic migration으로 관리한다.
+- 앱 시작 시 `Base.metadata.create_all` 또는 자동 `ALTER TABLE`을 사용하지 않는다.
+- `DATABASE_URL`은 `.env` 또는 환경변수에서 읽으며, 실제 `.env`는 커밋하지 않는다.
+- 현재 단계에는 P0 업무 모델이 없으므로 테이블 생성 migration을 만들지 않는다.
+- `versions` 폴더는 후속 P0 모델 작업에서 revision을 추가한다.

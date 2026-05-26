@@ -1,16 +1,19 @@
 # backend
 
-이 폴더는 SmartReturn Pro 백엔드 코드가 들어가는 위치다.
+이 폴더는 SmartReturn Pro 백엔드 코드가 들어갈 위치다.
 
-이번 단계에서는 FastAPI 최소 앱, 설정 로딩 구조, 기본 로깅 설정, `/health` API, health 테스트만 생성했다. DB 연결, Alembic, SQLAlchemy 모델, 인증 구현, 기준정보/반품 같은 업무 API는 후속 작업에서 진행한다.
+현재 단계에서는 FastAPI 최소 앱, 설정 로딩 구조, 기본 로깅 설정, `/health` API, health 테스트, SQLAlchemy DB 기본 구조, Alembic 초기 구조만 생성했다. 기준정보/반품 같은 업무 API, 인증 구현, P0 업무 모델은 후속 작업에서 진행한다.
 
 ## 현재 생성된 구조
 
 - `app/main.py`: FastAPI 앱 생성과 router 연결
 - `app/core/config.py`: `.env` 값을 읽기 위한 설정 구조
 - `app/core/logging.py`: 기본 콘솔 로깅 설정
+- `app/db/base.py`: SQLAlchemy Declarative Base
+- `app/db/session.py`: SQLAlchemy engine, session factory, `get_db` dependency 후보
 - `app/routers/health.py`: `/health` API
 - `app/schemas/health.py`: health 응답 DTO
+- `alembic`: Alembic migration 기준 구조
 - `tests/test_health_api.py`: `/health` API 테스트
 
 ## 예정 구조
@@ -32,6 +35,18 @@
 - schemas는 요청/응답 DTO를 담당한다.
 - models는 SQLAlchemy 모델을 담당한다.
 
+## DB/Alembic 기준
+
+- DB 구조는 SQLAlchemy + Alembic 기준으로 관리한다.
+- `startup`에서 `Base.metadata.create_all`을 호출하지 않는다.
+- 자동 `ALTER TABLE` 또는 schema sync 구조를 만들지 않는다.
+- DB 스키마 변경은 Alembic migration으로만 관리한다.
+- `DATABASE_URL`은 `.env` 또는 환경변수로 주입한다.
+- `.env.example`은 예시 파일이며 실제 `.env`는 커밋 금지다.
+- 이번 단계에서는 P0 업무 모델이 없으므로 migration 생성은 후속 작업에서 진행한다.
+
+DB 관련 의존성은 sync SQLAlchemy + `psycopg` 기준으로 시작한다. `asyncpg`는 이번 단계에 추가하지 않았다.
+
 ## 실행 후보 명령
 
 ```powershell
@@ -48,6 +63,17 @@ uvicorn app.main:app --reload
 cd backend
 pytest
 ```
+
+## Alembic 후보 명령
+
+```powershell
+cd backend
+alembic current
+alembic revision --autogenerate -m "message"
+alembic upgrade head
+```
+
+P0 모델이 아직 없으므로 `alembic revision --autogenerate`는 후속 모델 작업 이후에 실행한다.
 
 ## 구현 전 확인
 
