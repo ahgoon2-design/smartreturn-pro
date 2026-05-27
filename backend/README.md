@@ -87,3 +87,13 @@ python scripts/seed_p0.py
 ## 구현 전 확인
 
 실제 구현 전에는 [P0 개발환경 세팅 전 계획](../docs/dev/smartreturn-pro-p0-dev-environment-plan.md)을 먼저 읽는다.
+
+## 초기 관리자 bootstrap
+
+```powershell
+cd backend
+python scripts/seed_p0.py
+python scripts/bootstrap_super_admin.py
+```
+
+초기 `SUPER_ADMIN` 계정은 role/permission seed 실행 후 별도 bootstrap 스크립트로 생성한다. 비밀번호는 콘솔 입력 또는 환경변수로 1회 주입하며 코드, 문서, 커밋에 남기지 않는다. 생성된 초기 관리자는 `must_change_password=true`로 시작한다. 로그인 API와 일반 인증 흐름은 아직 구현 전이다.
