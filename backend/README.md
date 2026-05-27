@@ -115,3 +115,13 @@ python scripts/bootstrap_super_admin.py
 ## P0 기준정보 read-only API skeleton
 
 `GET /api/master/*` 기준정보 조회 skeleton이 추가되었다. 생성/수정/삭제는 아직 구현하지 않았으며, 고객사/창고/상품/공통코드 조회는 `AuthContext`, `MASTER_VIEW` permission, client scope 기준으로 동작한다.
+## 로컬 secret 기반 수동 검증
+
+`backend/local.secret.example.json`을 `backend/local.secret.json`으로 복사하면 로컬 검증 스크립트에서 사용할 수 있다. 실제 `local.secret.json`은 Git에 커밋하지 않는다.
+
+```powershell
+cd backend
+python scripts/verify_master_api_local.py
+```
+
+이 스크립트는 실행 중인 uvicorn 서버를 대상으로 로그인, 비밀번호 변경, AuthContext, 기준정보 read-only API를 검증한다. 실행 전에 `uvicorn app.main:app --host 127.0.0.1 --port 8000`으로 서버를 먼저 실행해야 한다. 비밀번호와 access token 전체값은 출력하지 않으며, 운영 환경에서는 사용하지 않는다.

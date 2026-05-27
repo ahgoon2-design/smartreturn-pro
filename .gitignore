@@ -6,6 +6,15 @@ config.json
 secrets/
 *.pem
 *.key
+*.local.json
+*.secret.json
+config.local.json
+local.secret.json
+backend/config.local.json
+backend/local.secret.json
+backend/*.local.json
+backend/*.secret.json
+!backend/local.secret.example.json
 
 # Python
 __pycache__/
