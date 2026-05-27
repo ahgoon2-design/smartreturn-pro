@@ -75,6 +75,15 @@ alembic upgrade head
 
 P0 모델이 아직 없으므로 `alembic revision --autogenerate`는 후속 모델 작업 이후에 실행한다.
 
+## P0 seed 후보 명령
+
+```powershell
+cd backend
+python scripts/seed_p0.py
+```
+
+현재 seed 스크립트는 `roles`, `permissions`, `role_permissions` 기본값만 다룬다. 초기 `SUPER_ADMIN` 사용자 계정, 비밀번호, 고객사, 상품, 창고, 업무 데이터는 생성하지 않는다.
+
 ## 구현 전 확인
 
 실제 구현 전에는 [P0 개발환경 세팅 전 계획](../docs/dev/smartreturn-pro-p0-dev-environment-plan.md)을 먼저 읽는다.

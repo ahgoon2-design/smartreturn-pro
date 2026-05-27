@@ -1,0 +1,84 @@
+from app.seed.roles_permissions import (
+    get_permission_seed_data,
+    get_role_permission_seed_data,
+    get_role_seed_data,
+)
+
+
+EXPECTED_ROLES = {
+    "SUPER_ADMIN",
+    "INTERNAL_ADMIN",
+    "INTERNAL_WORKER",
+    "CLIENT_ADMIN",
+    "CLIENT_USER",
+    "READ_ONLY",
+}
+
+WRITE_PERMISSIONS = {
+    "SYSTEM_ADMIN",
+    "USER_MANAGE",
+    "ROLE_MANAGE",
+    "MASTER_MANAGE",
+    "CLIENT_MANAGE",
+    "WAREHOUSE_MANAGE",
+    "PRODUCT_MANAGE",
+    "COMMON_CODE_MANAGE",
+    "IMPORT_MANAGE",
+    "RETURN_PREPARE",
+    "RETURN_PROCESS",
+    "RETURN_JUDGE",
+    "RETURN_CLOSE",
+    "RETURN_OUTBOUND",
+    "INBOUND_PROCESS",
+    "INBOUND_CONFIRM",
+    "OUTBOUND_PROCESS",
+    "OUTBOUND_CONFIRM",
+    "INVENTORY_ADJUST",
+    "SETTLEMENT_MANAGE",
+    "LOCAL_AGENT_MANAGE",
+}
+
+INTERNAL_WORKER_FORBIDDEN = {
+    "USER_MANAGE",
+    "SYSTEM_ADMIN",
+    "ROLE_MANAGE",
+    "INVENTORY_ADJUST",
+    "SETTLEMENT_MANAGE",
+    "COMMON_CODE_MANAGE",
+}
+
+
+def test_seed_roles_include_standard_roles() -> None:
+    role_codes = {str(role["role_code"]) for role in get_role_seed_data()}
+
+    assert role_codes == EXPECTED_ROLES
+
+
+def test_role_permission_mapping_references_existing_codes() -> None:
+    role_codes = {str(role["role_code"]) for role in get_role_seed_data()}
+    permission_codes = {str(permission["permission_code"]) for permission in get_permission_seed_data()}
+
+    mappings = get_role_permission_seed_data()
+
+    assert set(mappings) == role_codes
+    for mapped_permissions in mappings.values():
+        assert set(mapped_permissions).issubset(permission_codes)
+
+
+def test_super_admin_receives_all_permissions() -> None:
+    permission_codes = {str(permission["permission_code"]) for permission in get_permission_seed_data()}
+    mappings = get_role_permission_seed_data()
+
+    assert set(mappings["SUPER_ADMIN"]) == permission_codes
+
+
+def test_read_only_has_no_write_permissions() -> None:
+    mappings = get_role_permission_seed_data()
+
+    assert set(mappings["READ_ONLY"]).isdisjoint(WRITE_PERMISSIONS)
+
+
+def test_internal_worker_does_not_receive_admin_permissions() -> None:
+    mappings = get_role_permission_seed_data()
+
+    assert set(mappings["INTERNAL_WORKER"]).isdisjoint(INTERNAL_WORKER_FORBIDDEN)
