@@ -27,6 +27,7 @@
 | `docs/business/smartreturn-pro-scan-local-agent-inventory-policy.md` | 스캔 매칭, Local Agent 역할, 재고 이벤트 반영 기준을 정한다. | 스캔, 프린터, 사운드, 재고 반영 기능을 만들기 전 | 스캔/재고 작업 시 필수 |
 | `docs/business/smartreturn-pro-auth-password-policy.md` | role 기준 권한, 고객사 scope, 첫 로그인 비밀번호 정책을 정한다. | 인증, 권한, 사용자 관리 기능을 만들기 전 | 인증/권한 작업 시 필수 |
 | `docs/business/smartreturn-pro-auth-client-scope-api-policy.md` | SmartReturn Pro 모든 API의 role, client scope, warehouse scope 권한 기준을 정리하는 문서다. | 백엔드 인증/권한, 기준정보 API, 반품/입고/출고/재고 API 구현 전 | API 구현 전 필수 |
+| `docs/business/smartreturn-pro-role-permission-seed-policy.md` | P0 role/permission 기본 seed 기준과 role별 permission 매핑, 초기 관리자 계정 원칙을 정리한다. | role/permission seed 구현 전, AuthContext/client scope dependency 구현 전 | 권한 seed 구현 전 필수 |
 | `docs/dev/smartreturn-pro-p0-dev-environment-plan.md` | SmartReturn Pro P0 개발환경 세팅 전 기술스택, 폴더 구조, 세팅 순서, 금지사항을 정리하는 문서다. | 실제 backend/frontend/database 개발환경 생성 전 | 개발환경 생성 전 필수 |
 | `docs/dev/smartreturn-pro-test-and-release-policy.md` | 테스트, 빌드, 커밋 전 점검, 배포 제외 범위를 정한다. | 검증, 릴리스, 커밋 요청을 처리하기 전 | 변경 완료 전 필수 |
 
