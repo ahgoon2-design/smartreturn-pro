@@ -111,3 +111,7 @@ python scripts/bootstrap_super_admin.py
 ## auth 오류 응답
 
 인증/권한 오류는 공통 `ApiResult` 형태로 응답한다. 내부 stack trace, token, password, `password_hash`, secret은 오류 응답에 포함하지 않는다. 이 기준은 아직 auth/login/password/context 라우터에만 적용되어 있으며 기준정보/반품 API에는 후속 작업에서 연결한다.
+
+## P0 기준정보 read-only API skeleton
+
+`GET /api/master/*` 기준정보 조회 skeleton이 추가되었다. 생성/수정/삭제는 아직 구현하지 않았으며, 고객사/창고/상품/공통코드 조회는 `AuthContext`, `MASTER_VIEW` permission, client scope 기준으로 동작한다.
