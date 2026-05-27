@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
-from app.models.auth import User
+from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.master import Client, Warehouse
 
 
@@ -20,7 +20,15 @@ def db_session() -> Generator[Session, None, None]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    for table in (Client.__table__, Warehouse.__table__, User.__table__):
+    for table in (
+        Client.__table__,
+        Warehouse.__table__,
+        Role.__table__,
+        Permission.__table__,
+        User.__table__,
+        UserRole.__table__,
+        RolePermission.__table__,
+    ):
         table.create(bind=engine)
 
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -45,16 +53,33 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 
 
 def _create_user(db: Session) -> User:
+    role = Role(
+        role_code="SUPER_ADMIN",
+        role_name="최고 관리자",
+        role_type="INTERNAL",
+        active_yn=True,
+    )
     user = User(
         login_id="tester",
-        user_name="테스터",
+        user_name="테스트",
         password_hash=hash_password("DummyPass123!"),
         active_yn=True,
         must_change_password=True,
     )
-    db.add(user)
+    db.add_all([role, user])
+    db.flush()
+    db.add(UserRole(user_id=user.id, role_id=role.id))
     db.commit()
     return user
+
+
+def _login(client: TestClient) -> str:
+    response = client.post(
+        "/api/auth/login",
+        json={"login_id": "tester", "password": "DummyPass123!"},
+    )
+    assert response.status_code == 200
+    return str(response.json()["access_token"])
 
 
 def _payload(**overrides) -> dict[str, str]:
@@ -76,13 +101,14 @@ def _assert_response_has_no_password_material(data: dict) -> None:
     assert "new_password" not in response_text
 
 
-def test_change_password_api_success(client: TestClient, db_session: Session):
-    user = _create_user(db_session)
+def test_change_password_api_success_with_bearer_token(client: TestClient, db_session: Session):
+    _create_user(db_session)
+    token = _login(client)
 
     response = client.post(
         "/api/auth/password/change",
         json=_payload(),
-        headers={"X-Test-User-Id": str(user.id)},
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 200
@@ -93,20 +119,20 @@ def test_change_password_api_success(client: TestClient, db_session: Session):
     _assert_response_has_no_password_material(data)
 
 
-def test_change_password_api_requires_test_user_header(client: TestClient):
+def test_change_password_api_requires_bearer_token(client: TestClient):
     response = client.post("/api/auth/password/change", json=_payload())
 
     assert response.status_code == 401
-    assert response.json()["detail"]["result_code"] == "NOT_AUTHENTICATED"
 
 
 def test_change_password_api_rejects_wrong_current_password(client: TestClient, db_session: Session):
-    user = _create_user(db_session)
+    _create_user(db_session)
+    token = _login(client)
 
     response = client.post(
         "/api/auth/password/change",
         json=_payload(current_password="WrongPass123!"),
-        headers={"X-Test-User-Id": str(user.id)},
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 200

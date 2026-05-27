@@ -102,6 +102,8 @@ python scripts/bootstrap_super_admin.py
 
 `AuthContext`와 role, permission, client scope, warehouse scope 검증 유틸을 추가했다. 내부 운영자와 고객사 사용자는 `client_id` 유무가 아니라 role 기준으로 구분한다. 실제 로그인, JWT, API dependency 연결은 후속 작업에서 구현한다.
 
-## 비밀번호 변경 skeleton
+## 인증 API skeleton
 
-`POST /api/auth/password/change` 후보 API를 추가했다. 현재는 로그인/JWT 전 단계이므로 테스트용 `X-Test-User-Id` 헤더로 사용자 ID를 전달한다. 운영 전에는 반드시 실제 AuthContext/JWT dependency로 교체해야 하며, 비밀번호 평문은 로그/응답/커밋에 남기지 않는다.
+`POST /api/auth/login`은 login_id/password를 확인하고 access token을 발급한다. `GET /api/auth/context`는 Bearer token 기준 현재 사용자 AuthContext를 반환한다. refresh token, 사용자 관리 API, 프론트 로그인 화면은 아직 구현 전이다.
+
+`POST /api/auth/password/change`는 Bearer token 기반으로 현재 사용자의 비밀번호를 변경한다. `must_change_password=true`여도 로그인과 비밀번호 변경은 가능하며, 일반 업무 API 차단은 후속 dependency 적용 단계에서 처리한다. 비밀번호 평문과 token/secret은 로그, 응답, 커밋에 남기지 않는다.
