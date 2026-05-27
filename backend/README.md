@@ -97,3 +97,7 @@ python scripts/bootstrap_super_admin.py
 ```
 
 초기 `SUPER_ADMIN` 계정은 role/permission seed 실행 후 별도 bootstrap 스크립트로 생성한다. 비밀번호는 콘솔 입력 또는 환경변수로 1회 주입하며 코드, 문서, 커밋에 남기지 않는다. 생성된 초기 관리자는 `must_change_password=true`로 시작한다. 로그인 API와 일반 인증 흐름은 아직 구현 전이다.
+
+## AuthContext/권한 검증 skeleton
+
+`AuthContext`와 role, permission, client scope, warehouse scope 검증 유틸을 추가했다. 내부 운영자와 고객사 사용자는 `client_id` 유무가 아니라 role 기준으로 구분한다. 실제 로그인, JWT, API dependency 연결은 후속 작업에서 구현한다.
