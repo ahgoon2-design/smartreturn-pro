@@ -101,3 +101,7 @@ python scripts/bootstrap_super_admin.py
 ## AuthContext/권한 검증 skeleton
 
 `AuthContext`와 role, permission, client scope, warehouse scope 검증 유틸을 추가했다. 내부 운영자와 고객사 사용자는 `client_id` 유무가 아니라 role 기준으로 구분한다. 실제 로그인, JWT, API dependency 연결은 후속 작업에서 구현한다.
+
+## 비밀번호 변경 skeleton
+
+`POST /api/auth/password/change` 후보 API를 추가했다. 현재는 로그인/JWT 전 단계이므로 테스트용 `X-Test-User-Id` 헤더로 사용자 ID를 전달한다. 운영 전에는 반드시 실제 AuthContext/JWT dependency로 교체해야 하며, 비밀번호 평문은 로그/응답/커밋에 남기지 않는다.

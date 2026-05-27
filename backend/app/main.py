@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.routers.health import APP_VERSION, router as health_router
+from app.routers.password import router as password_router
 
 
 settings = get_settings()
@@ -21,6 +22,7 @@ if settings.cors_origins:
     )
 
 app.include_router(health_router)
+app.include_router(password_router)
 
 
 @app.get("/")
