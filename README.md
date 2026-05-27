@@ -70,6 +70,7 @@ SmartReturn Pro는 3PL 고객사 관리 통합 플랫폼이다. OMS, WMS, RETURN
 - [반품 MVP API schema](docs/business/smartreturn-pro-return-api-schema.md)
 - [권한/client scope API 정책](docs/business/smartreturn-pro-auth-client-scope-api-policy.md)
 - [role/permission seed 정책](docs/business/smartreturn-pro-role-permission-seed-policy.md)
+- [초기 SUPER_ADMIN bootstrap 정책](docs/business/smartreturn-pro-super-admin-bootstrap-policy.md)
 - [P0 개발환경 세팅 전 계획](docs/dev/smartreturn-pro-p0-dev-environment-plan.md)
 
 ## 주의사항
