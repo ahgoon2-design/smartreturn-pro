@@ -1,12 +1,11 @@
 from collections.abc import Generator
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.dependencies import get_current_auth_context, get_current_user
-from app.core.exceptions import PasswordChangeRequiredError
+from app.core.exceptions import InvalidTokenError, PasswordChangeRequiredError
 from app.core.jwt import create_access_token, decode_access_token
 from app.core.permissions import require_password_change_completed
 from app.core.security import hash_password
@@ -96,10 +95,10 @@ def test_get_current_auth_context_contains_roles_and_permissions(db_session: Ses
 
 
 def test_invalid_token_dependency_fails(db_session: Session):
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidTokenError) as exc:
         get_current_user("bad-token", db_session)
 
-    assert exc.value.status_code == 401
+    assert exc.value.result_code == "INVALID_TOKEN"
 
 
 def test_must_change_password_user_can_have_context(db_session: Session):

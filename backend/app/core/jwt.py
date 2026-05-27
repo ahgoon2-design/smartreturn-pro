@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.config import get_settings
-from app.core.exceptions import NotAuthenticatedError
+from app.core.exceptions import InvalidTokenError, TokenExpiredError
 
 
 JWT_ALGORITHM = "HS256"
@@ -49,10 +49,10 @@ def create_access_token(subject: str, expires_delta_minutes: int | None = None) 
 def decode_access_token(token: str) -> dict[str, Any]:
     """access token을 검증하고 payload를 반환한다."""
 
-    settings = get_settings()
     try:
         header_text, payload_text, signature_text = token.split(".", 2)
         signing_input = f"{header_text}.{payload_text}"
+        settings = get_settings()
         expected_signature = hmac.new(
             settings.secret_key.encode("utf-8"),
             signing_input.encode("ascii"),
@@ -60,21 +60,21 @@ def decode_access_token(token: str) -> dict[str, Any]:
         ).digest()
         received_signature = _base64url_decode(signature_text)
         if not hmac.compare_digest(received_signature, expected_signature):
-            raise NotAuthenticatedError("유효하지 않은 인증 토큰입니다.")
+            raise InvalidTokenError()
 
         header = json.loads(_base64url_decode(header_text))
         payload = json.loads(_base64url_decode(payload_text))
     except (ValueError, json.JSONDecodeError) as exc:
-        raise NotAuthenticatedError("유효하지 않은 인증 토큰입니다.") from exc
+        raise InvalidTokenError() from exc
 
     if header.get("alg") != JWT_ALGORITHM:
-        raise NotAuthenticatedError("유효하지 않은 인증 토큰입니다.")
+        raise InvalidTokenError()
     if payload.get("type") != ACCESS_TOKEN_TYPE:
-        raise NotAuthenticatedError("유효하지 않은 인증 토큰입니다.")
+        raise InvalidTokenError()
     if not payload.get("sub"):
-        raise NotAuthenticatedError("인증 토큰에 사용자 정보가 없습니다.")
+        raise InvalidTokenError("인증 토큰에 사용자 정보가 없습니다.")
     if int(payload.get("exp", 0)) < int(datetime.now(UTC).timestamp()):
-        raise NotAuthenticatedError("인증 토큰이 만료되었습니다.")
+        raise TokenExpiredError()
     return payload
 
 

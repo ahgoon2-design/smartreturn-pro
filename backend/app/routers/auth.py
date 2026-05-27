@@ -5,8 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import auth_error_to_http_exception, get_current_auth_context, get_db
-from app.core.exceptions import AuthError
+from app.core.dependencies import get_current_auth_context, get_db
 from app.schemas.auth import AuthContext
 from app.schemas.login import AuthContextResponse, LoginRequest, LoginResponse
 from app.services.auth_service import login
@@ -17,10 +16,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=LoginResponse)
 def login_api(request: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
-    try:
-        return login(db, request)
-    except AuthError as exc:
-        raise auth_error_to_http_exception(exc) from exc
+    return login(db, request)
 
 
 @router.get("/context", response_model=AuthContextResponse)

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth_context import build_auth_context_from_user
 from app.core.config import get_settings
-from app.core.exceptions import NotAuthenticatedError
+from app.core.exceptions import InvalidLoginError, NotAuthenticatedError
 from app.core.jwt import create_access_token
 from app.core.security import verify_password
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
@@ -76,7 +76,7 @@ def get_user_auth_context(db: Session, user_id: int) -> AuthContext:
 def login(db: Session, request: LoginRequest) -> LoginResponse:
     user = authenticate_user(db, request.login_id, request.password)
     if user is None:
-        raise NotAuthenticatedError("아이디 또는 비밀번호가 올바르지 않습니다.")
+        raise InvalidLoginError()
 
     auth = get_user_auth_context(db, user.id)
     user.last_login_at = datetime.now(UTC)

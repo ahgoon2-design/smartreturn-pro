@@ -118,13 +118,14 @@ def test_login_rejects_wrong_password(client: TestClient, db_session: Session):
     response = client.post("/api/auth/login", json={"login_id": "tester", "password": "WrongPass123!"})
 
     assert response.status_code == 401
-    assert response.json()["detail"]["result_code"] == "NOT_AUTHENTICATED"
+    assert response.json()["result_code"] == "INVALID_LOGIN"
 
 
 def test_login_rejects_missing_user(client: TestClient):
     response = client.post("/api/auth/login", json={"login_id": "missing", "password": "DummyPass123!"})
 
     assert response.status_code == 401
+    assert response.json()["result_code"] == "INVALID_LOGIN"
 
 
 def test_login_rejects_inactive_user(client: TestClient, db_session: Session):
@@ -133,6 +134,7 @@ def test_login_rejects_inactive_user(client: TestClient, db_session: Session):
     response = client.post("/api/auth/login", json={"login_id": "tester", "password": "DummyPass123!"})
 
     assert response.status_code == 401
+    assert response.json()["result_code"] == "INVALID_LOGIN"
 
 
 def test_auth_context_with_issued_token(client: TestClient, db_session: Session):

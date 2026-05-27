@@ -107,3 +107,7 @@ python scripts/bootstrap_super_admin.py
 `POST /api/auth/login`은 login_id/password를 확인하고 access token을 발급한다. `GET /api/auth/context`는 Bearer token 기준 현재 사용자 AuthContext를 반환한다. refresh token, 사용자 관리 API, 프론트 로그인 화면은 아직 구현 전이다.
 
 `POST /api/auth/password/change`는 Bearer token 기반으로 현재 사용자의 비밀번호를 변경한다. `must_change_password=true`여도 로그인과 비밀번호 변경은 가능하며, 일반 업무 API 차단은 후속 dependency 적용 단계에서 처리한다. 비밀번호 평문과 token/secret은 로그, 응답, 커밋에 남기지 않는다.
+
+## auth 오류 응답
+
+인증/권한 오류는 공통 `ApiResult` 형태로 응답한다. 내부 stack trace, token, password, `password_hash`, secret은 오류 응답에 포함하지 않는다. 이 기준은 아직 auth/login/password/context 라우터에만 적용되어 있으며 기준정보/반품 API에는 후속 작업에서 연결한다.

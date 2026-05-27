@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.error_handlers import register_error_handlers
 from app.core.logging import configure_logging
 from app.routers.auth import router as auth_router
 from app.routers.health import APP_VERSION, router as health_router
@@ -12,6 +13,7 @@ settings = get_settings()
 configure_logging(settings.log_level)
 
 app = FastAPI(title=settings.app_name, version=APP_VERSION)
+register_error_handlers(app)
 
 if settings.cors_origins:
     app.add_middleware(
