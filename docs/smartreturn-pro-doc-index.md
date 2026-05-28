@@ -39,3 +39,9 @@
 - 작업 범위와 맞는 세부 문서를 읽은 뒤 설계와 구현을 진행한다.
 - 여러 업무가 걸친 기능은 관련 문서를 모두 읽는다.
 - 문서 간 충돌이 있으면 `AGENTS.md`와 핵심 원칙 문서를 우선 기준으로 보고, 충돌 내용을 먼저 정리한다.
+
+## 추가 기준 문서
+
+| 문서 | 이 문서의 역할 | 언제 읽어야 하는지 | 구현 전 필수 여부 |
+| --- | --- | --- | --- |
+| `docs/business/smartreturn-pro-master-data-manage-policy.md` | P0 기준정보 생성, 수정, 사용중지, 재활성화 정책과 DELETE API 미지원 기준을 정리한다. | 기준정보 create/update/disable API skeleton 구현 전 | 필수 |
