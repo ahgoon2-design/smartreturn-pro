@@ -138,3 +138,13 @@ python scripts/verify_master_api_local.py
 ```
 
 이 스크립트는 로컬 개발 DB에서만 사용한다. 실제 secret 파일은 커밋하지 않으며, 비밀번호와 `password_hash`, token, DB URL 전체값은 출력하지 않는다.
+## 로컬 기준정보 fixture
+
+product/product_barcodes 관리 API 수동 검증 중 active client가 없으면 로컬 전용 fixture를 먼저 준비한다.
+
+```powershell
+cd backend
+python scripts/seed_local_master_fixture.py --confirm-local-fixture
+```
+
+이 명령은 로컬 DB에서 `LOCAL_TEST_CLIENT` active client 1건만 생성하거나 재사용한다. 실제 고객사 정보나 개인정보를 넣지 않으며, 운영 환경에서 사용하지 않는다. `backend/local.secret.json`은 계속 커밋 금지 대상이다.

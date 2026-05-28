@@ -91,3 +91,24 @@ reset 대상은 기존 `SUPER_ADMIN` role을 가진 활성 사용자로 제한�
 - DB URL 전체
 - access token
 - secret 또는 `.env` 내용
+
+## 로컬 기준정보 fixture
+
+product/product_barcodes 관리 API를 수동 검증하려면 active 고객사 1건이 필요하다. 운영 seed와 섞지 않기 위해 로컬 검증용 고객사는 `scripts/seed_local_master_fixture.py`에서만 준비한다. 이 스크립트는 `backend/local.secret.json`을 읽어 로컬 환경임을 확인하고, DB host가 `localhost`, `127.0.0.1`, `::1` 중 하나일 때만 실행한다.
+
+실행 시 `--confirm-local-fixture` 옵션이 반드시 필요하다.
+
+```powershell
+cd backend
+python scripts/seed_local_master_fixture.py --confirm-local-fixture
+```
+
+생성 또는 재사용하는 fixture는 아래 1건으로 제한한다.
+
+- `client_code`: `LOCAL_TEST_CLIENT`
+- `client_name`: `로컬검증고객사`
+- `active_yn`: `true`
+
+같은 `client_code`가 이미 있고 active 상태이면 새로 만들지 않고 재사용한다. 기존 고객사가 inactive 상태이면 기본 실행에서는 재활성화하지 않는다. 로컬 검증 복구가 필요할 때만 `--reactivate-existing` 옵션으로 `active_yn=true` 보정을 허용한다.
+
+이 스크립트는 warehouse, product, product_barcodes, user, role, permission을 생성하지 않는다. 실제 고객사명, 개인정보, 운영 데이터는 사용하지 않는다. DROP, DELETE, schema 변경은 금지한다.
