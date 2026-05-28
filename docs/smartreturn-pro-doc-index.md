@@ -50,3 +50,4 @@
 | `docs/p0-client-warehouse-management-api-verification-closeout.md` | P0 고객사 및 창고 관리 API 수동 검증 완료 결과를 기록한다. | clients/warehouses 관리 API 후속 보완 또는 검증 인수인계 시 | 권장 |
 | `docs/p0-client-warehouse-settings-management-api-verification-closeout.md` | P0 고객사 사용창고 관리 API 수동 검증 완료 결과를 기록한다. | client_warehouse_settings 관리 API 후속 보완 또는 검증 인수인계 시 | 권장 |
 | `docs/p0-import-job-readonly-api-verification-closeout.md` | P0 import job read-only API 구현 및 검증 완료 결과를 기록한다. | import job 조회 계약 후속 보완 또는 프론트 preview/검증 화면 인수인계 시 | 권장 |
+| docs/p0-import-job-create-api-verification-closeout.md | P0 import job 생성 API skeleton 구현 및 검증 완료 결과를 기록한다. | import job 생성 계약 후속 보완 또는 upload/paste 단계 인수인계 시 | 권장 |
