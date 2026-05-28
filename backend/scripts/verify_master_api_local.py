@@ -14,7 +14,6 @@ from _local_config import LocalConfigError, LocalSecretConfig, load_local_secret
 MASTER_ENDPOINTS = [
     "/api/master/clients",
     "/api/master/warehouses",
-    "/api/master/client-warehouses",
     "/api/master/products",
     "/api/master/common-code-groups",
     "/api/master/common-codes",
@@ -35,6 +34,12 @@ class CheckResult:
     name: str
     ok: bool
     detail: str
+
+
+@dataclass
+class LoginFlowResult:
+    token: str | None
+    results: list[CheckResult]
 
 
 def main() -> int:
@@ -73,27 +78,59 @@ def main() -> int:
 
 
 def _run_checks(config: LocalSecretConfig) -> int:
-    results: list[CheckResult] = []
-    token: str | None = None
-    new_token: str | None = None
-
     with httpx.Client(base_url=config.api.base_url, timeout=10.0) as client:
-        health_response = client.get("/health")
-        results.append(_expect_status("health", health_response, 200))
+        return _run_checks_with_client(config, client)
 
-        login_response = client.post(
-            "/api/auth/login",
-            json={
-                "login_id": config.auth.admin_login_id,
-                "password": config.auth.current_password,
-            },
+
+def _run_checks_with_client(config: LocalSecretConfig, client: httpx.Client) -> int:
+    results: list[CheckResult] = []
+
+    health_response = client.get("/health")
+    results.append(_expect_status("health", health_response, 200))
+
+    login_flow = _run_login_flow(client, config)
+    results.extend(login_flow.results)
+    if not login_flow.token:
+        _print_results(results)
+        return 1
+
+    context_response = client.get("/api/auth/context", headers=_auth_header(login_flow.token))
+    context_ok, _context_data = _parse_context(context_response)
+    results.append(context_ok)
+
+    endpoint_data: dict[str, Any] = {}
+    for endpoint in MASTER_ENDPOINTS:
+        response = client.get(endpoint, headers=_auth_header(login_flow.token))
+        result, data = _parse_master_endpoint(endpoint, response)
+        results.append(result)
+        endpoint_data[endpoint] = data
+
+    results.append(
+        _run_client_warehouses_check(
+            client,
+            login_flow.token,
+            endpoint_data.get("/api/master/clients"),
         )
-        login_ok, token = _parse_login("login_current_password", login_response)
-        results.append(login_ok)
-        if not token:
-            _print_results(results)
-            return 1
+    )
+    results.extend(_run_detail_checks(client, login_flow.token, endpoint_data))
+    results.extend(_run_error_checks(client))
 
+    _print_results(results)
+    return 0 if all(result.ok for result in results) else 1
+
+
+def _run_login_flow(client: httpx.Client, config: LocalSecretConfig) -> LoginFlowResult:
+    results: list[CheckResult] = []
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "login_id": config.auth.admin_login_id,
+            "password": config.auth.current_password,
+        },
+    )
+    login_ok, token = _parse_login("login_current_password", login_response)
+    results.append(login_ok)
+    if token:
         change_response = client.post(
             "/api/auth/password/change",
             headers=_auth_header(token),
@@ -105,8 +142,7 @@ def _run_checks(config: LocalSecretConfig) -> int:
         )
         results.append(_parse_password_change(change_response))
         if not _is_success_response(change_response):
-            _print_results(results)
-            return 1
+            return LoginFlowResult(None, results)
 
         new_login_response = client.post(
             "/api/auth/login",
@@ -117,26 +153,30 @@ def _run_checks(config: LocalSecretConfig) -> int:
         )
         new_login_ok, new_token = _parse_login("login_new_password", new_login_response)
         results.append(new_login_ok)
-        if not new_token:
-            _print_results(results)
-            return 1
+        return LoginFlowResult(new_token, results)
 
-        context_response = client.get("/api/auth/context", headers=_auth_header(new_token))
-        context_ok, _context_data = _parse_context(context_response)
-        results.append(context_ok)
+    payload = _safe_json(login_response)
+    if _result_code(payload) != "INVALID_LOGIN":
+        return LoginFlowResult(None, results)
 
-        endpoint_data: dict[str, Any] = {}
-        for endpoint in MASTER_ENDPOINTS:
-            response = client.get(endpoint, headers=_auth_header(new_token))
-            result, data = _parse_master_endpoint(endpoint, response)
-            results.append(result)
-            endpoint_data[endpoint] = data
-
-        results.extend(_run_detail_checks(client, new_token, endpoint_data))
-        results.extend(_run_error_checks(client))
-
-    _print_results(results)
-    return 0 if all(result.ok for result in results) else 1
+    fallback_response = client.post(
+        "/api/auth/login",
+        json={
+            "login_id": config.auth.admin_login_id,
+            "password": config.auth.new_password,
+        },
+    )
+    fallback_ok, fallback_token = _parse_login("login_new_password_fallback", fallback_response)
+    results.append(fallback_ok)
+    if fallback_token:
+        results.append(
+            CheckResult(
+                "password_change",
+                True,
+                "skipped=already_reset_state",
+            )
+        )
+    return LoginFlowResult(fallback_token, results)
 
 
 def _parse_login(name: str, response: httpx.Response) -> tuple[CheckResult, str | None]:
@@ -263,6 +303,28 @@ def _run_detail_checks(
     )
 
     return results
+
+
+def _run_client_warehouses_check(
+    client: httpx.Client,
+    token: str,
+    clients_data: Any,
+) -> CheckResult:
+    client_id = _first_id(clients_data, "client_id")
+    if client_id is None:
+        return CheckResult(
+            "/api/master/client-warehouses",
+            True,
+            "skipped=no_client_id_candidate",
+        )
+
+    response = client.get(
+        "/api/master/client-warehouses",
+        headers=_auth_header(token),
+        params={"client_id": client_id},
+    )
+    result, _ = _parse_master_endpoint("/api/master/client-warehouses", response)
+    return result
 
 
 def _run_error_checks(client: httpx.Client) -> list[CheckResult]:
