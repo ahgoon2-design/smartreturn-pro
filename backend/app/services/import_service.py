@@ -21,6 +21,8 @@ from app.schemas.imports import (
     ImportJobSummaryResponse,
     ImportPasteRowsRequest,
     ImportPasteRowsResponse,
+    ImportValidationRunRequest,
+    ImportValidationRunResponse,
     ImportValidationErrorResponse,
 )
 
@@ -41,6 +43,9 @@ ALLOWED_SOURCE_TYPES = {
 }
 
 PASTE_ROW_SOURCE_TYPES = {"PASTE", "MANUAL"}
+VALIDATION_SOURCE_TYPES = {"PASTE", "MANUAL"}
+VALIDATION_READY_STATUS = "READY_TO_VALIDATE"
+VALIDATION_COMPLETED_STATUSES = {"VALIDATED", "HAS_ERRORS"}
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -83,6 +88,14 @@ def _ensure_paste_source_type(source_type: str) -> None:
         raise _business_error(
             "IMPORT_JOB_PASTE_SOURCE_TYPE_INVALID",
             "Paste row ??ν? PASTE ?먮뒗 MANUAL source_type?먯꽌留??덉슜?⑸땲??",
+        )
+
+
+def _ensure_validation_source_type(source_type: str) -> None:
+    if source_type not in VALIDATION_SOURCE_TYPES:
+        raise _business_error(
+            "IMPORT_JOB_VALIDATE_SOURCE_TYPE_INVALID",
+            "Import validation supports only PASTE or MANUAL source_type.",
         )
 
 
@@ -224,6 +237,190 @@ def _normalize_paste_rows(request: ImportPasteRowsRequest) -> list[dict]:
     return normalized_rows
 
 
+def _raw_value(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    if len(text) > 200:
+        return f"{text[:200]}..."
+    return text
+
+
+def _is_blank(value) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _issue(
+    *,
+    field_name: str | None,
+    raw_value,
+    error_code: str,
+    error_message: str,
+    severity: str = "ERROR",
+) -> dict:
+    return {
+        "field_name": field_name,
+        "raw_value": _raw_value(raw_value),
+        "error_code": error_code,
+        "error_message": error_message,
+        "severity": severity,
+    }
+
+
+def _required_field(data: dict, field_name: str) -> list[dict]:
+    if _is_blank(data.get(field_name)):
+        return [
+            _issue(
+                field_name=field_name,
+                raw_value=data.get(field_name),
+                error_code="REQUIRED_FIELD_MISSING",
+                error_message=f"{field_name} is required.",
+            )
+        ]
+    return []
+
+
+def _required_one_of(data: dict, field_names: tuple[str, ...]) -> list[dict]:
+    if any(not _is_blank(data.get(field_name)) for field_name in field_names):
+        return []
+    return [
+        _issue(
+            field_name=",".join(field_names),
+            raw_value=None,
+            error_code="REQUIRED_ONE_OF_MISSING",
+            error_message=f"One of {', '.join(field_names)} is required.",
+        )
+    ]
+
+
+def _number_min_if_present(
+    data: dict,
+    field_name: str,
+    *,
+    min_value: float,
+    required: bool = False,
+) -> list[dict]:
+    value = data.get(field_name)
+    if _is_blank(value):
+        return _required_field(data, field_name) if required else []
+    if isinstance(value, bool):
+        return [
+            _issue(
+                field_name=field_name,
+                raw_value=value,
+                error_code="INVALID_NUMBER",
+                error_message=f"{field_name} must be a number.",
+            )
+        ]
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return [
+            _issue(
+                field_name=field_name,
+                raw_value=value,
+                error_code="INVALID_NUMBER",
+                error_message=f"{field_name} must be a number.",
+            )
+        ]
+    if number < min_value:
+        return [
+            _issue(
+                field_name=field_name,
+                raw_value=value,
+                error_code="INVALID_MIN_VALUE",
+                error_message=f"{field_name} must be at least {min_value:g}.",
+            )
+        ]
+    return []
+
+
+def _row_data(row) -> dict:
+    if isinstance(row.normalized_json, dict) and row.normalized_json:
+        return row.normalized_json
+    if isinstance(row.raw_json, dict):
+        return row.raw_json
+    return {}
+
+
+def _validate_product_master(data: dict) -> list[dict]:
+    issues = []
+    issues.extend(_required_field(data, "product_code"))
+    issues.extend(_required_field(data, "product_name"))
+    if _is_blank(data.get("barcode")):
+        issues.append(
+            _issue(
+                field_name="barcode",
+                raw_value=data.get("barcode"),
+                error_code="PRODUCT_BARCODE_MISSING",
+                error_message="barcode is missing.",
+                severity="WARNING",
+            )
+        )
+    return issues
+
+
+def _validate_product_barcode(data: dict) -> list[dict]:
+    issues = []
+    issues.extend(_required_field(data, "product_code"))
+    issues.extend(_required_field(data, "barcode"))
+    issues.extend(_number_min_if_present(data, "unit_qty", min_value=1))
+    return issues
+
+
+def _validate_return_reception(data: dict) -> list[dict]:
+    issues = []
+    issues.extend(_required_one_of(data, ("tracking_no", "invoice_no")))
+    issues.extend(_required_one_of(data, ("product_code", "barcode")))
+    return issues
+
+
+def _validate_return_expected(data: dict) -> list[dict]:
+    return _required_one_of(data, ("tracking_no", "invoice_no"))
+
+
+def _validate_inbound_expected(data: dict) -> list[dict]:
+    issues = []
+    issues.extend(_required_field(data, "product_code"))
+    issues.extend(_number_min_if_present(data, "expected_qty", min_value=1, required=True))
+    return issues
+
+
+def _validate_outbound_order(data: dict) -> list[dict]:
+    issues = []
+    issues.extend(_required_one_of(data, ("order_no", "tracking_no")))
+    issues.extend(_required_field(data, "product_code"))
+    return issues
+
+
+def _validate_import_row(import_type: str, data: dict) -> list[dict]:
+    validators = {
+        "PRODUCT_MASTER": _validate_product_master,
+        "PRODUCT_BARCODE": _validate_product_barcode,
+        "RETURN_RECEPTION": _validate_return_reception,
+        "RETURN_EXPECTED": _validate_return_expected,
+        "INBOUND_EXPECTED": _validate_inbound_expected,
+        "OUTBOUND_ORDER": _validate_outbound_order,
+    }
+    return validators[import_type](data)
+
+
+def _validation_status(issues: list[dict]) -> str:
+    if any(issue["severity"] == "ERROR" for issue in issues):
+        return "INVALID"
+    if any(issue["severity"] == "WARNING" for issue in issues):
+        return "WARNING"
+    return "VALID"
+
+
+def _validation_message(issues: list[dict]) -> str | None:
+    for severity in ("ERROR", "WARNING"):
+        for issue in issues:
+            if issue["severity"] == severity:
+                return issue["error_message"]
+    return None
+
+
 def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRequest) -> dict:
     _require_import_manage(auth)
     if request.requested_client_id is None:
@@ -305,6 +502,110 @@ def save_paste_import_job_rows(
             valid_rows=updated_job.valid_rows,
             invalid_rows=updated_job.invalid_rows,
             error_rows=updated_job.error_rows,
+            progress_percent=updated_job.progress_percent,
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def validate_import_job(
+    db: Session,
+    auth: AuthContext,
+    *,
+    job_id: int,
+    request: ImportValidationRunRequest,
+) -> dict:
+    _require_import_manage(auth)
+    if request.force:
+        raise _business_error("IMPORT_JOB_VALIDATE_FORCE_UNSUPPORTED", "force validation is not supported.")
+
+    row = repo.get_import_job(db, job_id)
+    if row is None:
+        raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job was not found.", 404)
+    job, _, _ = row
+    _ensure_job_access(auth, job)
+    _ensure_validation_source_type(job.source_type)
+    if job.status in VALIDATION_COMPLETED_STATUSES:
+        raise _business_error("IMPORT_JOB_VALIDATE_ALREADY_DONE", "Import job validation is already completed.")
+    if job.status != VALIDATION_READY_STATUS:
+        raise _business_error("IMPORT_JOB_VALIDATE_STATUS_INVALID", "Import job is not ready to validate.")
+    if repo.has_existing_validation_errors(db, job_id=job.id):
+        raise _business_error("IMPORT_JOB_VALIDATE_ALREADY_DONE", "Import job already has validation errors.")
+
+    rows = repo.list_import_job_rows_for_validation(db, job_id=job.id)
+    if not rows:
+        raise _business_error("IMPORT_JOB_VALIDATE_NO_ROWS", "Import job has no rows to validate.")
+    if any(row_item.validation_status != "NOT_VALIDATED" for row_item in rows):
+        raise _business_error("IMPORT_JOB_VALIDATE_ALREADY_DONE", "Import job rows are already validated.")
+
+    try:
+        validation_errors: list[dict] = []
+        valid_rows = 0
+        invalid_rows = 0
+        warning_rows = 0
+        error_row_ids: set[int] = set()
+
+        for row_item in rows:
+            issues = _validate_import_row(job.import_type, _row_data(row_item))
+            status = _validation_status(issues)
+            if status == "INVALID":
+                invalid_rows += 1
+            else:
+                valid_rows += 1
+                if status == "WARNING":
+                    warning_rows += 1
+
+            if any(issue["severity"] == "ERROR" for issue in issues):
+                error_row_ids.add(row_item.id)
+
+            repo.update_import_job_row_validation(
+                db,
+                row=row_item,
+                validation_status=status,
+                validation_message=_validation_message(issues),
+            )
+            for issue in issues:
+                validation_errors.append(
+                    {
+                        "job_id": job.id,
+                        "row_id": row_item.id,
+                        "row_no": row_item.row_no,
+                        "field_name": issue["field_name"],
+                        "raw_value": issue["raw_value"],
+                        "error_code": issue["error_code"],
+                        "error_message": issue["error_message"],
+                        "severity": issue["severity"],
+                    }
+                )
+
+        if validation_errors:
+            repo.bulk_create_import_validation_errors(db, errors=validation_errors)
+
+        status = "HAS_ERRORS" if invalid_rows > 0 else "VALIDATED"
+        updated_job = repo.update_import_job_after_validation(
+            db,
+            job=job,
+            status=status,
+            valid_rows=valid_rows,
+            invalid_rows=invalid_rows,
+            error_rows=len(error_row_ids),
+            message=(
+                f"validation completed: valid={valid_rows}, invalid={invalid_rows}, "
+                f"warning={warning_rows}, errors={len(validation_errors)}"
+            ),
+        )
+        db.commit()
+        return ImportValidationRunResponse(
+            job_id=updated_job.id,
+            status=updated_job.status,
+            total_rows=updated_job.total_rows,
+            validated_row_count=len(rows),
+            valid_rows=updated_job.valid_rows,
+            invalid_rows=updated_job.invalid_rows,
+            warning_rows=warning_rows,
+            error_rows=updated_job.error_rows,
+            validation_error_count=len(validation_errors),
             progress_percent=updated_job.progress_percent,
         ).model_dump()
     except Exception:

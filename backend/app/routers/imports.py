@@ -9,7 +9,7 @@ from app.core.dependencies import get_current_auth_context, get_db
 from app.core.permissions import require_password_change_completed, require_permission, require_roles
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
-from app.schemas.imports import ImportJobCreateRequest, ImportPasteRowsRequest
+from app.schemas.imports import ImportJobCreateRequest, ImportPasteRowsRequest, ImportValidationRunRequest
 from app.services import import_service
 
 
@@ -52,6 +52,26 @@ def save_paste_import_job_rows_api(
         result_code="IMPORT_JOB_ROWS_SAVED",
         message="Import job row瑜???덉뒿?덈떎.",
         data=import_service.save_paste_import_job_rows(db, auth, job_id=job_id, request=request),
+    )
+
+
+@router.post("/{job_id}/validate", response_model=ApiResult)
+def validate_import_job_api(
+    job_id: int,
+    request: ImportValidationRunRequest | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_JOB_VALIDATED",
+        message="Import job validation completed.",
+        data=import_service.validate_import_job(
+            db,
+            auth,
+            job_id=job_id,
+            request=request or ImportValidationRunRequest(),
+        ),
     )
 
 

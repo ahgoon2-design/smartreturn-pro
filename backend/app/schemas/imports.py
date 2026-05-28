@@ -77,6 +77,23 @@ class ImportPasteRowsResponse(BaseModel):
     progress_percent: int
 
 
+class ImportValidationRunRequest(BaseModel):
+    force: bool = False
+
+
+class ImportValidationRunResponse(BaseModel):
+    job_id: int
+    status: str
+    total_rows: int
+    validated_row_count: int
+    valid_rows: int
+    invalid_rows: int
+    warning_rows: int
+    error_rows: int
+    validation_error_count: int
+    progress_percent: int
+
+
 class ImportPageMeta(BaseModel):
     page: int
     page_size: int
