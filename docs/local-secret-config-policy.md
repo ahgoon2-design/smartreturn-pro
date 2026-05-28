@@ -63,3 +63,31 @@ DB 직접 접근은 로컬 개발 전용 reset/reissue 같은 제한된 작업�
 - `backend/local.secret.json`은 `.gitignore` 대상이어야 한다.
 - 완료 보고에는 비밀번호, token 전체값, secret, `.env` 내용을 쓰지 않는다.
 - 로컬 검증 실패 시 응답 전문을 무분별하게 출력하지 않는다.
+
+## 로컬 관리자 비밀번호 reset/reissue
+
+`local_super_admin`의 현재 비밀번호를 알 수 없어 API 기반 검증을 시작할 수 없는 경우에만 로컬 전용 reset 스크립트를 사용한다. 이 절차는 개발 PC의 로컬 DB 복구와 검증 재개를 위한 도구이며 운영 환경에서는 사용하지 않는다.
+
+권장 실행 순서:
+
+1. `backend/local.secret.json`의 `environment`가 `local`인지 확인한다.
+2. `auth.admin_login_id`와 `auth.new_password`를 로컬에서만 입력한다.
+3. `cd backend`
+4. `python scripts/reset_local_admin_password.py --confirm-local-reset`
+5. `uvicorn app.main:app --host 127.0.0.1 --port 8000`
+6. `python scripts/verify_master_api_local.py`
+
+reset 스크립트는 `--confirm-local-reset` 옵션이 없으면 실행하지 않는다. DB URL은 `backend/local.secret.json`의 `database.url`이 있으면 우선 사용하고, 없으면 앱 설정의 `DATABASE_URL`을 사용한다. 어떤 경우에도 DB host가 `localhost`, `127.0.0.1`, `::1` 중 하나가 아니면 중단해야 한다.
+
+reset 대상은 기존 `SUPER_ADMIN` role을 가진 활성 사용자로 제한한다. 사용자가 없거나, 비활성 상태이거나, `SUPER_ADMIN` role이 없으면 새 사용자를 만들거나 role을 부여하지 않고 실패해야 한다.
+
+기본 정책은 reset 후 `must_change_password=false`로 두는 것이다. 목적이 로컬 검증 복구이므로 reset 직후 `verify_master_api_local.py`로 기준정보 read-only API 검증을 이어갈 수 있어야 하기 때문이다. 실제 비밀번호 변경 정책 흐름을 다시 검증해야 할 때만 `--require-password-change` 옵션으로 `must_change_password=true`를 선택한다.
+
+출력 금지 항목:
+
+- 새 비밀번호
+- 기존 비밀번호
+- `password_hash`
+- DB URL 전체
+- access token
+- secret 또는 `.env` 내용

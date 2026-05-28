@@ -125,3 +125,16 @@ python scripts/verify_master_api_local.py
 ```
 
 이 스크립트는 실행 중인 uvicorn 서버를 대상으로 로그인, 비밀번호 변경, AuthContext, 기준정보 read-only API를 검증한다. 실행 전에 `uvicorn app.main:app --host 127.0.0.1 --port 8000`으로 서버를 먼저 실행해야 한다. 비밀번호와 access token 전체값은 출력하지 않으며, 운영 환경에서는 사용하지 않는다.
+
+## 로컬 관리자 비밀번호 reset
+
+`local_super_admin`의 현재 비밀번호를 모르는 로컬 개발 상황에서는 `backend/local.secret.json`의 `auth.new_password`를 채운 뒤 아래 명령으로 비밀번호를 재설정할 수 있다.
+
+```powershell
+cd backend
+python scripts/reset_local_admin_password.py --confirm-local-reset
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+python scripts/verify_master_api_local.py
+```
+
+이 스크립트는 로컬 개발 DB에서만 사용한다. 실제 secret 파일은 커밋하지 않으며, 비밀번호와 `password_hash`, token, DB URL 전체값은 출력하지 않는다.

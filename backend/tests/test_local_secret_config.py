@@ -101,11 +101,13 @@ def test_error_message_does_not_include_password_value() -> None:
     assert secret_value not in str(exc_info.value)
 
 
-def test_missing_default_local_secret_file_is_not_required() -> None:
+def test_explicit_config_path_does_not_require_default_local_secret_file() -> None:
     example_path = BACKEND_ROOT / "local.secret.example.json"
+    config_path = _write_config(_valid_config())
 
     assert example_path.exists()
-    assert not (BACKEND_ROOT / "local.secret.json").exists()
+    config = load_local_secret_config(config_path)
+    assert config.auth.admin_login_id == "local_super_admin"
 
 
 def teardown_module() -> None:

@@ -82,7 +82,11 @@ def resolve_local_secret_path(path: str | Path | None = None) -> Path:
     return DEFAULT_LOCAL_SECRET_PATH
 
 
-def load_local_secret_config(path: str | Path | None = None) -> LocalSecretConfig:
+def load_local_secret_config(
+    path: str | Path | None = None,
+    *,
+    require_current_password: bool = True,
+) -> LocalSecretConfig:
     """로컬 검증용 secret config를 읽고 필수 필드를 검증한다."""
 
     config_path = resolve_local_secret_path(path)
@@ -113,7 +117,11 @@ def load_local_secret_config(path: str | Path | None = None) -> LocalSecretConfi
         database=LocalDatabaseConfig(url=_optional_string(database, "database.url", "url")),
         auth=LocalAuthConfig(
             admin_login_id=_required_string(auth, "auth.admin_login_id", "admin_login_id"),
-            current_password=_required_string(auth, "auth.current_password", "current_password"),
+            current_password=(
+                _required_string(auth, "auth.current_password", "current_password")
+                if require_current_password
+                else _optional_string(auth, "auth.current_password", "current_password") or ""
+            ),
             new_password=_required_string(auth, "auth.new_password", "new_password"),
         ),
         source_path=config_path,
