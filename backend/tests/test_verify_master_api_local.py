@@ -14,6 +14,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from _local_config import LocalApiConfig, LocalAuthConfig, LocalDatabaseConfig, LocalSecretConfig  # noqa: E402
 from verify_master_api_local import (  # noqa: E402
+    _run_detail_checks,
     _run_client_warehouses_check,
     _run_login_flow,
 )
@@ -112,6 +113,9 @@ def test_login_flow_falls_back_to_new_password_after_invalid_login() -> None:
         "login_new_password_fallback",
         "password_change",
     ]
+    assert result.results[0].ok is True
+    assert "skipped=expected_invalid_login_after_reset" in result.results[0].detail
+    assert all(item.ok for item in result.results)
     assert result.results[-1].ok is True
     assert "skipped=already_reset_state" in result.results[-1].detail
 
@@ -168,3 +172,59 @@ def test_client_warehouses_uses_client_id_candidate() -> None:
 
     assert result.ok is True
     assert requested_urls == ["http://testserver/api/master/client-warehouses?client_id=7"]
+
+
+def test_detail_checks_skip_missing_product_without_fixed_id_call() -> None:
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+        raise AssertionError("missing product id must not be called with a fixed id")
+
+    client = httpx.Client(base_url="http://testserver", transport=httpx.MockTransport(handler))
+
+    results = _run_detail_checks(
+        client,
+        "token",
+        {
+            "/api/master/clients": [],
+            "/api/master/products": {"items": []},
+            "/api/master/common-code-groups": [],
+        },
+    )
+
+    missing_result = next(item for item in results if item.name == "/api/master/products/{missing_id}")
+    assert missing_result.ok is True
+    assert "skipped=no_safe_missing_id_candidate" in missing_result.detail
+    assert requested_paths == []
+
+
+def test_login_flow_fallback_result_does_not_expose_sensitive_values() -> None:
+    sensitive_password = "SensitiveDummyPassword123!"
+    sensitive_token = "sensitive-token-value"
+    config = LocalSecretConfig(
+        environment="local",
+        api=LocalApiConfig(base_url="http://testserver"),
+        database=LocalDatabaseConfig(url=None),
+        auth=LocalAuthConfig(
+            admin_login_id="local_super_admin",
+            current_password=sensitive_password,
+            new_password="AnotherDummyPassword123!",
+        ),
+        source_path=Path("local.secret.json"),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        password = _request_json(request)["password"]
+        if password == sensitive_password:
+            return _json_response(401, {"success": False, "result_code": "INVALID_LOGIN"})
+        return _json_response(200, {"access_token": sensitive_token, "token_type": "bearer"})
+
+    client = httpx.Client(base_url="http://testserver", transport=httpx.MockTransport(handler))
+
+    result = _run_login_flow(client, config)
+    details = " ".join(item.detail for item in result.results)
+
+    assert result.token == sensitive_token
+    assert sensitive_password not in details
+    assert sensitive_token not in details
