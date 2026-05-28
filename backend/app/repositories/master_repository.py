@@ -99,10 +99,143 @@ def get_product(db: Session, product_id: int) -> tuple[Product, Client] | None:
     )
 
 
+def get_product_by_id(db: Session, product_id: int) -> Product | None:
+    return db.query(Product).filter(Product.id == product_id).one_or_none()
+
+
+def find_product_by_code(
+    db: Session,
+    client_id: int,
+    product_code: str,
+    exclude_product_id: int | None = None,
+) -> Product | None:
+    query = db.query(Product).filter(Product.client_id == client_id, Product.product_code == product_code)
+    if exclude_product_id is not None:
+        query = query.filter(Product.id != exclude_product_id)
+    return query.one_or_none()
+
+
+def find_product_by_barcode(
+    db: Session,
+    client_id: int,
+    barcode: str,
+    exclude_product_id: int | None = None,
+) -> Product | None:
+    query = db.query(Product).filter(Product.client_id == client_id, Product.barcode == barcode)
+    if exclude_product_id is not None:
+        query = query.filter(Product.id != exclude_product_id)
+    return query.one_or_none()
+
+
+def create_product(
+    db: Session,
+    *,
+    client_id: int,
+    product_code: str,
+    product_name: str,
+    barcode: str | None = None,
+    specification: str | None = None,
+    unit_name: str | None = None,
+    remarks: str | None = None,
+) -> Product:
+    product = Product(
+        client_id=client_id,
+        product_code=product_code,
+        product_name=product_name,
+        barcode=barcode,
+        specification=specification,
+        unit_name=unit_name,
+        remarks=remarks,
+        active_yn=True,
+    )
+    db.add(product)
+    db.flush()
+    return product
+
+
+def update_product(db: Session, product: Product, values: dict[str, object]) -> Product:
+    for field, value in values.items():
+        setattr(product, field, value)
+    db.flush()
+    return product
+
+
+def set_product_active(db: Session, product: Product, active_yn: bool) -> Product:
+    product.active_yn = active_yn
+    db.flush()
+    return product
+
+
 def list_product_barcodes(db: Session, product_id: int, active_only: bool = True) -> list[ProductBarcode]:
     query = db.query(ProductBarcode).filter(ProductBarcode.product_id == product_id)
     query = _active(query, ProductBarcode, active_only)
     return query.order_by(ProductBarcode.barcode_type, ProductBarcode.id).all()
+
+
+def get_product_barcode_by_id(db: Session, barcode_id: int) -> ProductBarcode | None:
+    return db.query(ProductBarcode).filter(ProductBarcode.id == barcode_id).one_or_none()
+
+
+def find_product_barcode_by_norm(
+    db: Session,
+    client_id: int,
+    barcode_norm: str,
+    exclude_barcode_id: int | None = None,
+) -> ProductBarcode | None:
+    query = db.query(ProductBarcode).filter(
+        ProductBarcode.client_id == client_id,
+        ProductBarcode.barcode_norm == barcode_norm,
+    )
+    if exclude_barcode_id is not None:
+        query = query.filter(ProductBarcode.id != exclude_barcode_id)
+    return query.one_or_none()
+
+
+def create_product_barcode(
+    db: Session,
+    *,
+    client_id: int,
+    product_id: int,
+    barcode: str,
+    barcode_norm: str,
+    barcode_type: str,
+    unit_qty: int,
+    remarks: str | None = None,
+) -> ProductBarcode:
+    product_barcode = ProductBarcode(
+        client_id=client_id,
+        product_id=product_id,
+        barcode=barcode,
+        barcode_norm=barcode_norm,
+        barcode_type=barcode_type,
+        unit_qty=unit_qty,
+        remarks=remarks,
+        active_yn=True,
+    )
+    db.add(product_barcode)
+    db.flush()
+    return product_barcode
+
+
+def update_product_barcode(
+    db: Session,
+    product_barcode: ProductBarcode,
+    values: dict[str, object],
+) -> ProductBarcode:
+    for field, value in values.items():
+        setattr(product_barcode, field, value)
+    db.flush()
+    return product_barcode
+
+
+def set_product_barcode_active(
+    db: Session,
+    product_barcode: ProductBarcode,
+    active_yn: bool,
+) -> ProductBarcode:
+    product_barcode.active_yn = active_yn
+    db.flush()
+    return product_barcode
 
 
 def list_common_code_groups(db: Session, active_only: bool = True) -> list[CommonCodeGroup]:

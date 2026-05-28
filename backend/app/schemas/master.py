@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PageData(BaseModel):
@@ -90,3 +90,105 @@ class CommonCodeSummary(BaseModel):
     code_name: str
     sort_order: int
     active_yn: bool
+
+
+class ProductCreateRequest(BaseModel):
+    client_id: int
+    product_code: str
+    product_name: str
+    barcode: str | None = None
+    specification: str | None = None
+    unit_name: str | None = None
+    remarks: str | None = None
+
+    @field_validator("product_code", "product_name")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("barcode", "specification", "unit_name", "remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ProductUpdateRequest(BaseModel):
+    product_code: str | None = None
+    product_name: str | None = None
+    barcode: str | None = None
+    specification: str | None = None
+    unit_name: str | None = None
+    remarks: str | None = None
+
+    @field_validator("product_code", "product_name")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("barcode", "specification", "unit_name", "remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ProductBarcodeCreateRequest(BaseModel):
+    product_id: int
+    barcode: str
+    barcode_type: str
+    unit_qty: int = Field(ge=1)
+    remarks: str | None = None
+
+    @field_validator("barcode", "barcode_type")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ProductBarcodeUpdateRequest(BaseModel):
+    barcode: str | None = None
+    barcode_type: str | None = None
+    unit_qty: int | None = Field(default=None, ge=1)
+    remarks: str | None = None
+
+    @field_validator("barcode", "barcode_type")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None

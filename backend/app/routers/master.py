@@ -9,6 +9,12 @@ from app.core.dependencies import get_current_auth_context, get_db
 from app.core.permissions import require_password_change_completed, require_permission, require_roles
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
+from app.schemas.master import (
+    ProductBarcodeCreateRequest,
+    ProductBarcodeUpdateRequest,
+    ProductCreateRequest,
+    ProductUpdateRequest,
+)
 from app.services import master_service
 
 
@@ -18,6 +24,13 @@ router = APIRouter(prefix="/api/master", tags=["master"])
 def _require_master_view(auth: AuthContext) -> None:
     require_password_change_completed(auth)
     require_permission(auth, "MASTER_VIEW")
+
+
+def _require_product_manage(auth: AuthContext) -> None:
+    require_password_change_completed(auth)
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER"})
+    require_permission(auth, "MASTER_MANAGE")
+    require_permission(auth, "PRODUCT_MANAGE")
 
 
 @router.get("/clients", response_model=ApiResult)
@@ -92,6 +105,20 @@ def list_products_api(
     )
 
 
+@router.post("/products", response_model=ApiResult)
+def create_product_api(
+    request: ProductCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_CREATED",
+        message="상품을 생성했습니다.",
+        data=master_service.create_product(db, auth, request),
+    )
+
+
 @router.get("/products/{product_id}", response_model=ApiResult)
 def get_product_api(
     product_id: int,
@@ -103,6 +130,106 @@ def get_product_api(
         result_code="MASTER_PRODUCT_FOUND",
         message="상품 상세를 조회했습니다.",
         data=master_service.get_product_detail(db, auth, product_id),
+    )
+
+
+@router.patch("/products/{product_id}", response_model=ApiResult)
+def update_product_api(
+    product_id: int,
+    request: ProductUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_UPDATED",
+        message="상품을 수정했습니다.",
+        data=master_service.update_product(db, auth, product_id, request),
+    )
+
+
+@router.post("/products/{product_id}/disable", response_model=ApiResult)
+def disable_product_api(
+    product_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_DISABLED",
+        message="상품을 사용중지했습니다.",
+        data=master_service.set_product_active(db, auth, product_id, False),
+    )
+
+
+@router.post("/products/{product_id}/enable", response_model=ApiResult)
+def enable_product_api(
+    product_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_ENABLED",
+        message="상품을 재활성화했습니다.",
+        data=master_service.set_product_active(db, auth, product_id, True),
+    )
+
+
+@router.post("/product-barcodes", response_model=ApiResult)
+def create_product_barcode_api(
+    request: ProductBarcodeCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_BARCODE_CREATED",
+        message="상품바코드를 생성했습니다.",
+        data=master_service.create_product_barcode(db, auth, request),
+    )
+
+
+@router.patch("/product-barcodes/{barcode_id}", response_model=ApiResult)
+def update_product_barcode_api(
+    barcode_id: int,
+    request: ProductBarcodeUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_BARCODE_UPDATED",
+        message="상품바코드를 수정했습니다.",
+        data=master_service.update_product_barcode(db, auth, barcode_id, request),
+    )
+
+
+@router.post("/product-barcodes/{barcode_id}/disable", response_model=ApiResult)
+def disable_product_barcode_api(
+    barcode_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_BARCODE_DISABLED",
+        message="상품바코드를 사용중지했습니다.",
+        data=master_service.set_product_barcode_active(db, auth, barcode_id, False),
+    )
+
+
+@router.post("/product-barcodes/{barcode_id}/enable", response_model=ApiResult)
+def enable_product_barcode_api(
+    barcode_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_product_manage(auth)
+    return api_success(
+        result_code="MASTER_PRODUCT_BARCODE_ENABLED",
+        message="상품바코드를 재활성화했습니다.",
+        data=master_service.set_product_barcode_active(db, auth, barcode_id, True),
     )
 
 
