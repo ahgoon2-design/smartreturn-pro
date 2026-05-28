@@ -10,6 +10,8 @@ from app.core.permissions import require_password_change_completed, require_perm
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.master import (
+    ClientCreateRequest,
+    ClientUpdateRequest,
     CommonCodeCreateRequest,
     CommonCodeGroupCreateRequest,
     CommonCodeGroupUpdateRequest,
@@ -18,6 +20,8 @@ from app.schemas.master import (
     ProductBarcodeUpdateRequest,
     ProductCreateRequest,
     ProductUpdateRequest,
+    WarehouseCreateRequest,
+    WarehouseUpdateRequest,
 )
 from app.services import master_service
 
@@ -35,6 +39,20 @@ def _require_product_manage(auth: AuthContext) -> None:
     require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER"})
     require_permission(auth, "MASTER_MANAGE")
     require_permission(auth, "PRODUCT_MANAGE")
+
+
+def _require_client_manage(auth: AuthContext) -> None:
+    require_password_change_completed(auth)
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_permission(auth, "MASTER_MANAGE")
+    require_permission(auth, "CLIENT_MANAGE")
+
+
+def _require_warehouse_manage(auth: AuthContext) -> None:
+    require_password_change_completed(auth)
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_permission(auth, "MASTER_MANAGE")
+    require_permission(auth, "WAREHOUSE_MANAGE")
 
 
 def _require_common_code_manage(auth: AuthContext) -> None:
@@ -57,6 +75,20 @@ def list_clients_api(
     )
 
 
+@router.post("/clients", response_model=ApiResult)
+def create_client_api(
+    request: ClientCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_CREATED",
+        message="고객사를 생성했습니다.",
+        data=master_service.create_client(db, auth, request),
+    )
+
+
 @router.get("/clients/{client_id}", response_model=ApiResult)
 def get_client_api(
     client_id: int,
@@ -71,6 +103,49 @@ def get_client_api(
     )
 
 
+@router.patch("/clients/{client_id}", response_model=ApiResult)
+def update_client_api(
+    client_id: int,
+    request: ClientUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_UPDATED",
+        message="고객사를 수정했습니다.",
+        data=master_service.update_client(db, auth, client_id, request),
+    )
+
+
+@router.post("/clients/{client_id}/disable", response_model=ApiResult)
+def disable_client_api(
+    client_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_DISABLED",
+        message="고객사를 사용중지했습니다.",
+        data=master_service.set_client_active(db, auth, client_id, False),
+    )
+
+
+@router.post("/clients/{client_id}/enable", response_model=ApiResult)
+def enable_client_api(
+    client_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_ENABLED",
+        message="고객사를 재활성화했습니다.",
+        data=master_service.set_client_active(db, auth, client_id, True),
+    )
+
+
 @router.get("/warehouses", response_model=ApiResult)
 def list_warehouses_api(
     db: Session = Depends(get_db),
@@ -82,6 +157,63 @@ def list_warehouses_api(
         result_code="MASTER_WAREHOUSES_FOUND",
         message="창고 목록을 조회했습니다.",
         data=master_service.get_accessible_warehouses(db, auth),
+    )
+
+
+@router.post("/warehouses", response_model=ApiResult)
+def create_warehouse_api(
+    request: WarehouseCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_WAREHOUSE_CREATED",
+        message="창고를 생성했습니다.",
+        data=master_service.create_warehouse(db, auth, request),
+    )
+
+
+@router.patch("/warehouses/{warehouse_id}", response_model=ApiResult)
+def update_warehouse_api(
+    warehouse_id: int,
+    request: WarehouseUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_WAREHOUSE_UPDATED",
+        message="창고를 수정했습니다.",
+        data=master_service.update_warehouse(db, auth, warehouse_id, request),
+    )
+
+
+@router.post("/warehouses/{warehouse_id}/disable", response_model=ApiResult)
+def disable_warehouse_api(
+    warehouse_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_WAREHOUSE_DISABLED",
+        message="창고를 사용중지했습니다.",
+        data=master_service.set_warehouse_active(db, auth, warehouse_id, False),
+    )
+
+
+@router.post("/warehouses/{warehouse_id}/enable", response_model=ApiResult)
+def enable_warehouse_api(
+    warehouse_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_WAREHOUSE_ENABLED",
+        message="창고를 재활성화했습니다.",
+        data=master_service.set_warehouse_active(db, auth, warehouse_id, True),
     )
 
 

@@ -31,12 +31,122 @@ class ClientDetail(ClientSummary):
     remarks: str | None = None
 
 
+class ClientCreateRequest(BaseModel):
+    client_code: str
+    client_name: str
+    business_no: str | None = None
+    contact_name: str | None = None
+    contact_phone: str | None = None
+    contact_email: str | None = None
+    use_oms: bool = False
+    use_wms: bool = True
+    use_returns: bool = True
+    use_settlement: bool = False
+    remarks: str | None = None
+
+    @field_validator("client_code", "client_name")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("business_no", "contact_name", "contact_phone", "contact_email", "remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ClientUpdateRequest(BaseModel):
+    client_name: str | None = None
+    business_no: str | None = None
+    contact_name: str | None = None
+    contact_phone: str | None = None
+    contact_email: str | None = None
+    use_oms: bool | None = None
+    use_wms: bool | None = None
+    use_returns: bool | None = None
+    use_settlement: bool | None = None
+    remarks: str | None = None
+
+    @field_validator("client_name")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("business_no", "contact_name", "contact_phone", "contact_email", "remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
 class WarehouseSummary(BaseModel):
     warehouse_id: int
     warehouse_code: str
     warehouse_name: str
     warehouse_type: str | None = None
     active_yn: bool
+
+
+class WarehouseCreateRequest(BaseModel):
+    warehouse_code: str
+    warehouse_name: str
+    warehouse_type: str | None = None
+    address: str | None = None
+    remarks: str | None = None
+
+    @field_validator("warehouse_code", "warehouse_name")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("warehouse_type", "address", "remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class WarehouseUpdateRequest(BaseModel):
+    warehouse_name: str | None = None
+    warehouse_type: str | None = None
+    address: str | None = None
+    remarks: str | None = None
+
+    @field_validator("warehouse_name")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("warehouse_type", "address", "remarks")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class ClientWarehouseSummary(BaseModel):

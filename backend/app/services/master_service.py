@@ -10,8 +10,10 @@ from app.core.permissions import require_permission, require_roles
 from app.repositories import master_repository as repo
 from app.schemas.auth import AuthContext
 from app.schemas.master import (
+    ClientCreateRequest,
     ClientDetail,
     ClientSummary,
+    ClientUpdateRequest,
     ClientWarehouseSummary,
     CommonCodeCreateRequest,
     CommonCodeGroupCreateRequest,
@@ -27,7 +29,9 @@ from app.schemas.master import (
     ProductDetail,
     ProductSummary,
     ProductUpdateRequest,
+    WarehouseCreateRequest,
     WarehouseSummary,
+    WarehouseUpdateRequest,
 )
 
 
@@ -48,6 +52,18 @@ def _require_product_manage(auth: AuthContext) -> None:
     require_permission(auth, "PRODUCT_MANAGE")
 
 
+def _require_client_manage(auth: AuthContext) -> None:
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_permission(auth, "MASTER_MANAGE")
+    require_permission(auth, "CLIENT_MANAGE")
+
+
+def _require_warehouse_manage(auth: AuthContext) -> None:
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_permission(auth, "MASTER_MANAGE")
+    require_permission(auth, "WAREHOUSE_MANAGE")
+
+
 def _require_common_code_manage(auth: AuthContext) -> None:
     require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
     require_permission(auth, "MASTER_MANAGE")
@@ -65,6 +81,16 @@ def _ensure_active_client(db: Session, client_id: int):
     if not client.active_yn:
         raise _business_error("MASTER_CLIENT_INACTIVE", "사용중지된 고객사에는 상품을 등록할 수 없습니다.")
     return client
+
+
+def _ensure_client_code_available(db: Session, client_code: str) -> None:
+    if repo.find_client_by_code(db, client_code):
+        raise _business_error("MASTER_CLIENT_CODE_DUPLICATED", "이미 등록된 고객사 코드입니다.")
+
+
+def _ensure_warehouse_code_available(db: Session, warehouse_code: str) -> None:
+    if repo.find_warehouse_by_code(db, warehouse_code):
+        raise _business_error("MASTER_WAREHOUSE_CODE_DUPLICATED", "이미 등록된 창고 코드입니다.")
 
 
 def _ensure_product_code_available(
@@ -143,6 +169,16 @@ def _client_detail(client) -> ClientDetail:
     )
 
 
+def _warehouse_summary(warehouse) -> WarehouseSummary:
+    return WarehouseSummary(
+        warehouse_id=warehouse.id,
+        warehouse_code=warehouse.warehouse_code,
+        warehouse_name=warehouse.warehouse_name,
+        warehouse_type=warehouse.warehouse_type,
+        active_yn=warehouse.active_yn,
+    )
+
+
 def _common_code_group_summary(group) -> dict:
     return _dump(
         CommonCodeGroupSummary(
@@ -204,6 +240,62 @@ def get_client_detail(db: Session, auth: AuthContext, client_id: int) -> dict | 
     return _dump(_client_detail(client))
 
 
+def create_client(db: Session, auth: AuthContext, request: ClientCreateRequest) -> dict:
+    _require_client_manage(auth)
+    _ensure_client_code_available(db, request.client_code)
+
+    try:
+        client = repo.create_client(
+            db,
+            client_code=request.client_code,
+            client_name=request.client_name,
+            business_no=request.business_no,
+            contact_name=request.contact_name,
+            contact_phone=request.contact_phone,
+            contact_email=request.contact_email,
+            use_oms=request.use_oms,
+            use_wms=request.use_wms,
+            use_returns=request.use_returns,
+            use_settlement=request.use_settlement,
+            remarks=request.remarks,
+        )
+        db.commit()
+        return _dump(_client_detail(client))
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_client(db: Session, auth: AuthContext, client_id: int, request: ClientUpdateRequest) -> dict:
+    _require_client_manage(auth)
+    client = repo.get_client_by_id(db, client_id)
+    if client is None:
+        raise _business_error("MASTER_CLIENT_NOT_FOUND", "고객사를 찾을 수 없습니다.", 404)
+
+    try:
+        repo.update_client(db, client, request.model_dump(exclude_unset=True))
+        db.commit()
+        return _dump(_client_detail(client))
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_client_active(db: Session, auth: AuthContext, client_id: int, active_yn: bool) -> dict:
+    _require_client_manage(auth)
+    client = repo.get_client_by_id(db, client_id)
+    if client is None:
+        raise _business_error("MASTER_CLIENT_NOT_FOUND", "고객사를 찾을 수 없습니다.", 404)
+
+    try:
+        repo.set_client_active(db, client, active_yn)
+        db.commit()
+        return _dump(_client_detail(client))
+    except Exception:
+        db.rollback()
+        raise
+
+
 def get_accessible_warehouses(db: Session, auth: AuthContext) -> list[dict]:
     if not auth.is_internal_user:
         raise ClientScopeDeniedError("전체 창고 목록은 내부 운영자만 조회할 수 있습니다.")
@@ -219,6 +311,61 @@ def get_accessible_warehouses(db: Session, auth: AuthContext) -> list[dict]:
         )
         for warehouse in repo.list_warehouses(db)
     ]
+
+
+def create_warehouse(db: Session, auth: AuthContext, request: WarehouseCreateRequest) -> dict:
+    _require_warehouse_manage(auth)
+    _ensure_warehouse_code_available(db, request.warehouse_code)
+
+    try:
+        warehouse = repo.create_warehouse(
+            db,
+            warehouse_code=request.warehouse_code,
+            warehouse_name=request.warehouse_name,
+            warehouse_type=request.warehouse_type,
+            address=request.address,
+            remarks=request.remarks,
+        )
+        db.commit()
+        return _dump(_warehouse_summary(warehouse))
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_warehouse(
+    db: Session,
+    auth: AuthContext,
+    warehouse_id: int,
+    request: WarehouseUpdateRequest,
+) -> dict:
+    _require_warehouse_manage(auth)
+    warehouse = repo.get_warehouse_by_id(db, warehouse_id)
+    if warehouse is None:
+        raise _business_error("MASTER_WAREHOUSE_NOT_FOUND", "창고를 찾을 수 없습니다.", 404)
+
+    try:
+        repo.update_warehouse(db, warehouse, request.model_dump(exclude_unset=True))
+        db.commit()
+        return _dump(_warehouse_summary(warehouse))
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_warehouse_active(db: Session, auth: AuthContext, warehouse_id: int, active_yn: bool) -> dict:
+    _require_warehouse_manage(auth)
+    warehouse = repo.get_warehouse_by_id(db, warehouse_id)
+    if warehouse is None:
+        raise _business_error("MASTER_WAREHOUSE_NOT_FOUND", "창고를 찾을 수 없습니다.", 404)
+
+    try:
+        repo.set_warehouse_active(db, warehouse, active_yn)
+        db.commit()
+        return _dump(_warehouse_summary(warehouse))
+    except Exception:
+        db.rollback()
+        raise
 
 
 def get_client_warehouses(db: Session, auth: AuthContext, client_id: int | None = None) -> list[dict]:

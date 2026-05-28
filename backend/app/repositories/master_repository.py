@@ -32,10 +32,108 @@ def get_client(db: Session, client_id: int) -> Client | None:
     return db.query(Client).filter(Client.id == client_id).one_or_none()
 
 
+def get_client_by_id(db: Session, client_id: int) -> Client | None:
+    return get_client(db, client_id)
+
+
+def find_client_by_code(db: Session, client_code: str) -> Client | None:
+    return db.query(Client).filter(Client.client_code == client_code).one_or_none()
+
+
+def create_client(
+    db: Session,
+    *,
+    client_code: str,
+    client_name: str,
+    business_no: str | None = None,
+    contact_name: str | None = None,
+    contact_phone: str | None = None,
+    contact_email: str | None = None,
+    use_oms: bool = False,
+    use_wms: bool = True,
+    use_returns: bool = True,
+    use_settlement: bool = False,
+    remarks: str | None = None,
+) -> Client:
+    client = Client(
+        client_code=client_code,
+        client_name=client_name,
+        business_no=business_no,
+        contact_name=contact_name,
+        contact_phone=contact_phone,
+        contact_email=contact_email,
+        use_oms=use_oms,
+        use_wms=use_wms,
+        use_returns=use_returns,
+        use_settlement=use_settlement,
+        remarks=remarks,
+        active_yn=True,
+    )
+    db.add(client)
+    db.flush()
+    return client
+
+
+def update_client(db: Session, client: Client, values: dict[str, object]) -> Client:
+    for field, value in values.items():
+        setattr(client, field, value)
+    db.flush()
+    return client
+
+
+def set_client_active(db: Session, client: Client, active_yn: bool) -> Client:
+    client.active_yn = active_yn
+    db.flush()
+    return client
+
+
 def list_warehouses(db: Session, active_only: bool = True) -> list[Warehouse]:
     query = db.query(Warehouse)
     query = _active(query, Warehouse, active_only)
     return query.order_by(Warehouse.warehouse_name, Warehouse.id).all()
+
+
+def get_warehouse_by_id(db: Session, warehouse_id: int) -> Warehouse | None:
+    return db.query(Warehouse).filter(Warehouse.id == warehouse_id).one_or_none()
+
+
+def find_warehouse_by_code(db: Session, warehouse_code: str) -> Warehouse | None:
+    return db.query(Warehouse).filter(Warehouse.warehouse_code == warehouse_code).one_or_none()
+
+
+def create_warehouse(
+    db: Session,
+    *,
+    warehouse_code: str,
+    warehouse_name: str,
+    warehouse_type: str | None = None,
+    address: str | None = None,
+    remarks: str | None = None,
+) -> Warehouse:
+    warehouse = Warehouse(
+        warehouse_code=warehouse_code,
+        warehouse_name=warehouse_name,
+        warehouse_type=warehouse_type,
+        address=address,
+        remarks=remarks,
+        active_yn=True,
+    )
+    db.add(warehouse)
+    db.flush()
+    return warehouse
+
+
+def update_warehouse(db: Session, warehouse: Warehouse, values: dict[str, object]) -> Warehouse:
+    for field, value in values.items():
+        setattr(warehouse, field, value)
+    db.flush()
+    return warehouse
+
+
+def set_warehouse_active(db: Session, warehouse: Warehouse, active_yn: bool) -> Warehouse:
+    warehouse.active_yn = active_yn
+    db.flush()
+    return warehouse
 
 
 def list_client_warehouses(
