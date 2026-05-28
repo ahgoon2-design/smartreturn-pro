@@ -45,3 +45,4 @@
 | ë¬¸ì„œ | ì´ ë¬¸ì„œì˜ ì—­í•  | ì–¸ì œ ì½ì–´ì•¼ í•˜ëŠ”ì§€ | êµ¬í˜„ ì „ í•„ìˆ˜ ì—¬ë¶€ |
 | --- | --- | --- | --- |
 | `docs/business/smartreturn-pro-master-data-manage-policy.md` | P0 ê¸°ì¤€ì •ë³´ ìƒì„±, ìˆ˜ì •, ì‚¬ìš©ì¤‘ì§€, ì¬í™œì„±í™” ì •ì±…ê³¼ DELETE API ë¯¸ì§€ì› ê¸°ì¤€ì„ ì •ë¦¬í•œë‹¤. | ê¸°ì¤€ì •ë³´ create/update/disable API skeleton êµ¬í˜„ ì „ | í•„ìˆ˜ |
+| `docs/p0-product-master-management-api-verification-closeout.md` | P0 »óÇ° ¹× »óÇ°¹ÙÄÚµå °ü¸® API ¼öµ¿ °ËÁõ ¿Ï·á °á°ú¸¦ ±â·ÏÇÑ´Ù. | product/product_barcodes °ü¸® API ÈÄ¼Ó º¸¿Ï ¶Ç´Â °ËÁõ ÀÎ¼öÀÎ°è ½Ã | ±ÇÀå |
