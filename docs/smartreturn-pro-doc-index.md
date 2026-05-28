@@ -52,3 +52,4 @@
 | `docs/p0-import-job-readonly-api-verification-closeout.md` | P0 import job read-only API 구현 및 검증 완료 결과를 기록한다. | import job 조회 계약 후속 보완 또는 프론트 preview/검증 화면 인수인계 시 | 권장 |
 | docs/p0-import-job-create-api-verification-closeout.md | P0 import job 생성 API skeleton 구현 및 검증 완료 결과를 기록한다. | import job 생성 계약 후속 보완 또는 upload/paste 단계 인수인계 시 | 권장 |
 | `docs/p0-import-paste-rows-api-verification-closeout.md` | P0 import paste rows API skeleton 구현 및 검증 완료 결과를 기록한다. | paste/grid row 저장 계약 후속 보완 또는 validation 단계 인수인계 시 | 권장 |
+| `docs/p0-import-paste-rows-api-manual-verification-closeout.md` | P0 import paste rows API 로컬 수동 검증 완료 결과를 기록한다. | paste/grid row 저장 수동 검증 인수인계 또는 validation API 설계 전 확인 시 | 권장 |
