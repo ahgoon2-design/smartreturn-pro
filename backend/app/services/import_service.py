@@ -1,4 +1,4 @@
-"""Import job read-only service."""
+"""Import job service."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.core.auth_context import resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, require_roles
+from app.repositories import master_repository
 from app.repositories import import_repository as repo
 from app.schemas.auth import AuthContext
 from app.schemas.imports import (
+    ImportJobCreateRequest,
     ImportJobDetailResponse,
     ImportJobErrorsResponse,
     ImportJobFileResponse,
@@ -19,6 +21,22 @@ from app.schemas.imports import (
     ImportJobSummaryResponse,
     ImportValidationErrorResponse,
 )
+
+
+ALLOWED_IMPORT_TYPES = {
+    "PRODUCT_MASTER",
+    "PRODUCT_BARCODE",
+    "RETURN_EXPECTED",
+    "RETURN_RECEPTION",
+    "INBOUND_EXPECTED",
+    "OUTBOUND_ORDER",
+}
+
+ALLOWED_SOURCE_TYPES = {
+    "EXCEL_FILE",
+    "PASTE",
+    "MANUAL",
+}
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -35,6 +53,43 @@ def _safe_page_size(page_size: int) -> int:
 
 def _require_import_view(auth: AuthContext) -> None:
     require_permission(auth, "IMPORT_VIEW")
+
+
+def _require_import_manage(auth: AuthContext) -> None:
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_permission(auth, "IMPORT_MANAGE")
+
+
+def _ensure_import_type(import_type: str) -> str:
+    value = import_type.strip()
+    if value not in ALLOWED_IMPORT_TYPES:
+        raise _business_error("IMPORT_JOB_IMPORT_TYPE_INVALID", "지원하지 않는 import_type 입니다.")
+    return value
+
+
+def _ensure_source_type(source_type: str) -> str:
+    value = source_type.strip()
+    if value not in ALLOWED_SOURCE_TYPES:
+        raise _business_error("IMPORT_JOB_SOURCE_TYPE_INVALID", "지원하지 않는 source_type 입니다.")
+    return value
+
+
+def _ensure_requested_client(db: Session, client_id: int):
+    client = master_repository.get_client_by_id(db, client_id)
+    if client is None:
+        raise _business_error("MASTER_CLIENT_NOT_FOUND", "고객사를 찾을 수 없습니다.", 404)
+    if not client.active_yn:
+        raise _business_error("MASTER_CLIENT_INACTIVE", "비활성 고객사에는 import job을 생성할 수 없습니다.")
+    return client
+
+
+def _ensure_requested_warehouse(db: Session, warehouse_id: int):
+    warehouse = master_repository.get_warehouse_by_id(db, warehouse_id)
+    if warehouse is None:
+        raise _business_error("MASTER_WAREHOUSE_NOT_FOUND", "창고를 찾을 수 없습니다.", 404)
+    if not warehouse.active_yn:
+        raise _business_error("MASTER_WAREHOUSE_INACTIVE", "비활성 창고에는 import job을 생성할 수 없습니다.")
+    return warehouse
 
 
 def _job_summary(job, client, warehouse) -> ImportJobSummaryResponse:
@@ -129,6 +184,44 @@ def _ensure_job_access(auth: AuthContext, job) -> None:
             return
         raise ClientScopeDeniedError("고객사 범위가 지정되지 않은 import job은 내부 운영자만 조회할 수 있습니다.")
     resolve_effective_client_id(auth, job.requested_client_id)
+
+
+def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRequest) -> dict:
+    _require_import_manage(auth)
+    if request.requested_client_id is None:
+        raise _business_error("IMPORT_JOB_REQUESTED_CLIENT_REQUIRED", "requested_client_id는 필수입니다.")
+    requested_client_id = resolve_effective_client_id(auth, request.requested_client_id)
+
+    import_type = _ensure_import_type(request.import_type)
+    source_type = _ensure_source_type(request.source_type)
+    _ensure_requested_client(db, requested_client_id)
+    if request.requested_warehouse_id is not None:
+        _ensure_requested_warehouse(db, request.requested_warehouse_id)
+
+    try:
+        job = repo.create_import_job(
+            db,
+            import_type=import_type,
+            source_type=source_type,
+            source_name=request.source_name,
+            requested_client_id=requested_client_id,
+            requested_warehouse_id=request.requested_warehouse_id,
+            file_name=request.file_name,
+            worksheet_name=request.worksheet_name,
+            message=request.message,
+            raw_json=request.raw_json,
+            created_by=auth.user_id,
+        )
+        db.commit()
+        row = repo.get_import_job(db, job.id)
+        if row is None:
+            raise _business_error("IMPORT_JOB_NOT_FOUND", "생성된 import job을 찾을 수 없습니다.", 404)
+        created_job, client, warehouse = row
+        files = repo.list_import_job_files(db, job_id=created_job.id)
+        return _job_detail(created_job, client, warehouse, files).model_dump()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def list_import_jobs(

@@ -1,10 +1,38 @@
-"""Import job read-only API schema."""
+"""Import job API schema."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class ImportJobCreateRequest(BaseModel):
+    import_type: str
+    source_type: str
+    source_name: str | None = None
+    requested_client_id: int | None = None
+    requested_warehouse_id: int | None = None
+    file_name: str | None = None
+    worksheet_name: str | None = None
+    message: str | None = None
+    raw_json: dict | None = None
+
+    @field_validator("import_type", "source_type")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("source_name", "file_name", "worksheet_name", "message")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class ImportPageMeta(BaseModel):

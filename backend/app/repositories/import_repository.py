@@ -1,4 +1,4 @@
-"""Import job read-only repository."""
+"""Import job repository."""
 
 from __future__ import annotations
 
@@ -6,6 +6,49 @@ from sqlalchemy.orm import Session
 
 from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportValidationError
 from app.models.master import Client, Warehouse
+
+
+def create_import_job(
+    db: Session,
+    *,
+    import_type: str,
+    source_type: str,
+    source_name: str | None,
+    requested_client_id: int,
+    requested_warehouse_id: int | None,
+    file_name: str | None,
+    worksheet_name: str | None,
+    message: str | None,
+    raw_json: dict | None,
+    created_by: int,
+) -> ImportJob:
+    job = ImportJob(
+        import_type=import_type,
+        source_type=source_type,
+        source_name=source_name,
+        requested_client_id=requested_client_id,
+        requested_warehouse_id=requested_warehouse_id,
+        status="DRAFT",
+        total_rows=0,
+        parsed_rows=0,
+        valid_rows=0,
+        invalid_rows=0,
+        inserted_rows=0,
+        updated_rows=0,
+        skipped_rows=0,
+        error_rows=0,
+        progress_percent=0,
+        file_name=file_name,
+        worksheet_name=worksheet_name,
+        message=message,
+        raw_json=raw_json,
+        created_by=created_by,
+        started_at=None,
+        finished_at=None,
+    )
+    db.add(job)
+    db.flush()
+    return job
 
 
 def _import_job_query(
