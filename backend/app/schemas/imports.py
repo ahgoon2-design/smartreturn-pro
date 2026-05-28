@@ -35,6 +35,48 @@ class ImportJobCreateRequest(BaseModel):
         return value or None
 
 
+class ImportPasteRowItem(BaseModel):
+    row_no: int | None = None
+    raw_json: dict
+    normalized_json: dict | None = None
+    source_row_key: str | None = None
+
+    @field_validator("source_row_key")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ImportPasteRowsRequest(BaseModel):
+    rows: list[ImportPasteRowItem]
+    replace_existing: bool = False
+    source_name: str | None = None
+    worksheet_name: str | None = None
+
+    @field_validator("source_name", "worksheet_name")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ImportPasteRowsResponse(BaseModel):
+    job_id: int
+    saved_row_count: int
+    status: str
+    total_rows: int
+    parsed_rows: int
+    valid_rows: int
+    invalid_rows: int
+    error_rows: int
+    progress_percent: int
+
+
 class ImportPageMeta(BaseModel):
     page: int
     page_size: int

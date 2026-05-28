@@ -51,6 +51,61 @@ def create_import_job(
     return job
 
 
+def bulk_create_import_job_rows(
+    db: Session,
+    *,
+    job_id: int,
+    client_id: int | None,
+    rows: list[dict],
+) -> list[ImportJobRow]:
+    row_models = [
+        ImportJobRow(
+            job_id=job_id,
+            client_id=client_id,
+            row_no=row["row_no"],
+            source_row_key=row.get("source_row_key"),
+            row_hash=None,
+            raw_json=row["raw_json"],
+            normalized_json=row.get("normalized_json"),
+            validation_status="NOT_VALIDATED",
+            validation_message=None,
+            target_action=None,
+            target_table=None,
+            target_id=None,
+        )
+        for row in rows
+    ]
+    db.add_all(row_models)
+    db.flush()
+    return row_models
+
+
+def update_import_job_after_rows_saved(
+    db: Session,
+    *,
+    job: ImportJob,
+    row_count: int,
+    source_name: str | None = None,
+    worksheet_name: str | None = None,
+) -> ImportJob:
+    if source_name is not None:
+        job.source_name = source_name
+    if worksheet_name is not None:
+        job.worksheet_name = worksheet_name
+    job.status = "READY_TO_VALIDATE"
+    job.total_rows = row_count
+    job.parsed_rows = row_count
+    job.valid_rows = 0
+    job.invalid_rows = 0
+    job.inserted_rows = 0
+    job.updated_rows = 0
+    job.skipped_rows = 0
+    job.error_rows = 0
+    job.progress_percent = 0
+    db.flush()
+    return job
+
+
 def _import_job_query(
     db: Session,
     *,

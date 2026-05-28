@@ -9,7 +9,7 @@ from app.core.dependencies import get_current_auth_context, get_db
 from app.core.permissions import require_password_change_completed, require_permission, require_roles
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
-from app.schemas.imports import ImportJobCreateRequest
+from app.schemas.imports import ImportJobCreateRequest, ImportPasteRowsRequest
 from app.services import import_service
 
 
@@ -37,6 +37,21 @@ def create_import_job_api(
         result_code="IMPORT_JOB_CREATED",
         message="Import job이 생성되었습니다.",
         data=import_service.create_import_job(db, auth, request),
+    )
+
+
+@router.post("/{job_id}/rows/paste", response_model=ApiResult)
+def save_paste_import_job_rows_api(
+    job_id: int,
+    request: ImportPasteRowsRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_JOB_ROWS_SAVED",
+        message="Import job row瑜???덉뒿?덈떎.",
+        data=import_service.save_paste_import_job_rows(db, auth, job_id=job_id, request=request),
     )
 
 

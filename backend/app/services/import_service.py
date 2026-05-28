@@ -19,6 +19,8 @@ from app.schemas.imports import (
     ImportJobRowResponse,
     ImportJobRowsResponse,
     ImportJobSummaryResponse,
+    ImportPasteRowsRequest,
+    ImportPasteRowsResponse,
     ImportValidationErrorResponse,
 )
 
@@ -37,6 +39,8 @@ ALLOWED_SOURCE_TYPES = {
     "PASTE",
     "MANUAL",
 }
+
+PASTE_ROW_SOURCE_TYPES = {"PASTE", "MANUAL"}
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -72,6 +76,14 @@ def _ensure_source_type(source_type: str) -> str:
     if value not in ALLOWED_SOURCE_TYPES:
         raise _business_error("IMPORT_JOB_SOURCE_TYPE_INVALID", "지원하지 않는 source_type 입니다.")
     return value
+
+
+def _ensure_paste_source_type(source_type: str) -> None:
+    if source_type not in PASTE_ROW_SOURCE_TYPES:
+        raise _business_error(
+            "IMPORT_JOB_PASTE_SOURCE_TYPE_INVALID",
+            "Paste row ??ν? PASTE ?먮뒗 MANUAL source_type?먯꽌留??덉슜?⑸땲??",
+        )
 
 
 def _ensure_requested_client(db: Session, client_id: int):
@@ -186,6 +198,32 @@ def _ensure_job_access(auth: AuthContext, job) -> None:
     resolve_effective_client_id(auth, job.requested_client_id)
 
 
+def _normalize_paste_rows(request: ImportPasteRowsRequest) -> list[dict]:
+    if request.replace_existing:
+        raise _business_error("IMPORT_JOB_REPLACE_UNSUPPORTED", "replace_existing? 1李?skeleton?먯꽌 吏?먰븯吏 ?딆뒿?덈떎.")
+    if not request.rows:
+        raise _business_error("IMPORT_JOB_ROWS_REQUIRED", "Import row媛 ?꾩슂?⑸땲??")
+
+    normalized_rows: list[dict] = []
+    seen_row_nos: set[int] = set()
+    for index, row in enumerate(request.rows, start=1):
+        row_no = row.row_no if row.row_no is not None else index
+        if row_no < 1:
+            raise _business_error("IMPORT_JOB_ROW_NO_INVALID", "row_no??1 ?댁긽?댁뼱???⑸땲??")
+        if row_no in seen_row_nos:
+            raise _business_error("IMPORT_JOB_ROW_NO_DUPLICATED", "以묐났??row_no媛 ?덉뒿?덈떎.")
+        seen_row_nos.add(row_no)
+        normalized_rows.append(
+            {
+                "row_no": row_no,
+                "raw_json": row.raw_json,
+                "normalized_json": row.normalized_json,
+                "source_row_key": row.source_row_key,
+            }
+        )
+    return normalized_rows
+
+
 def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRequest) -> dict:
     _require_import_manage(auth)
     if request.requested_client_id is None:
@@ -219,6 +257,56 @@ def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRe
         created_job, client, warehouse = row
         files = repo.list_import_job_files(db, job_id=created_job.id)
         return _job_detail(created_job, client, warehouse, files).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def save_paste_import_job_rows(
+    db: Session,
+    auth: AuthContext,
+    *,
+    job_id: int,
+    request: ImportPasteRowsRequest,
+) -> dict:
+    _require_import_manage(auth)
+    row = repo.get_import_job(db, job_id)
+    if row is None:
+        raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job??李얠쓣 ???놁뒿?덈떎.", 404)
+    job, _, _ = row
+    _ensure_job_access(auth, job)
+    _ensure_paste_source_type(job.source_type)
+
+    rows = _normalize_paste_rows(request)
+    if repo.count_import_job_rows(db, job_id=job.id) > 0:
+        raise _business_error("IMPORT_JOB_ROWS_ALREADY_EXISTS", "湲곗〈 row媛 ?덈뒗 import job?먮뒗 paste row瑜????????놁뒿?덈떎.")
+
+    try:
+        repo.bulk_create_import_job_rows(
+            db,
+            job_id=job.id,
+            client_id=job.requested_client_id,
+            rows=rows,
+        )
+        updated_job = repo.update_import_job_after_rows_saved(
+            db,
+            job=job,
+            row_count=len(rows),
+            source_name=request.source_name,
+            worksheet_name=request.worksheet_name,
+        )
+        db.commit()
+        return ImportPasteRowsResponse(
+            job_id=updated_job.id,
+            saved_row_count=len(rows),
+            status=updated_job.status,
+            total_rows=updated_job.total_rows,
+            parsed_rows=updated_job.parsed_rows,
+            valid_rows=updated_job.valid_rows,
+            invalid_rows=updated_job.invalid_rows,
+            error_rows=updated_job.error_rows,
+            progress_percent=updated_job.progress_percent,
+        ).model_dump()
     except Exception:
         db.rollback()
         raise
