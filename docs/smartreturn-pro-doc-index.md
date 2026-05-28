@@ -48,3 +48,4 @@
 | `docs/p0-product-master-management-api-verification-closeout.md` | P0 상품 및 상품바코드 관리 API 수동 검증 완료 결과를 기록한다. | product/product_barcodes 관리 API 후속 보완 또는 검증 인수인계 시 | 권장 |
 | `docs/p0-common-code-management-api-verification-closeout.md` | P0 공통코드 그룹 및 공통코드 관리 API 수동 검증 완료 결과를 기록한다. | common_code_groups/common_codes 관리 API 후속 보완 또는 검증 인수인계 시 | 권장 |
 | `docs/p0-client-warehouse-management-api-verification-closeout.md` | P0 고객사 및 창고 관리 API 수동 검증 완료 결과를 기록한다. | clients/warehouses 관리 API 후속 보완 또는 검증 인수인계 시 | 권장 |
+| `docs/p0-client-warehouse-settings-management-api-verification-closeout.md` | P0 고객사 사용창고 관리 API 수동 검증 완료 결과를 기록한다. | client_warehouse_settings 관리 API 후속 보완 또는 검증 인수인계 시 | 권장 |
