@@ -12,6 +12,9 @@ from app.schemas.auth import AuthContext
 from app.schemas.master import (
     ClientCreateRequest,
     ClientDetail,
+    ClientWarehouseSettingCreateRequest,
+    ClientWarehouseSettingResponse,
+    ClientWarehouseSettingUpdateRequest,
     ClientSummary,
     ClientUpdateRequest,
     ClientWarehouseSummary,
@@ -33,6 +36,19 @@ from app.schemas.master import (
     WarehouseSummary,
     WarehouseUpdateRequest,
 )
+
+
+CLIENT_WAREHOUSE_USAGE_TYPES = {
+    "INBOUND",
+    "OUTBOUND",
+    "RETURN_GOOD",
+    "RETURN_HOLD",
+    "RETURN_DISPOSAL",
+    "RETURN_REFURB",
+    "RETURN_MANUFACTURER",
+    "SAMPLE",
+    "STORAGE",
+}
 
 
 def _dump(model) -> dict:
@@ -91,6 +107,40 @@ def _ensure_client_code_available(db: Session, client_code: str) -> None:
 def _ensure_warehouse_code_available(db: Session, warehouse_code: str) -> None:
     if repo.find_warehouse_by_code(db, warehouse_code):
         raise _business_error("MASTER_WAREHOUSE_CODE_DUPLICATED", "이미 등록된 창고 코드입니다.")
+
+
+def _ensure_active_warehouse(db: Session, warehouse_id: int):
+    warehouse = repo.get_warehouse_by_id(db, warehouse_id)
+    if warehouse is None:
+        raise _business_error("MASTER_WAREHOUSE_NOT_FOUND", "Warehouse not found.", 404)
+    if not warehouse.active_yn:
+        raise _business_error("MASTER_WAREHOUSE_INACTIVE", "Inactive warehouse cannot be linked.")
+    return warehouse
+
+
+def _ensure_client_warehouse_usage_type(usage_type: str) -> str:
+    usage_type = usage_type.strip()
+    if usage_type not in CLIENT_WAREHOUSE_USAGE_TYPES:
+        raise _business_error("MASTER_CLIENT_WAREHOUSE_USAGE_TYPE_INVALID", "Invalid client warehouse usage_type.")
+    return usage_type
+
+
+def _ensure_client_warehouse_setting_available(
+    db: Session,
+    *,
+    client_id: int,
+    warehouse_id: int,
+    usage_type: str,
+    exclude_setting_id: int | None = None,
+) -> None:
+    if repo.find_client_warehouse_setting(
+        db,
+        client_id=client_id,
+        warehouse_id=warehouse_id,
+        usage_type=usage_type,
+        exclude_setting_id=exclude_setting_id,
+    ):
+        raise _business_error("MASTER_CLIENT_WAREHOUSE_DUPLICATED", "Duplicated client warehouse setting.")
 
 
 def _ensure_product_code_available(
@@ -176,6 +226,28 @@ def _warehouse_summary(warehouse) -> WarehouseSummary:
         warehouse_name=warehouse.warehouse_name,
         warehouse_type=warehouse.warehouse_type,
         active_yn=warehouse.active_yn,
+    )
+
+
+def _client_warehouse_setting_response(db: Session, setting) -> dict:
+    client = repo.get_client(db, setting.client_id)
+    warehouse = repo.get_warehouse_by_id(db, setting.warehouse_id)
+    if client is None:
+        raise _business_error("MASTER_CLIENT_NOT_FOUND", "Client not found.", 404)
+    if warehouse is None:
+        raise _business_error("MASTER_WAREHOUSE_NOT_FOUND", "Warehouse not found.", 404)
+    return _dump(
+        ClientWarehouseSettingResponse(
+            setting_id=setting.id,
+            client_id=client.id,
+            client_name=client.client_name,
+            warehouse_id=warehouse.id,
+            warehouse_code=warehouse.warehouse_code,
+            warehouse_name=warehouse.warehouse_name,
+            usage_type=setting.usage_type,
+            is_default=setting.is_default,
+            active_yn=setting.active_yn,
+        )
     )
 
 
@@ -389,6 +461,125 @@ def get_client_warehouses(db: Session, auth: AuthContext, client_id: int | None 
         )
         for setting, client, warehouse in rows
     ]
+
+
+def create_client_warehouse_setting(
+    db: Session,
+    auth: AuthContext,
+    request: ClientWarehouseSettingCreateRequest,
+) -> dict:
+    _require_warehouse_manage(auth)
+    _ensure_active_client(db, request.client_id)
+    _ensure_active_warehouse(db, request.warehouse_id)
+    usage_type = _ensure_client_warehouse_usage_type(request.usage_type)
+    _ensure_client_warehouse_setting_available(
+        db,
+        client_id=request.client_id,
+        warehouse_id=request.warehouse_id,
+        usage_type=usage_type,
+    )
+
+    try:
+        if request.is_default:
+            repo.unset_default_client_warehouse_settings(db, client_id=request.client_id, usage_type=usage_type)
+        setting = repo.create_client_warehouse_setting(
+            db,
+            client_id=request.client_id,
+            warehouse_id=request.warehouse_id,
+            usage_type=usage_type,
+            is_default=request.is_default,
+        )
+        db.commit()
+        return _client_warehouse_setting_response(db, setting)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_client_warehouse_setting(
+    db: Session,
+    auth: AuthContext,
+    setting_id: int,
+    request: ClientWarehouseSettingUpdateRequest,
+) -> dict:
+    _require_warehouse_manage(auth)
+    setting = repo.get_client_warehouse_setting_by_id(db, setting_id)
+    if setting is None:
+        raise _business_error("MASTER_CLIENT_WAREHOUSE_NOT_FOUND", "Client warehouse setting not found.", 404)
+
+    values = request.model_dump(exclude_unset=True)
+    if "usage_type" in values:
+        usage_type = _ensure_client_warehouse_usage_type(str(values["usage_type"]))
+        if setting.is_default and usage_type != setting.usage_type:
+            raise _business_error(
+                "MASTER_CLIENT_WAREHOUSE_DEFAULT_USAGE_TYPE_LOCKED",
+                "Default client warehouse usage_type cannot be changed.",
+            )
+        if usage_type != setting.usage_type:
+            _ensure_client_warehouse_setting_available(
+                db,
+                client_id=setting.client_id,
+                warehouse_id=setting.warehouse_id,
+                usage_type=usage_type,
+                exclude_setting_id=setting.id,
+            )
+        values["usage_type"] = usage_type
+
+    try:
+        repo.update_client_warehouse_setting(db, setting, values)
+        db.commit()
+        return _client_warehouse_setting_response(db, setting)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_client_warehouse_setting_active(
+    db: Session,
+    auth: AuthContext,
+    setting_id: int,
+    active_yn: bool,
+) -> dict:
+    _require_warehouse_manage(auth)
+    setting = repo.get_client_warehouse_setting_by_id(db, setting_id)
+    if setting is None:
+        raise _business_error("MASTER_CLIENT_WAREHOUSE_NOT_FOUND", "Client warehouse setting not found.", 404)
+    if not active_yn and setting.is_default:
+        raise _business_error(
+            "MASTER_CLIENT_WAREHOUSE_DEFAULT_DISABLE_DENIED",
+            "Default client warehouse setting cannot be disabled.",
+        )
+    if active_yn:
+        _ensure_active_client(db, setting.client_id)
+        _ensure_active_warehouse(db, setting.warehouse_id)
+
+    try:
+        repo.set_client_warehouse_setting_active(db, setting, active_yn)
+        db.commit()
+        return _client_warehouse_setting_response(db, setting)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_default_client_warehouse_setting(db: Session, auth: AuthContext, setting_id: int) -> dict:
+    _require_warehouse_manage(auth)
+    setting = repo.get_client_warehouse_setting_by_id(db, setting_id)
+    if setting is None:
+        raise _business_error("MASTER_CLIENT_WAREHOUSE_NOT_FOUND", "Client warehouse setting not found.", 404)
+    if not setting.active_yn:
+        raise _business_error("MASTER_CLIENT_WAREHOUSE_INACTIVE", "Inactive setting cannot become default.")
+    _ensure_active_client(db, setting.client_id)
+    _ensure_active_warehouse(db, setting.warehouse_id)
+
+    try:
+        repo.unset_default_client_warehouse_settings(db, client_id=setting.client_id, usage_type=setting.usage_type)
+        repo.set_client_warehouse_setting_default(db, setting)
+        db.commit()
+        return _client_warehouse_setting_response(db, setting)
+    except Exception:
+        db.rollback()
+        raise
 
 
 def get_products(

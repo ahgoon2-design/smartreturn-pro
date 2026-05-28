@@ -156,6 +156,112 @@ def list_client_warehouses(
     return query.order_by(ClientWarehouseSetting.is_default.desc(), Warehouse.warehouse_name).all()
 
 
+def get_client_warehouse_setting_by_id(db: Session, setting_id: int) -> ClientWarehouseSetting | None:
+    return db.query(ClientWarehouseSetting).filter(ClientWarehouseSetting.id == setting_id).one_or_none()
+
+
+def find_client_warehouse_setting(
+    db: Session,
+    *,
+    client_id: int,
+    warehouse_id: int,
+    usage_type: str,
+    exclude_setting_id: int | None = None,
+) -> ClientWarehouseSetting | None:
+    query = db.query(ClientWarehouseSetting).filter(
+        ClientWarehouseSetting.client_id == client_id,
+        ClientWarehouseSetting.warehouse_id == warehouse_id,
+        ClientWarehouseSetting.usage_type == usage_type,
+    )
+    if exclude_setting_id is not None:
+        query = query.filter(ClientWarehouseSetting.id != exclude_setting_id)
+    return query.one_or_none()
+
+
+def create_client_warehouse_setting(
+    db: Session,
+    *,
+    client_id: int,
+    warehouse_id: int,
+    usage_type: str,
+    is_default: bool = False,
+) -> ClientWarehouseSetting:
+    setting = ClientWarehouseSetting(
+        client_id=client_id,
+        warehouse_id=warehouse_id,
+        usage_type=usage_type,
+        is_default=is_default,
+        active_yn=True,
+    )
+    db.add(setting)
+    db.flush()
+    return setting
+
+
+def update_client_warehouse_setting(
+    db: Session,
+    setting: ClientWarehouseSetting,
+    values: dict[str, object],
+) -> ClientWarehouseSetting:
+    for field, value in values.items():
+        setattr(setting, field, value)
+    db.flush()
+    return setting
+
+
+def set_client_warehouse_setting_active(
+    db: Session,
+    setting: ClientWarehouseSetting,
+    active_yn: bool,
+) -> ClientWarehouseSetting:
+    setting.active_yn = active_yn
+    if active_yn:
+        setting.is_default = False
+    db.flush()
+    return setting
+
+
+def find_default_client_warehouse_setting(
+    db: Session,
+    *,
+    client_id: int,
+    usage_type: str,
+) -> ClientWarehouseSetting | None:
+    return (
+        db.query(ClientWarehouseSetting)
+        .filter(
+            ClientWarehouseSetting.client_id == client_id,
+            ClientWarehouseSetting.usage_type == usage_type,
+            ClientWarehouseSetting.active_yn.is_(True),
+            ClientWarehouseSetting.is_default.is_(True),
+        )
+        .one_or_none()
+    )
+
+
+def unset_default_client_warehouse_settings(db: Session, *, client_id: int, usage_type: str) -> None:
+    (
+        db.query(ClientWarehouseSetting)
+        .filter(
+            ClientWarehouseSetting.client_id == client_id,
+            ClientWarehouseSetting.usage_type == usage_type,
+            ClientWarehouseSetting.active_yn.is_(True),
+            ClientWarehouseSetting.is_default.is_(True),
+        )
+        .update({ClientWarehouseSetting.is_default: False}, synchronize_session=False)
+    )
+    db.flush()
+
+
+def set_client_warehouse_setting_default(
+    db: Session,
+    setting: ClientWarehouseSetting,
+) -> ClientWarehouseSetting:
+    setting.is_default = True
+    db.flush()
+    return setting
+
+
 def list_products(
     db: Session,
     client_id: int | None = None,

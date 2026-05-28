@@ -160,6 +160,39 @@ class ClientWarehouseSummary(BaseModel):
     active_yn: bool
 
 
+class ClientWarehouseSettingResponse(ClientWarehouseSummary):
+    setting_id: int
+
+
+class ClientWarehouseSettingCreateRequest(BaseModel):
+    client_id: int
+    warehouse_id: int
+    usage_type: str
+    is_default: bool = False
+
+    @field_validator("usage_type")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+
+class ClientWarehouseSettingUpdateRequest(BaseModel):
+    usage_type: str | None = None
+
+    @field_validator("usage_type")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+
 class ProductBarcodeDto(BaseModel):
     barcode_id: int
     barcode: str

@@ -10,6 +10,8 @@ from app.core.permissions import require_password_change_completed, require_perm
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.master import (
+    ClientWarehouseSettingCreateRequest,
+    ClientWarehouseSettingUpdateRequest,
     ClientCreateRequest,
     ClientUpdateRequest,
     CommonCodeCreateRequest,
@@ -228,6 +230,77 @@ def list_client_warehouses_api(
         result_code="MASTER_CLIENT_WAREHOUSES_FOUND",
         message="고객사 사용창고 목록을 조회했습니다.",
         data=master_service.get_client_warehouses(db, auth, client_id),
+    )
+
+
+@router.post("/client-warehouses", response_model=ApiResult)
+def create_client_warehouse_setting_api(
+    request: ClientWarehouseSettingCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_WAREHOUSE_CREATED",
+        message="고객사 사용창고 설정을 생성했습니다.",
+        data=master_service.create_client_warehouse_setting(db, auth, request),
+    )
+
+
+@router.patch("/client-warehouses/{setting_id}", response_model=ApiResult)
+def update_client_warehouse_setting_api(
+    setting_id: int,
+    request: ClientWarehouseSettingUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_WAREHOUSE_UPDATED",
+        message="고객사 사용창고 설정을 수정했습니다.",
+        data=master_service.update_client_warehouse_setting(db, auth, setting_id, request),
+    )
+
+
+@router.post("/client-warehouses/{setting_id}/disable", response_model=ApiResult)
+def disable_client_warehouse_setting_api(
+    setting_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_WAREHOUSE_DISABLED",
+        message="고객사 사용창고 설정을 사용중지했습니다.",
+        data=master_service.set_client_warehouse_setting_active(db, auth, setting_id, False),
+    )
+
+
+@router.post("/client-warehouses/{setting_id}/enable", response_model=ApiResult)
+def enable_client_warehouse_setting_api(
+    setting_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_WAREHOUSE_ENABLED",
+        message="고객사 사용창고 설정을 재활성화했습니다.",
+        data=master_service.set_client_warehouse_setting_active(db, auth, setting_id, True),
+    )
+
+
+@router.post("/client-warehouses/{setting_id}/set-default", response_model=ApiResult)
+def set_default_client_warehouse_setting_api(
+    setting_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_WAREHOUSE_DEFAULT_SET",
+        message="고객사 기본 사용창고를 설정했습니다.",
+        data=master_service.set_default_client_warehouse_setting(db, auth, setting_id),
     )
 
 
