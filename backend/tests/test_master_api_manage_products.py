@@ -330,6 +330,12 @@ def test_product_barcode_create_blocks_duplicate_and_invalid_qty(client: TestCli
     assert duplicate_response.status_code == 400
     assert duplicate_response.json()["result_code"] == "MASTER_PRODUCT_BARCODE_DUPLICATED"
     assert invalid_qty_response.status_code == 422
+    invalid_payload = invalid_qty_response.json()
+    assert invalid_payload["success"] is False
+    assert invalid_payload["result_code"] == "VALIDATION_ERROR"
+    assert invalid_payload["data"] is None
+    assert invalid_payload["errors"]
+    _assert_no_sensitive_values(invalid_payload)
 
 
 def test_product_barcode_update_disable_enable(client: TestClient, db_session: Session):
