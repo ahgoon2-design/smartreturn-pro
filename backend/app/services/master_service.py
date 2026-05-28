@@ -13,7 +13,11 @@ from app.schemas.master import (
     ClientDetail,
     ClientSummary,
     ClientWarehouseSummary,
+    CommonCodeCreateRequest,
+    CommonCodeGroupCreateRequest,
+    CommonCodeGroupUpdateRequest,
     CommonCodeGroupSummary,
+    CommonCodeUpdateRequest,
     CommonCodeSummary,
     PageData,
     ProductBarcodeCreateRequest,
@@ -42,6 +46,12 @@ def _require_product_manage(auth: AuthContext) -> None:
     require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER"})
     require_permission(auth, "MASTER_MANAGE")
     require_permission(auth, "PRODUCT_MANAGE")
+
+
+def _require_common_code_manage(auth: AuthContext) -> None:
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_permission(auth, "MASTER_MANAGE")
+    require_permission(auth, "COMMON_CODE_MANAGE")
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -131,6 +141,50 @@ def _client_detail(client) -> ClientDetail:
         active_yn=client.active_yn,
         remarks=client.remarks,
     )
+
+
+def _common_code_group_summary(group) -> dict:
+    return _dump(
+        CommonCodeGroupSummary(
+            group_id=group.id,
+            group_code=group.group_code,
+            group_name=group.group_name,
+            active_yn=group.active_yn,
+        )
+    )
+
+
+def _common_code_summary(code, group) -> dict:
+    return _dump(
+        CommonCodeSummary(
+            code_id=code.id,
+            group_code=group.group_code,
+            code_value=code.code_value,
+            code_name=code.code_name,
+            sort_order=code.sort_order,
+            active_yn=code.active_yn,
+        )
+    )
+
+
+def _common_code_summary_by_id(db: Session, code_id: int) -> dict:
+    code = repo.get_common_code_by_id(db, code_id)
+    if code is None:
+        raise _business_error("MASTER_COMMON_CODE_NOT_FOUND", "怨듯넻肄붾뱶瑜?李얠쓣 ???놁뒿?덈떎.", 404)
+    group = repo.get_common_code_group_by_id(db, code.group_id)
+    if group is None:
+        raise _business_error("MASTER_COMMON_CODE_GROUP_NOT_FOUND", "怨듯넻肄붾뱶 洹몃９??李얠쓣 ???놁뒿?덈떎.", 404)
+    return _common_code_summary(code, group)
+
+
+def _ensure_common_code_group_code_available(db: Session, group_code: str) -> None:
+    if repo.find_common_code_group_by_code(db, group_code):
+        raise _business_error("MASTER_COMMON_CODE_GROUP_DUPLICATED", "?대? ?깅줉??怨듯넻肄붾뱶 洹몃９?낅땲??")
+
+
+def _ensure_common_code_value_available(db: Session, group_id: int, code_value: str) -> None:
+    if repo.find_common_code_by_value(db, group_id, code_value):
+        raise _business_error("MASTER_COMMON_CODE_DUPLICATED", "?대? ?깅줉??怨듯넻肄붾뱶媛믪엯?덈떎.")
 
 
 def get_accessible_clients(db: Session, auth: AuthContext) -> list[dict]:
@@ -416,30 +470,124 @@ def set_product_barcode_active(db: Session, auth: AuthContext, barcode_id: int, 
 
 
 def get_common_code_groups(db: Session, auth: AuthContext) -> list[dict]:
-    return [
-        _dump(
-            CommonCodeGroupSummary(
-                group_id=group.id,
-                group_code=group.group_code,
-                group_name=group.group_name,
-                active_yn=group.active_yn,
-            )
-        )
-        for group in repo.list_common_code_groups(db)
-    ]
+    return [_common_code_group_summary(group) for group in repo.list_common_code_groups(db)]
 
 
 def get_common_codes(db: Session, auth: AuthContext, group_code: str | None = None) -> list[dict]:
-    return [
-        _dump(
-            CommonCodeSummary(
-                code_id=code.id,
-                group_code=group.group_code,
-                code_value=code.code_value,
-                code_name=code.code_name,
-                sort_order=code.sort_order,
-                active_yn=code.active_yn,
-            )
+    return [_common_code_summary(code, group) for code, group in repo.list_common_codes(db, group_code=group_code)]
+
+
+def create_common_code_group(
+    db: Session,
+    auth: AuthContext,
+    request: CommonCodeGroupCreateRequest,
+) -> dict:
+    _require_common_code_manage(auth)
+    _ensure_common_code_group_code_available(db, request.group_code)
+
+    try:
+        group = repo.create_common_code_group(
+            db,
+            group_code=request.group_code,
+            group_name=request.group_name,
+            description=request.description,
         )
-        for code, group in repo.list_common_codes(db, group_code=group_code)
-    ]
+        db.commit()
+        return _common_code_group_summary(group)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_common_code_group(
+    db: Session,
+    auth: AuthContext,
+    group_id: int,
+    request: CommonCodeGroupUpdateRequest,
+) -> dict:
+    _require_common_code_manage(auth)
+    group = repo.get_common_code_group_by_id(db, group_id)
+    if group is None:
+        raise _business_error("MASTER_COMMON_CODE_GROUP_NOT_FOUND", "怨듯넻肄붾뱶 洹몃９??李얠쓣 ???놁뒿?덈떎.", 404)
+
+    try:
+        repo.update_common_code_group(db, group, request.model_dump(exclude_unset=True))
+        db.commit()
+        return _common_code_group_summary(group)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_common_code_group_active(db: Session, auth: AuthContext, group_id: int, active_yn: bool) -> dict:
+    _require_common_code_manage(auth)
+    group = repo.get_common_code_group_by_id(db, group_id)
+    if group is None:
+        raise _business_error("MASTER_COMMON_CODE_GROUP_NOT_FOUND", "怨듯넻肄붾뱶 洹몃９??李얠쓣 ???놁뒿?덈떎.", 404)
+
+    try:
+        repo.set_common_code_group_active(db, group, active_yn)
+        db.commit()
+        return _common_code_group_summary(group)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def create_common_code(db: Session, auth: AuthContext, request: CommonCodeCreateRequest) -> dict:
+    _require_common_code_manage(auth)
+    group = repo.get_common_code_group_by_id(db, request.group_id)
+    if group is None:
+        raise _business_error("MASTER_COMMON_CODE_GROUP_NOT_FOUND", "怨듯넻肄붾뱶 洹몃９??李얠쓣 ???놁뒿?덈떎.", 404)
+    if not group.active_yn:
+        raise _business_error("MASTER_COMMON_CODE_GROUP_INACTIVE", "?ъ슜以묒???怨듯넻肄붾뱶 洹몃９?먮뒗 肄붾뱶瑜??앹꽦?????놁뒿?덈떎.")
+    _ensure_common_code_value_available(db, request.group_id, request.code_value)
+
+    try:
+        code = repo.create_common_code(
+            db,
+            group_id=request.group_id,
+            code_value=request.code_value,
+            code_name=request.code_name,
+            sort_order=request.sort_order,
+            description=request.description,
+        )
+        db.commit()
+        return _common_code_summary(code, group)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_common_code(db: Session, auth: AuthContext, code_id: int, request: CommonCodeUpdateRequest) -> dict:
+    _require_common_code_manage(auth)
+    code = repo.get_common_code_by_id(db, code_id)
+    if code is None:
+        raise _business_error("MASTER_COMMON_CODE_NOT_FOUND", "怨듯넻肄붾뱶瑜?李얠쓣 ???놁뒿?덈떎.", 404)
+    if code.locked_yn:
+        raise _business_error("MASTER_COMMON_CODE_LOCKED", "잠긴 공통코드는 수정할 수 없습니다.")
+
+    try:
+        repo.update_common_code(db, code, request.model_dump(exclude_unset=True))
+        db.commit()
+        return _common_code_summary_by_id(db, code.id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_common_code_active(db: Session, auth: AuthContext, code_id: int, active_yn: bool) -> dict:
+    _require_common_code_manage(auth)
+    code = repo.get_common_code_by_id(db, code_id)
+    if code is None:
+        raise _business_error("MASTER_COMMON_CODE_NOT_FOUND", "怨듯넻肄붾뱶瑜?李얠쓣 ???놁뒿?덈떎.", 404)
+    if not active_yn and (code.system_yn or code.locked_yn):
+        raise _business_error("MASTER_COMMON_CODE_LOCKED", "시스템 또는 잠긴 공통코드는 사용중지할 수 없습니다.")
+
+    try:
+        repo.set_common_code_active(db, code, active_yn)
+        db.commit()
+        return _common_code_summary_by_id(db, code.id)
+    except Exception:
+        db.rollback()
+        raise

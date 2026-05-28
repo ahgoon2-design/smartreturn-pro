@@ -244,6 +244,53 @@ def list_common_code_groups(db: Session, active_only: bool = True) -> list[Commo
     return query.order_by(CommonCodeGroup.group_code).all()
 
 
+def get_common_code_group_by_id(db: Session, group_id: int) -> CommonCodeGroup | None:
+    return db.query(CommonCodeGroup).filter(CommonCodeGroup.id == group_id).one_or_none()
+
+
+def find_common_code_group_by_code(db: Session, group_code: str) -> CommonCodeGroup | None:
+    return db.query(CommonCodeGroup).filter(CommonCodeGroup.group_code == group_code).one_or_none()
+
+
+def create_common_code_group(
+    db: Session,
+    *,
+    group_code: str,
+    group_name: str,
+    description: str | None = None,
+) -> CommonCodeGroup:
+    group = CommonCodeGroup(
+        group_code=group_code,
+        group_name=group_name,
+        description=description,
+        active_yn=True,
+    )
+    db.add(group)
+    db.flush()
+    return group
+
+
+def update_common_code_group(
+    db: Session,
+    group: CommonCodeGroup,
+    values: dict[str, object],
+) -> CommonCodeGroup:
+    for field, value in values.items():
+        setattr(group, field, value)
+    db.flush()
+    return group
+
+
+def set_common_code_group_active(
+    db: Session,
+    group: CommonCodeGroup,
+    active_yn: bool,
+) -> CommonCodeGroup:
+    group.active_yn = active_yn
+    db.flush()
+    return group
+
+
 def list_common_codes(
     db: Session,
     group_code: str | None = None,
@@ -255,3 +302,56 @@ def list_common_codes(
     if active_only:
         query = query.filter(CommonCode.active_yn.is_(True), CommonCodeGroup.active_yn.is_(True))
     return query.order_by(CommonCodeGroup.group_code, CommonCode.sort_order, CommonCode.id).all()
+
+
+def get_common_code_by_id(db: Session, code_id: int) -> CommonCode | None:
+    return db.query(CommonCode).filter(CommonCode.id == code_id).one_or_none()
+
+
+def find_common_code_by_value(
+    db: Session,
+    group_id: int,
+    code_value: str,
+    exclude_code_id: int | None = None,
+) -> CommonCode | None:
+    query = db.query(CommonCode).filter(CommonCode.group_id == group_id, CommonCode.code_value == code_value)
+    if exclude_code_id is not None:
+        query = query.filter(CommonCode.id != exclude_code_id)
+    return query.one_or_none()
+
+
+def create_common_code(
+    db: Session,
+    *,
+    group_id: int,
+    code_value: str,
+    code_name: str,
+    sort_order: int = 0,
+    description: str | None = None,
+) -> CommonCode:
+    code = CommonCode(
+        group_id=group_id,
+        code_value=code_value,
+        code_name=code_name,
+        sort_order=sort_order,
+        system_yn=False,
+        locked_yn=False,
+        active_yn=True,
+        description=description,
+    )
+    db.add(code)
+    db.flush()
+    return code
+
+
+def update_common_code(db: Session, code: CommonCode, values: dict[str, object]) -> CommonCode:
+    for field, value in values.items():
+        setattr(code, field, value)
+    db.flush()
+    return code
+
+
+def set_common_code_active(db: Session, code: CommonCode, active_yn: bool) -> CommonCode:
+    code.active_yn = active_yn
+    db.flush()
+    return code

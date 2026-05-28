@@ -92,6 +92,99 @@ class CommonCodeSummary(BaseModel):
     active_yn: bool
 
 
+class CommonCodeGroupCreateRequest(BaseModel):
+    group_code: str
+    group_name: str
+    description: str | None = None
+
+    @field_validator("group_code", "group_name")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class CommonCodeGroupUpdateRequest(BaseModel):
+    group_name: str | None = None
+    description: str | None = None
+
+    @field_validator("group_name")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class CommonCodeCreateRequest(BaseModel):
+    group_id: int
+    code_value: str
+    code_name: str
+    sort_order: int = 0
+    description: str | None = None
+
+    @field_validator("code_value", "code_name")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class CommonCodeUpdateRequest(BaseModel):
+    code_name: str | None = None
+    sort_order: int | None = None
+    description: str | None = None
+
+    @field_validator("code_name")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
 class ProductCreateRequest(BaseModel):
     client_id: int
     product_code: str

@@ -10,6 +10,10 @@ from app.core.permissions import require_password_change_completed, require_perm
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.master import (
+    CommonCodeCreateRequest,
+    CommonCodeGroupCreateRequest,
+    CommonCodeGroupUpdateRequest,
+    CommonCodeUpdateRequest,
     ProductBarcodeCreateRequest,
     ProductBarcodeUpdateRequest,
     ProductCreateRequest,
@@ -31,6 +35,13 @@ def _require_product_manage(auth: AuthContext) -> None:
     require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER"})
     require_permission(auth, "MASTER_MANAGE")
     require_permission(auth, "PRODUCT_MANAGE")
+
+
+def _require_common_code_manage(auth: AuthContext) -> None:
+    require_password_change_completed(auth)
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_permission(auth, "MASTER_MANAGE")
+    require_permission(auth, "COMMON_CODE_MANAGE")
 
 
 @router.get("/clients", response_model=ApiResult)
@@ -246,6 +257,63 @@ def list_common_code_groups_api(
     )
 
 
+@router.post("/common-code-groups", response_model=ApiResult)
+def create_common_code_group_api(
+    request: CommonCodeGroupCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_GROUP_CREATED",
+        message="怨듯넻肄붾뱶 洹몃９???앹꽦?덉뒿?덈떎.",
+        data=master_service.create_common_code_group(db, auth, request),
+    )
+
+
+@router.patch("/common-code-groups/{group_id}", response_model=ApiResult)
+def update_common_code_group_api(
+    group_id: int,
+    request: CommonCodeGroupUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_GROUP_UPDATED",
+        message="怨듯넻肄붾뱶 洹몃９???섏젙?덉뒿?덈떎.",
+        data=master_service.update_common_code_group(db, auth, group_id, request),
+    )
+
+
+@router.post("/common-code-groups/{group_id}/disable", response_model=ApiResult)
+def disable_common_code_group_api(
+    group_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_GROUP_DISABLED",
+        message="怨듯넻肄붾뱶 洹몃９???ъ슜以묒??덉뒿?덈떎.",
+        data=master_service.set_common_code_group_active(db, auth, group_id, False),
+    )
+
+
+@router.post("/common-code-groups/{group_id}/enable", response_model=ApiResult)
+def enable_common_code_group_api(
+    group_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_GROUP_ENABLED",
+        message="怨듯넻肄붾뱶 洹몃９???ы솢?깊솕?덉뒿?덈떎.",
+        data=master_service.set_common_code_group_active(db, auth, group_id, True),
+    )
+
+
 @router.get("/common-codes", response_model=ApiResult)
 def list_common_codes_api(
     group_code: str | None = None,
@@ -257,4 +325,61 @@ def list_common_codes_api(
         result_code="MASTER_COMMON_CODES_FOUND",
         message="공통코드 목록을 조회했습니다.",
         data=master_service.get_common_codes(db, auth, group_code),
+    )
+
+
+@router.post("/common-codes", response_model=ApiResult)
+def create_common_code_api(
+    request: CommonCodeCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_CREATED",
+        message="怨듯넻肄붾뱶瑜??앹꽦?덉뒿?덈떎.",
+        data=master_service.create_common_code(db, auth, request),
+    )
+
+
+@router.patch("/common-codes/{code_id}", response_model=ApiResult)
+def update_common_code_api(
+    code_id: int,
+    request: CommonCodeUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_UPDATED",
+        message="怨듯넻肄붾뱶瑜??섏젙?덉뒿?덈떎.",
+        data=master_service.update_common_code(db, auth, code_id, request),
+    )
+
+
+@router.post("/common-codes/{code_id}/disable", response_model=ApiResult)
+def disable_common_code_api(
+    code_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_DISABLED",
+        message="怨듯넻肄붾뱶瑜??ъ슜以묒??덉뒿?덈떎.",
+        data=master_service.set_common_code_active(db, auth, code_id, False),
+    )
+
+
+@router.post("/common-codes/{code_id}/enable", response_model=ApiResult)
+def enable_common_code_api(
+    code_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_common_code_manage(auth)
+    return api_success(
+        result_code="MASTER_COMMON_CODE_ENABLED",
+        message="怨듯넻肄붾뱶瑜??ы솢?깊솕?덉뒿?덈떎.",
+        data=master_service.set_common_code_active(db, auth, code_id, True),
     )
