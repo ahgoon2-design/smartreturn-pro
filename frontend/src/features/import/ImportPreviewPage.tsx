@@ -26,6 +26,7 @@ import {
   createImportPreviewColumns,
   filterImportPreviewRows,
   getImportPreviewRowClassName,
+  getRowErrors,
   type ImportPreviewRowFilter,
 } from "./importPreviewGrid";
 
@@ -59,11 +60,20 @@ export function ImportPreviewPage() {
   const [validating, setValidating] = useState(false);
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [gridErrorMessage, setGridErrorMessage] = useState("");
+  const [selectedRowKey, setSelectedRowKey] = useState<number | null>(null);
 
   const parsedRows = useMemo(() => parsePasteRows(pasteText), [pasteText]);
+  const errorRows = useMemo(() => countRowsBySeverity(errors, "ERROR"), [errors]);
   const warningRows = useMemo(() => countRowsBySeverity(errors, "WARNING"), [errors]);
   const filteredRows = useMemo(() => filterImportPreviewRows(rows, errors, rowFilter), [errors, rowFilter, rows]);
   const columns = useMemo(() => createImportPreviewColumns(errors), [errors]);
+  const selectedRow = useMemo(
+    () => (selectedRowKey === null ? null : rows.find((row) => getRowId(row) === selectedRowKey) || null),
+    [rows, selectedRowKey],
+  );
+  const selectedRowErrors = useMemo(() => (selectedRow ? getRowErrors(errors, selectedRow) : []), [errors, selectedRow]);
+  const detailErrors = selectedRow ? selectedRowErrors : errors;
 
   useEffect(() => {
     setLoadingClients(true);
@@ -100,6 +110,7 @@ export function ImportPreviewPage() {
         source_name: "frontend-react-preview",
       });
       setJob({ ...createdJob, status: "READY_TO_VALIDATE", total_rows: parsedRows.length, parsed_rows: parsedRows.length });
+      setSelectedRowKey(null);
       await refreshRowsAndErrors(nextJobId);
       setNotice("rows 저장이 완료되었습니다. 검증을 실행할 수 있습니다.");
     } catch (error) {
@@ -120,6 +131,7 @@ export function ImportPreviewPage() {
       const summary = await validateImportJob(jobId);
       setValidationSummary(summary);
       setJob({ ...job, ...summary, id: job.id, job_id: jobId });
+      setSelectedRowKey(null);
       await refreshRowsAndErrors(jobId);
       setNotice("검증이 완료되었습니다.");
     } catch (error) {
@@ -130,9 +142,16 @@ export function ImportPreviewPage() {
   }
 
   async function refreshRowsAndErrors(jobId: number) {
-    const [rowsResult, errorsResult] = await Promise.all([listImportJobRows(jobId), listImportJobErrors(jobId)]);
-    setRows((rowsResult.items || []).sort((left, right) => left.row_no - right.row_no));
-    setErrors((errorsResult.items || []).sort((left, right) => left.row_no - right.row_no || getErrorId(left) - getErrorId(right)));
+    try {
+      const [rowsResult, errorsResult] = await Promise.all([listImportJobRows(jobId), listImportJobErrors(jobId)]);
+      setRows([...(rowsResult.items || [])].sort((left, right) => left.row_no - right.row_no));
+      setErrors([...(errorsResult.items || [])].sort((left, right) => left.row_no - right.row_no || getErrorId(left) - getErrorId(right)));
+      setGridErrorMessage("");
+    } catch (error) {
+      const message = toUserMessage(error);
+      setGridErrorMessage(message);
+      throw error;
+    }
   }
 
   function resetInput() {
@@ -142,6 +161,8 @@ export function ImportPreviewPage() {
     setErrors([]);
     setValidationSummary(null);
     setRowFilter("ALL");
+    setGridErrorMessage("");
+    setSelectedRowKey(null);
     clearMessages();
   }
 
@@ -221,13 +242,13 @@ export function ImportPreviewPage() {
         extra={
           <Space>
             <Button type={rowFilter === "ALL" ? "primary" : "default"} onClick={() => setRowFilter("ALL")}>
-              전체 보기
+              전체 보기 {rows.length}
             </Button>
             <Button type={rowFilter === "ERROR" ? "primary" : "default"} onClick={() => setRowFilter("ERROR")}>
-              오류 행만 보기
+              오류 행만 보기 {errorRows}
             </Button>
             <Button type={rowFilter === "WARNING" ? "primary" : "default"} onClick={() => setRowFilter("WARNING")}>
-              경고 행만 보기
+              경고 행만 보기 {warningRows}
             </Button>
             <Button onClick={() => setRowFilter("ALL")}>원본 순서 보기</Button>
           </Space>
@@ -238,25 +259,37 @@ export function ImportPreviewPage() {
           columns={columns}
           rows={filteredRows}
           loading={savingRows || validating}
+          error={gridErrorMessage || null}
+          emptyText="rows 저장 후 원본 순서대로 표시됩니다."
           preserveOriginalOrder
           originalOrderKey="row_no"
           enableOriginalOrderReset
           enableCopy
+          selectedRowKeys={selectedRowKey === null ? [] : [selectedRowKey]}
+          enableMultiSelect={false}
+          onSelectionChange={(keys) => setSelectedRowKey(keys.length ? Number(keys[0]) : null)}
+          onRowClick={(row) => setSelectedRowKey(getRowId(row))}
           getRowClassName={(row) => getImportPreviewRowClassName(errors, row)}
         />
       </Card>
 
-      <Card className="smart-work-panel" title="오류/경고 상세">
-        {errors.length === 0 ? (
-          <Typography.Text type="secondary">표시할 오류/경고가 없습니다.</Typography.Text>
+      <Card
+        className="smart-work-panel"
+        title="오류/경고 상세"
+        extra={selectedRow ? <Typography.Text type="secondary">선택 row {selectedRow.row_no}</Typography.Text> : null}
+      >
+        {detailErrors.length === 0 ? (
+          <Typography.Text type="secondary">
+            {selectedRow ? "선택한 row에 표시할 오류/경고가 없습니다." : "표시할 오류/경고가 없습니다."}
+          </Typography.Text>
         ) : (
           <div className="smart-error-list">
-            {errors.map((item) => (
+            {detailErrors.map((item) => (
               <article className="smart-error-item" key={getErrorId(item)}>
                 <Space>
                   <SmartStatusBadge status={item.severity === "ERROR" ? "INVALID" : "WARNING"} />
                   <strong>row {item.row_no}</strong>
-                  <span>{item.error_code}</span>
+                  <Typography.Text copyable>{item.error_code}</Typography.Text>
                 </Space>
                 <p>{item.error_message}</p>
               </article>

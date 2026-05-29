@@ -94,6 +94,9 @@ errors 조회 결과는 기존과 동일하게 `row_id`, `id`, `row_no` 기준�
 - 처리 메시지 column은 `validation_message`가 있으면 우선 표시하고, 없으면 error_code 목록을 표시
 - 오류 row와 경고 row는 `SmartDataGrid` row className으로 강조
 - 오류/경고 count와 처리 메시지 cell에도 highlight 기준을 적용
+- grid row 클릭 또는 selection 변경 시 선택 row의 오류/경고 상세를 우선 표시
+- 선택 row가 없으면 전체 오류/경고 상세를 표시
+- 상세 패널의 `error_code`는 copyable로 표시
 
 기존 주요 error_code 표시 구조는 유지한다.
 
@@ -114,6 +117,8 @@ row별 ERROR/WARNING count가 API에 직접 포함되어 있지는 않으므로,
 
 필터 상태는 화면 외부 state로 유지하고, 실제 row 필터링은 `filterImportPreviewRows` helper로 분리했다. 필터 전환 후에도 `row_no` 원본 순서가 유지된다.
 
+필터 버튼에는 현재 rows/errors 조회 결과 기준 count를 함께 표시한다.
+
 ## 9. copyable cell 적용 내용
 
 아래 column에 `copyable=true`를 적용했다.
@@ -123,10 +128,21 @@ row별 ERROR/WARNING count가 API에 직접 포함되어 있지는 않으므로,
 - `barcode`
 - `barcode_type`
 - `unit_qty`
+- 오류/경고 상세의 `error_code`
 
 token, password, secret, password_hash와 관련된 값은 grid column에 포함하지 않았고, 복사 대상으로 만들지 않았다.
 
-## 10. API 흐름 유지 여부
+## 10. loading / empty / error 처리
+
+Import Preview grid는 `SmartDataGrid`의 표준 상태 표시를 사용한다.
+
+- `loading`: rows 저장 또는 validation 진행 중 grid loading으로 표시
+- `emptyText`: rows 저장 전에는 “rows 저장 후 원본 순서대로 표시됩니다.” 문구 표시
+- `error`: rows/errors 조회 실패 시 안전한 한글 메시지를 grid error 영역에 표시
+
+page 상단 오류 안내는 유지하되, rows/errors 조회 실패처럼 grid 표시와 직접 관련된 오류는 `SmartDataGrid` error prop에도 연결했다. stack trace, token, password, secret 값은 표시하지 않는다.
+
+## 11. API 흐름 유지 여부
 
 아래 API 흐름은 변경하지 않았다.
 
@@ -139,16 +155,35 @@ token, password, secret, password_hash와 관련된 값은 grid column에 포함
 
 API path, request body, response 처리 흐름은 그대로 유지했다.
 
-## 11. 미구현/후속 항목
+## 12. API 응답 필드 부족 여부
+
+이번 전환에서 화면 구현이 막힌 API 필드 부족은 없었다.
+
+다만 아래 항목은 후속 API 보강 후보로 유지한다.
+
+- rows response에 row별 ERROR/WARNING count 포함 여부
+- job summary/detail의 `warning_rows` 표준화
+- job detail에 client 표시명 포함 여부
+- import_type별 column metadata 제공 여부
+
+현재는 errors 조회 결과를 `row_id`, `id`, `row_no` 기준으로 rows와 연결해 안전하게 계산한다.
+
+## 13. 브라우저/HTTP 확인 결과
+
+이번 전환은 TypeScript/build 검증을 우선했다.
+
+브라우저 직접 로그인 흐름 확인은 별도 수동 검증 후보로 남긴다. Vite dev server 기반 HTTP 확인은 환경 상태에 따라 불안정할 수 있어, 이번 closeout에는 build/typecheck 결과를 기준으로 기록한다.
+
+## 14. 미구현/후속 항목
 
 - row별 ERROR/WARNING count를 API response에 포함할지 검토
 - job summary의 `warning_rows` 표준화
-- selected row와 오류/경고 상세 패널 직접 연동
 - `SmartGridExportButton` 또는 엑셀 다운로드 버튼
 - 파일 업로드 `EXCEL_FILE` preview 연결
 - Import Preview의 source_type별 column metadata 분리
+- `/login`부터 실제 인증 후 `/imports/preview` 접근까지의 브라우저 수동 검증
 
-## 12. 검증 결과
+## 15. 검증 결과
 
 - `npm.cmd run typecheck`: 통과
 - `npm.cmd run build`: 통과
@@ -156,8 +191,8 @@ API path, request body, response 처리 흐름은 그대로 유지했다.
 
 backend 코드는 변경하지 않아 backend pytest는 생략했다.
 
-## 13. 다음 추천 작업
+## 16. 다음 추천 작업
 
 1. 기준정보 화면 디자인 토론
-2. 파일 업로드 `EXCEL_FILE` skeleton 설계
-3. 기준정보 화면 중 고객사/창고/상품 중 첫 화면 구현 후보 선정
+2. 고객사/창고/상품/공통코드 기준정보 화면/API 보강 순서 확정
+3. 파일 업로드 `EXCEL_FILE` skeleton 설계는 기준정보 화면 흐름과 충돌하지 않게 별도 순서로 검토

@@ -3,6 +3,13 @@ import type { ImportJobRow, ImportValidationError } from "../../types/import";
 
 export type ImportPreviewRowFilter = "ALL" | "ERROR" | "WARNING";
 
+const VALIDATION_STATUS_MAP = {
+  VALID: { label: "정상", status: "VALID" },
+  WARNING: { label: "경고", status: "WARNING" },
+  INVALID: { label: "오류", status: "INVALID" },
+  NOT_VALIDATED: { label: "검증 전", status: "NOT_VALIDATED" },
+};
+
 export function createImportPreviewColumns(errors: ImportValidationError[]): SmartDataGridColumn<ImportJobRow>[] {
   return [
     { key: "row_no", title: "행번호", dataIndex: "row_no", width: 72, fixed: "left", sortable: true },
@@ -12,12 +19,13 @@ export function createImportPreviewColumns(errors: ImportValidationError[]): Sma
       dataIndex: "validation_status",
       width: 110,
       renderType: "status",
+      statusMap: VALIDATION_STATUS_MAP,
     },
     {
       key: "error_warning_count",
       title: "오류/경고",
       width: 92,
-      render: (_value, row) => getRowErrors(errors, row).length,
+      render: (_value, row) => summarizeImportPreviewRowIssues(errors, row),
       errorHighlight: (row) => getImportPreviewRowSeverity(errors, row) === "ERROR",
       warningHighlight: (row) => getImportPreviewRowSeverity(errors, row) === "WARNING",
     },
@@ -83,15 +91,7 @@ export function getImportPreviewRowClassName(errors: ImportValidationError[], ro
   return "";
 }
 
-export function getRowErrors(errors: ImportValidationError[], row: ImportJobRow) {
-  return errors.filter((item) => item.row_id === row.row_id || item.row_id === row.id || item.row_no === row.row_no);
-}
-
-export function countRowsBySeverity(errors: ImportValidationError[], severity: string) {
-  return new Set(errors.filter((item) => item.severity === severity).map((item) => item.row_id || item.row_no)).size;
-}
-
-function getImportPreviewRowSeverity(errors: ImportValidationError[], row: ImportJobRow) {
+export function getImportPreviewRowSeverity(errors: ImportValidationError[], row: ImportJobRow) {
   const rowErrors = getRowErrors(errors, row);
   if (row.validation_status === "INVALID" || rowErrors.some((item) => item.severity === "ERROR")) {
     return "ERROR";
@@ -100,6 +100,24 @@ function getImportPreviewRowSeverity(errors: ImportValidationError[], row: Impor
     return "WARNING";
   }
   return "";
+}
+
+export function getRowErrors(errors: ImportValidationError[], row: ImportJobRow) {
+  return errors.filter((item) => item.row_id === row.row_id || item.row_id === row.id || item.row_no === row.row_no);
+}
+
+export function countRowsBySeverity(errors: ImportValidationError[], severity: string) {
+  return new Set(errors.filter((item) => item.severity === severity).map((item) => item.row_id || item.row_no)).size;
+}
+
+function summarizeImportPreviewRowIssues(errors: ImportValidationError[], row: ImportJobRow) {
+  const rowErrors = getRowErrors(errors, row);
+  const errorCount = rowErrors.filter((item) => item.severity === "ERROR").length;
+  const warningCount = rowErrors.filter((item) => item.severity === "WARNING").length;
+  if (errorCount === 0 && warningCount === 0) {
+    return "";
+  }
+  return `오류 ${errorCount} / 경고 ${warningCount}`;
 }
 
 function getImportPreviewRowMessage(errors: ImportValidationError[], row: ImportJobRow) {
