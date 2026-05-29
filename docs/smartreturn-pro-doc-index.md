@@ -54,3 +54,4 @@
 | `docs/p0-import-paste-rows-api-verification-closeout.md` | P0 import paste rows API skeleton 구현 및 검증 완료 결과를 기록한다. | paste/grid row 저장 계약 후속 보완 또는 validation 단계 인수인계 시 | 권장 |
 | `docs/p0-import-paste-rows-api-manual-verification-closeout.md` | P0 import paste rows API 로컬 수동 검증 완료 결과를 기록한다. | paste/grid row 저장 수동 검증 인수인계 또는 validation API 설계 전 확인 시 | 권장 |
 | `docs/p0-import-validation-api-verification-closeout.md` | P0 import validation API skeleton 구현 및 검증 완료 결과를 기록한다. | import row 검증 계약 후속 보완 또는 validation 수동 검증 인수인계 시 | 권장 |
+| `docs/import-validation-api-manual-verification-closeout-2026-05-29.md` | P0 import validation API 로컬 E2E 수동 검증 완료 결과를 기록한다. | 프론트 preview 화면 계약 또는 파일 업로드 skeleton 설계 전 확인 시 | 권장 |
