@@ -9,6 +9,34 @@ const STATUS_COLORS: Record<string, string> = {
   HAS_ERRORS: "red",
   READY_TO_VALIDATE: "blue",
   DRAFT: "default",
+  VALIDATING: "blue",
+  FAILED: "red",
+  NORMAL: "green",
+  SUCCESS: "green",
+  ERROR: "red",
+  WAITING: "default",
+  PROCESSING: "blue",
+  COMPLETED: "green",
+  HOLD: "purple",
+  CANCELLED: "default",
+  INACTIVE: "default",
+  SHORTAGE: "orange",
+  OVERAGE: "volcano",
+  UNREGISTERED: "red",
+  DUPLICATED: "gold",
+  정상: "green",
+  경고: "gold",
+  오류: "red",
+  대기: "default",
+  처리중: "blue",
+  완료: "green",
+  보류: "purple",
+  취소: "default",
+  비활성: "default",
+  수량부족: "orange",
+  수량초과: "volcano",
+  미등록: "red",
+  중복: "gold",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -22,9 +50,22 @@ const STATUS_LABELS: Record<string, string> = {
   DRAFT: "작성 중",
   VALIDATING: "검증 중",
   FAILED: "실패",
+  NORMAL: "정상",
+  SUCCESS: "정상",
+  ERROR: "오류",
+  WAITING: "대기",
+  PROCESSING: "처리중",
+  COMPLETED: "완료",
+  HOLD: "보류",
+  CANCELLED: "취소",
+  INACTIVE: "비활성",
+  SHORTAGE: "수량부족",
+  OVERAGE: "수량초과",
+  UNREGISTERED: "미등록",
+  DUPLICATED: "중복",
 };
 
-export function SmartStatusBadge({ status }: { status?: string | null }) {
+export function SmartStatusBadge({ status, label }: { status?: string | null; label?: string }) {
   const value = status || "DRAFT";
-  return <Tag color={STATUS_COLORS[value] || "default"}>{STATUS_LABELS[value] || value}</Tag>;
+  return <Tag color={STATUS_COLORS[value] || "default"}>{label || STATUS_LABELS[value] || value}</Tag>;
 }

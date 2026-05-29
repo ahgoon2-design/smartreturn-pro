@@ -1,6 +1,5 @@
 import { ReloadOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Input, Select, Space, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { createImportJob, listImportJobErrors, listImportJobRows, savePasteRows, validateImportJob } from "../../api/importJobs";
 import { ApiClientError } from "../../api/client";
@@ -12,6 +11,7 @@ import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
+import type { SmartDataGridColumn } from "../../components/grid";
 import type { ClientSummary } from "../../types/master";
 import type {
   ImportJob,
@@ -83,27 +83,30 @@ export function ImportPreviewPage() {
   const canSaveRows = Boolean(clientId && importType && pasteText.trim() && parsedRows.length > 0 && !job);
   const canValidate = Boolean(jobStatus(job) === "READY_TO_VALIDATE" && rows.length > 0 && !validating);
 
-  const columns: ColumnsType<ImportJobRow> = [
-    { title: "행번호", dataIndex: "row_no", width: 72, fixed: "left" },
+  const columns: SmartDataGridColumn<ImportJobRow>[] = [
+    { key: "row_no", title: "행번호", dataIndex: "row_no", width: 72, fixed: "left", sortable: true },
     {
+      key: "validation_status",
       title: "상태",
       dataIndex: "validation_status",
       width: 110,
-      render: (status: string) => <SmartStatusBadge status={status} />,
+      renderType: "status",
     },
     {
+      key: "error_warning_count",
       title: "오류/경고",
       width: 92,
-      render: (_, row) => getRowErrors(errors, row).length,
+      render: (_value, row) => getRowErrors(errors, row).length,
     },
-    { title: "product_code", render: (_, row) => readRowValue(row, "product_code") },
-    { title: "product_name", render: (_, row) => readRowValue(row, "product_name") },
-    { title: "barcode", render: (_, row) => readRowValue(row, "barcode") },
-    { title: "barcode_type", render: (_, row) => readRowValue(row, "barcode_type") },
-    { title: "unit_qty", render: (_, row) => readRowValue(row, "unit_qty") },
+    { key: "product_code", title: "product_code", render: (_value, row) => readRowValue(row, "product_code"), copyable: true },
+    { key: "product_name", title: "product_name", render: (_value, row) => readRowValue(row, "product_name"), copyable: true },
+    { key: "barcode", title: "barcode", render: (_value, row) => readRowValue(row, "barcode"), copyable: true },
+    { key: "barcode_type", title: "barcode_type", render: (_value, row) => readRowValue(row, "barcode_type"), copyable: true },
+    { key: "unit_qty", title: "unit_qty", render: (_value, row) => readRowValue(row, "unit_qty"), copyable: true },
     {
+      key: "validation_message",
       title: "처리 메시지",
-      render: (_, row) => row.validation_message || getRowErrors(errors, row).map((item) => item.error_code).join(", "),
+      render: (_value, row) => row.validation_message || getRowErrors(errors, row).map((item) => item.error_code).join(", "),
     },
   ];
 
@@ -260,7 +263,16 @@ export function ImportPreviewPage() {
           </Space>
         }
       >
-        <SmartDataGrid<ImportJobRow> rowKey={(row) => getRowId(row)} columns={columns} dataSource={filteredRows} loading={savingRows || validating} />
+        <SmartDataGrid<ImportJobRow>
+          rowKey={(row) => getRowId(row)}
+          columns={columns}
+          rows={filteredRows}
+          loading={savingRows || validating}
+          preserveOriginalOrder
+          originalOrderKey="row_no"
+          enableOriginalOrderReset
+          enableCopy
+        />
       </Card>
 
       <Card className="smart-work-panel" title="오류/경고 상세">
