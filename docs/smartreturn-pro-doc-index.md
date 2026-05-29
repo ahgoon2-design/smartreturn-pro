@@ -60,3 +60,4 @@
 | `docs/frontend-app-scaffold-plan-2026-05-29.md` | SmartReturn Pro 실사용 프론트 앱 스캐폴드, 라우팅, 인증 컨텍스트, API client, 공통 UI/Grid 기준을 정리한다. | React/Vite/TypeScript 앱 스캐폴드 구현 전 | 권장 |
 | `docs/frontend-app-scaffold-closeout-2026-05-29.md` | React/Vite/TypeScript 프론트 앱 스캐폴드 구현 결과와 import preview React 이전 범위를 기록한다. | 프론트 공통 UI/Grid 강화 또는 파일 업로드 skeleton 구현 전 | 권장 |
 | `docs/skills/README.md` | Codex가 작업 유형별로 추가 참고할 SmartReturn Pro 보조 기준 문서 목록과 읽기 기준을 정리한다. | 작업 시작 전 또는 작업 유형별 세부 기준 확인 시 | 권장 |
+| `docs/frontend-auth-route-guard-closeout-2026-05-29.md` | React/Vite/TypeScript 프론트 앱에 로그인, AuthContext, Route Guard, 비밀번호 변경 필요 화면을 연결한 결과를 기록한다. | 프론트 인증/권한 흐름 후속 작업 또는 Import Preview 보호 route 점검 시 | 권장 |

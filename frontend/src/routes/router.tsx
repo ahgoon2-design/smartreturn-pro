@@ -1,29 +1,52 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { MainLayout } from "../layouts/MainLayout";
-import { LoginPlaceholderPage } from "../pages/auth/LoginPlaceholderPage";
+import { LoginPage } from "../pages/auth/LoginPage";
+import { PasswordChangeRequiredPage } from "../pages/auth/PasswordChangeRequiredPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
+import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import { NotFoundPage } from "../pages/not-found/NotFoundPage";
-import { RouteGuard } from "./RouteGuard";
+import { ProtectedRoute, PublicRoute } from "./RouteGuard";
 import { ROUTE_PATHS } from "./routePaths";
 
 export const router = createBrowserRouter([
   {
     path: ROUTE_PATHS.home,
-    element: <MainLayout />,
+    element: (
+      <ProtectedRoute>
+        <MainLayout />
+      </ProtectedRoute>
+    ),
     children: [
       { index: true, element: <Navigate to={ROUTE_PATHS.importPreview} replace /> },
       {
         path: "imports/preview",
         element: (
-          <RouteGuard>
+          <ProtectedRoute requiredPermissions={["IMPORT_MANAGE"]}>
             <ImportPreviewPage />
-          </RouteGuard>
+          </ProtectedRoute>
         ),
       },
       { path: "dashboard", element: <DashboardPage /> },
     ],
   },
-  { path: ROUTE_PATHS.login, element: <LoginPlaceholderPage /> },
+  {
+    path: ROUTE_PATHS.login,
+    element: (
+      <PublicRoute>
+        <LoginPage />
+      </PublicRoute>
+    ),
+  },
+  {
+    path: ROUTE_PATHS.passwordChange,
+    element: (
+      <ProtectedRoute allowWhenMustChangePassword>
+        <PasswordChangeRequiredPage />
+      </ProtectedRoute>
+    ),
+  },
+  { path: ROUTE_PATHS.forbidden, element: <ForbiddenPage /> },
+  { path: ROUTE_PATHS.notFound, element: <NotFoundPage /> },
   { path: "*", element: <NotFoundPage /> },
 ]);

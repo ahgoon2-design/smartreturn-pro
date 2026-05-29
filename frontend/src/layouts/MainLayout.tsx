@@ -1,53 +1,65 @@
-import { AppstoreOutlined, CloudUploadOutlined, DatabaseOutlined, InboxOutlined } from "@ant-design/icons";
-import { Layout, Menu, Tag, Typography } from "antd";
+import { AppstoreOutlined, CloudUploadOutlined, DatabaseOutlined, InboxOutlined, LogoutOutlined, UserOutlined } from "@ant-design/icons";
+import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ROUTE_PATHS } from "../routes/routePaths";
 import { useAuth } from "../context/AuthContext";
+import { ROUTE_PATHS } from "../routes/routePaths";
 
 const { Header, Sider, Content } = Layout;
-
-const menuItems: MenuProps["items"] = [
-  {
-    key: ROUTE_PATHS.importPreview,
-    icon: <CloudUploadOutlined />,
-    label: "Import Preview",
-  },
-  {
-    key: "master-ready",
-    icon: <DatabaseOutlined />,
-    label: "기준정보 준비중",
-    disabled: true,
-  },
-  {
-    key: "inbound-ready",
-    icon: <InboxOutlined />,
-    label: "입고 준비중",
-    disabled: true,
-  },
-  {
-    key: "operations-ready",
-    icon: <AppstoreOutlined />,
-    label: "출고/반품/재고/정산 준비중",
-    disabled: true,
-  },
-];
 
 export function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { authContext } = useAuth();
+  const { authContext, role, hasPermission, logout } = useAuth();
+
+  const menuItems: MenuProps["items"] = [
+    {
+      key: ROUTE_PATHS.importPreview,
+      icon: <CloudUploadOutlined />,
+      label: "Import Preview",
+      disabled: !hasPermission("IMPORT_MANAGE"),
+    },
+    {
+      key: "master-ready",
+      icon: <DatabaseOutlined />,
+      label: "기준정보 준비중",
+      disabled: true,
+    },
+    {
+      key: "inbound-ready",
+      icon: <InboxOutlined />,
+      label: "입고 준비중",
+      disabled: true,
+    },
+    {
+      key: "operations-ready",
+      icon: <AppstoreOutlined />,
+      label: "출고/반품/재고/정산 준비중",
+      disabled: true,
+    },
+  ];
+
+  function handleLogout() {
+    logout();
+    navigate(ROUTE_PATHS.login, { replace: true });
+  }
 
   return (
     <Layout className="smart-app-shell">
       <Header className="smart-app-header">
         <div>
           <Typography.Text className="smart-app-eyebrow">SmartReturn Pro</Typography.Text>
-          <Typography.Title level={4}>프론트 앱 스캐폴드</Typography.Title>
+          <Typography.Title level={4}>프론트 앱</Typography.Title>
         </div>
-        <Tag color={authContext ? "green" : "gold"}>
-          {authContext ? `${authContext.role} context 연결` : "인증 연동 준비중"}
-        </Tag>
+        <Space>
+          <Tag icon={<UserOutlined />} color={authContext ? "green" : "gold"}>
+            {authContext ? `${authContext.user_name} · ${role || "ROLE 없음"}` : "인증 정보 없음"}
+          </Tag>
+          {authContext?.must_change_password ? <Tag color="red">비밀번호 변경 필요</Tag> : null}
+          <Button icon={<LogoutOutlined />} onClick={handleLogout}>
+            로그아웃
+          </Button>
+        </Space>
       </Header>
       <Layout>
         <Sider width={240} theme="light" className="smart-app-sider">

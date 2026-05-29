@@ -15,6 +15,35 @@ body {
   background: #f5f7fb;
 }
 
+.smart-auth-page {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: #f5f7fb;
+}
+
+.smart-auth-card {
+  width: 420px;
+  border-radius: 8px;
+}
+
+.smart-auth-actions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.smart-route-loading {
+  display: flex;
+  min-height: 240px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #475467;
+}
+
 .smart-app-shell {
   min-height: 100vh;
 }
