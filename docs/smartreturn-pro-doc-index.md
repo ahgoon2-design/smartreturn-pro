@@ -58,3 +58,4 @@
 | `docs/import-preview-screen-contract-draft-2026-05-29.md` | import preview 화면 구현 전 paste rows와 validation 결과 표시 계약 초안을 정리한다. | 프론트 import preview 화면 skeleton 구현 전 | 권장 |
 | `docs/import-preview-screen-skeleton-closeout-2026-05-29.md` | import preview 화면 skeleton 구현 결과와 API 연결 범위, 미구현 항목을 기록한다. | 프론트 import preview 정식 화면 구현 또는 프론트 앱 스캐폴드 확정 전 | 권장 |
 | `docs/frontend-app-scaffold-plan-2026-05-29.md` | SmartReturn Pro 실사용 프론트 앱 스캐폴드, 라우팅, 인증 컨텍스트, API client, 공통 UI/Grid 기준을 정리한다. | React/Vite/TypeScript 앱 스캐폴드 구현 전 | 권장 |
+| `docs/frontend-app-scaffold-closeout-2026-05-29.md` | React/Vite/TypeScript 프론트 앱 스캐폴드 구현 결과와 import preview React 이전 범위를 기록한다. | 프론트 공통 UI/Grid 강화 또는 파일 업로드 skeleton 구현 전 | 권장 |
