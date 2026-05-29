@@ -63,3 +63,4 @@
 | `docs/frontend-auth-route-guard-closeout-2026-05-29.md` | React/Vite/TypeScript 프론트 앱에 로그인, AuthContext, Route Guard, 비밀번호 변경 필요 화면을 연결한 결과를 기록한다. | 프론트 인증/권한 흐름 후속 작업 또는 Import Preview 보호 route 점검 시 | 권장 |
 | `docs/smart-data-grid-design-plan-2026-05-29.md` | SmartReturn Pro 업무 화면 공통 `SmartDataGrid` wrapper의 설계 기준, 원본 순서 보존, 상태 표시, props/column 정책을 정리한다. | SmartDataGrid 최소 wrapper 구현 전 또는 Import Preview/기준정보 grid 전환 전 | 필수 |
 | `docs/smart-data-grid-wrapper-closeout-2026-05-29.md` | SmartDataGrid 최소 wrapper 구현 결과와 props, column, 공통 모양, 원본 순서, 복사, selection/action 기준을 정리한다. | SmartDataGrid 후속 전환 또는 Import Preview grid 정식 전환 전 | 필수 |
+| `docs/import-preview-smart-data-grid-closeout-2026-05-29.md` | Import Preview 화면을 SmartDataGrid 계약으로 정리한 결과와 column, row_no, 상태/오류/복사/필터 기준을 기록한다. | Import Preview 후속 보강 또는 파일 업로드 EXCEL_FILE skeleton 설계 전 | 권장 |

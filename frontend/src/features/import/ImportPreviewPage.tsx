@@ -11,7 +11,6 @@ import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
-import type { SmartDataGridColumn } from "../../components/grid";
 import type { ClientSummary } from "../../types/master";
 import type {
   ImportJob,
@@ -22,10 +21,16 @@ import type {
   ImportValidationError,
   ImportValidationRunResponse,
 } from "../../types/import";
+import {
+  countRowsBySeverity,
+  createImportPreviewColumns,
+  filterImportPreviewRows,
+  getImportPreviewRowClassName,
+  type ImportPreviewRowFilter,
+} from "./importPreviewGrid";
 
 const IMPORT_TYPES: ImportType[] = ["PRODUCT_MASTER", "PRODUCT_BARCODE"];
 const SOURCE_TYPES: SourceType[] = ["PASTE", "MANUAL"];
-type RowFilter = "ALL" | "ERROR" | "WARNING";
 
 const ERROR_MESSAGES: Record<string, string> = {
   NOT_AUTHENTICATED: "로그인이 필요합니다. 기존 인증 화면에서 로그인한 뒤 다시 시도해 주세요.",
@@ -48,7 +53,7 @@ export function ImportPreviewPage() {
   const [rows, setRows] = useState<ImportJobRow[]>([]);
   const [errors, setErrors] = useState<ImportValidationError[]>([]);
   const [validationSummary, setValidationSummary] = useState<ImportValidationRunResponse | null>(null);
-  const [rowFilter, setRowFilter] = useState<RowFilter>("ALL");
+  const [rowFilter, setRowFilter] = useState<ImportPreviewRowFilter>("ALL");
   const [loadingClients, setLoadingClients] = useState(false);
   const [savingRows, setSavingRows] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -57,16 +62,8 @@ export function ImportPreviewPage() {
 
   const parsedRows = useMemo(() => parsePasteRows(pasteText), [pasteText]);
   const warningRows = useMemo(() => countRowsBySeverity(errors, "WARNING"), [errors]);
-  const filteredRows = useMemo(() => {
-    const orderedRows = [...rows].sort((left, right) => left.row_no - right.row_no);
-    if (rowFilter === "ERROR") {
-      return orderedRows.filter((row) => row.validation_status === "INVALID");
-    }
-    if (rowFilter === "WARNING") {
-      return orderedRows.filter((row) => row.validation_status === "WARNING");
-    }
-    return orderedRows;
-  }, [rowFilter, rows]);
+  const filteredRows = useMemo(() => filterImportPreviewRows(rows, errors, rowFilter), [errors, rowFilter, rows]);
+  const columns = useMemo(() => createImportPreviewColumns(errors), [errors]);
 
   useEffect(() => {
     setLoadingClients(true);
@@ -82,33 +79,6 @@ export function ImportPreviewPage() {
 
   const canSaveRows = Boolean(clientId && importType && pasteText.trim() && parsedRows.length > 0 && !job);
   const canValidate = Boolean(jobStatus(job) === "READY_TO_VALIDATE" && rows.length > 0 && !validating);
-
-  const columns: SmartDataGridColumn<ImportJobRow>[] = [
-    { key: "row_no", title: "행번호", dataIndex: "row_no", width: 72, fixed: "left", sortable: true },
-    {
-      key: "validation_status",
-      title: "상태",
-      dataIndex: "validation_status",
-      width: 110,
-      renderType: "status",
-    },
-    {
-      key: "error_warning_count",
-      title: "오류/경고",
-      width: 92,
-      render: (_value, row) => getRowErrors(errors, row).length,
-    },
-    { key: "product_code", title: "product_code", render: (_value, row) => readRowValue(row, "product_code"), copyable: true },
-    { key: "product_name", title: "product_name", render: (_value, row) => readRowValue(row, "product_name"), copyable: true },
-    { key: "barcode", title: "barcode", render: (_value, row) => readRowValue(row, "barcode"), copyable: true },
-    { key: "barcode_type", title: "barcode_type", render: (_value, row) => readRowValue(row, "barcode_type"), copyable: true },
-    { key: "unit_qty", title: "unit_qty", render: (_value, row) => readRowValue(row, "unit_qty"), copyable: true },
-    {
-      key: "validation_message",
-      title: "처리 메시지",
-      render: (_value, row) => row.validation_message || getRowErrors(errors, row).map((item) => item.error_code).join(", "),
-    },
-  ];
 
   async function handleSaveRows() {
     if (!clientId) {
@@ -272,6 +242,7 @@ export function ImportPreviewPage() {
           originalOrderKey="row_no"
           enableOriginalOrderReset
           enableCopy
+          getRowClassName={(row) => getImportPreviewRowClassName(errors, row)}
         />
       </Card>
 
@@ -336,20 +307,6 @@ function parsePasteRows(text: string): ImportPasteRowItem[] {
     }, {});
     return { row_no: index + 1, raw_json: rawJson, source_row_key: `row-${index + 1}` };
   });
-}
-
-function readRowValue(row: ImportJobRow, key: string) {
-  const data = row.normalized_json || row.raw_json || {};
-  const value = data[key];
-  return value === null || value === undefined ? "" : String(value);
-}
-
-function getRowErrors(errors: ImportValidationError[], row: ImportJobRow) {
-  return errors.filter((item) => item.row_id === row.row_id || item.row_id === row.id || item.row_no === row.row_no);
-}
-
-function countRowsBySeverity(errors: ImportValidationError[], severity: string) {
-  return new Set(errors.filter((item) => item.severity === severity).map((item) => item.row_id || item.row_no)).size;
 }
 
 function getJobId(job: ImportJob) {

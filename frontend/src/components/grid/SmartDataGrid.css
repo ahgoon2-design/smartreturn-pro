@@ -70,6 +70,22 @@
   background: var(--smart-grid-focused);
 }
 
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-error > td {
+  background: #fff7f7;
+}
+
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-error:hover > td {
+  background: #fff1f0;
+}
+
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-warning > td {
+  background: #fffdf0;
+}
+
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-warning:hover > td {
+  background: #fffbe6;
+}
+
 .smart-data-grid--sticky-header .ant-table-header {
   position: sticky;
   top: 0;
