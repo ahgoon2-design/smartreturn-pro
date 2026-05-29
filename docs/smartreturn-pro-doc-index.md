@@ -66,3 +66,4 @@
 | `docs/import-preview-smart-data-grid-closeout-2026-05-29.md` | Import Preview 화면을 SmartDataGrid 계약으로 정리한 결과와 column, row_no, 상태/오류/복사/필터 기준을 기록한다. | Import Preview 후속 보강 또는 파일 업로드 EXCEL_FILE skeleton 설계 전 | 권장 |
 | `docs/master-data-screen-design-plan-2026-05-29.md` | 기준정보 1차 화면 범위, 공통 디자인 패턴, 고객사 종속 창고 정책을 정리한다. | 기준정보 화면 구현 또는 창고 모델/API 정책 적합성 점검 전 | 필수 |
 | `docs/backend-warehouse-policy-audit-2026-05-29.md` | backend 창고 모델/API가 기준정보 화면의 고객사 종속 창고 정책과 맞는지 점검하고 후속 보강 항목을 정리한다. | 고객사 관리 화면 상세 디자인 또는 client_warehouse_settings API 보강 설계 전 | 필수 |
+| `docs/client-warehouse-settings-api-plan-2026-05-29.md` | 고객사 관리 화면에서 사용할 `client_warehouse_settings` API 보강 계약과 권한/scope, usage_type, 기본창고, 비활성 정책을 정리한다. | client_warehouse_settings API 보강 구현 또는 고객사 관리 화면 상세 설계 전 | 필수 |
