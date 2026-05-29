@@ -71,3 +71,35 @@
 - 커밋 전 `config.json`, `logs`, `outputs`, `dist`, `build`, `zip`, `exe`, `__pycache__`, `.env`, 민감정보가 포함되지 않았는지 확인한다.
 - Codex 완료 보고에는 변경 파일, 테스트/검증 결과, 미실행 항목, 위험요소를 포함한다.
 - 커밋은 사용자가 명시적으로 지시하기 전에는 하지 않는다.
+
+## `/docs/skills` 보조 기준
+- 모든 작업은 이 `AGENTS.md`를 먼저 읽고, 작업 유형에 따라 `/docs/skills/*.md`를 추가로 읽는다.
+- `/docs/skills` 문서는 이 파일을 대체하지 않고 작업별 세부 기준을 보완한다.
+- `/docs/skills` 문서와 `AGENTS.md`가 충돌하면 `AGENTS.md`의 보안, 중단 조건, 문서 언어 규칙이 항상 우선한다.
+- 모든 작업 공통:
+  - `docs/skills/smartreturn-pro-workflow.md`
+  - `docs/skills/git-security-check.md`
+- 문서 작성 또는 closeout:
+  - `docs/skills/document-style.md`
+- backend API 작업:
+  - `docs/skills/backend-api.md`
+  - `docs/skills/git-security-check.md`
+- frontend 작업:
+  - `docs/skills/frontend-app.md`
+  - `docs/skills/ui-design-system.md`
+- 화면 디자인 또는 공통 UI 작업:
+  - `docs/skills/ui-design-system.md`
+  - `docs/skills/frontend-app.md`
+- grid/table/UI 작업:
+  - `docs/skills/ui-grid.md`
+  - `docs/skills/ui-design-system.md`
+  - `docs/skills/frontend-app.md`
+- 작업자용 스캔 화면 작업:
+  - `docs/skills/worker-screen-ux.md`
+  - `docs/skills/ui-design-system.md`
+  - `docs/skills/ui-grid.md`
+- import preview 작업:
+  - `docs/skills/import-preview.md`
+  - `docs/skills/frontend-app.md`
+  - `docs/skills/ui-grid.md`
+  - `docs/skills/ui-design-system.md`
