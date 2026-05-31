@@ -1,7 +1,7 @@
 import { EyeOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Select, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { listClients } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
@@ -128,6 +128,7 @@ export function ClientListPage() {
         key: "detail",
         label: "상세",
         icon: <EyeOutlined />,
+        disabled: (record) => !getClientId(record),
         onClick: (record) => navigate(`/master/clients/${getClientId(record)}`),
       },
       {
@@ -216,23 +217,7 @@ export function ClientListPage() {
         type="info"
         showIcon
         message="상세와 창고/처리장소 설정은 후속 단계입니다."
-        description="고객사 상세 기본정보 skeleton은 다음 작업에서 구현하고, 창고/처리장소 설정은 client_warehouse_settings API 보강 후 연결합니다."
-      />
-    </SmartPage>
-  );
-}
-
-export function ClientDetailPlaceholderPage() {
-  const { clientId } = useParams();
-
-  return (
-    <SmartPage>
-      <SmartPageHeader title="고객사 상세 준비중" description="고객사 기본정보 상세 화면은 다음 단계에서 구현합니다." />
-      <Alert
-        type="info"
-        showIcon
-        message={`선택한 고객사 ID: ${clientId || "-"}`}
-        description="창고/처리장소 설정은 client_warehouse_settings API 보강 후 고객사 상세 안에서 연결합니다."
+        description="고객사 상세의 창고/처리장소 설정은 client_warehouse_settings API 보강 후 연결합니다."
       />
     </SmartPage>
   );

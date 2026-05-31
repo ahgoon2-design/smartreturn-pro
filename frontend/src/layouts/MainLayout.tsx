@@ -11,6 +11,7 @@ export function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { authContext, role, hasPermission, logout } = useAuth();
+  const selectedMenuKey = location.pathname.startsWith(ROUTE_PATHS.masterClients) ? ROUTE_PATHS.masterClients : location.pathname;
 
   const menuItems: MenuProps["items"] = [
     {
@@ -71,7 +72,7 @@ export function MainLayout() {
         <Sider width={240} theme="light" className="smart-app-sider">
           <Menu
             mode="inline"
-            selectedKeys={[location.pathname]}
+            selectedKeys={[selectedMenuKey]}
             items={menuItems}
             onClick={({ key }) => navigate(key)}
           />
