@@ -1,4 +1,4 @@
-import { AppstoreOutlined, CloudUploadOutlined, DatabaseOutlined, InboxOutlined, LogoutOutlined, UserOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, CloudUploadOutlined, DatabaseOutlined, InboxOutlined, LogoutOutlined, TeamOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -20,9 +20,15 @@ export function MainLayout() {
       disabled: !hasPermission("IMPORT_MANAGE"),
     },
     {
-      key: "master-ready",
+      key: ROUTE_PATHS.masterClients,
       icon: <DatabaseOutlined />,
-      label: "기준정보 준비중",
+      label: "고객사/셀러",
+      disabled: !hasPermission("MASTER_VIEW"),
+    },
+    {
+      key: "master-other-ready",
+      icon: <TeamOutlined />,
+      label: "기준정보 후속 준비중",
       disabled: true,
     },
     {

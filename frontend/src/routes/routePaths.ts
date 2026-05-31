@@ -3,6 +3,7 @@ export const ROUTE_PATHS = {
   login: "/login",
   passwordChange: "/auth/password-change",
   importPreview: "/imports/preview",
+  masterClients: "/master/clients",
   forbidden: "/forbidden",
   notFound: "/not-found",
 } as const;

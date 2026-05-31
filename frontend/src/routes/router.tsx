@@ -4,6 +4,7 @@ import { LoginPage } from "../pages/auth/LoginPage";
 import { PasswordChangeRequiredPage } from "../pages/auth/PasswordChangeRequiredPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
+import { ClientDetailPlaceholderPage, ClientListPage } from "../features/master/ClientListPage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import { NotFoundPage } from "../pages/not-found/NotFoundPage";
 import { ProtectedRoute, PublicRoute } from "./RouteGuard";
@@ -24,6 +25,22 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["IMPORT_MANAGE"]}>
             <ImportPreviewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "master/clients",
+        element: (
+          <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
+            <ClientListPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "master/clients/:clientId",
+        element: (
+          <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
+            <ClientDetailPlaceholderPage />
           </ProtectedRoute>
         ),
       },
