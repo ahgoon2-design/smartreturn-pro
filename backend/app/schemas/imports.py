@@ -90,6 +90,8 @@ class ImportExcelUploadResponse(BaseModel):
     file_name: str
     worksheet_name: str
     headers: list[str]
+    mapped_headers: dict[str, str] = Field(default_factory=dict)
+    unmapped_headers: list[str] = Field(default_factory=list)
 
 
 class ImportValidationRunRequest(BaseModel):

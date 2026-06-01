@@ -27,6 +27,7 @@ import type {
   ImportType,
   SourceType,
   ImportConfirmResponse,
+  ImportExcelUploadResponse,
   ImportValidationError,
   ImportValidationRunResponse,
 } from "../../types/import";
@@ -73,6 +74,7 @@ export function ImportPreviewPage() {
   const [sourceType, setSourceType] = useState<SourceType>("PASTE");
   const [pasteText, setPasteText] = useState(samplePasteText);
   const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelUploadResult, setExcelUploadResult] = useState<ImportExcelUploadResponse | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rows, setRows] = useState<ImportJobRow[]>([]);
@@ -149,6 +151,7 @@ export function ImportPreviewPage() {
           });
         }
         const uploadResult = await uploadImportExcelFile(nextJobId, excelFile);
+        setExcelUploadResult(uploadResult);
         setJob({
           ...createdJob,
           ...uploadResult,
@@ -164,6 +167,7 @@ export function ImportPreviewPage() {
           replace_existing: false,
           source_name: "frontend-react-preview",
         });
+        setExcelUploadResult(null);
         setJob({ ...createdJob, status: "READY_TO_VALIDATE", total_rows: parsedRows.length, parsed_rows: parsedRows.length });
         setNotice("rows 저장이 완료되었습니다. 검증을 실행할 수 있습니다.");
       }
@@ -250,6 +254,7 @@ export function ImportPreviewPage() {
   function resetInput() {
     setPasteText("");
     setExcelFile(null);
+    setExcelUploadResult(null);
     setFileInputKey((value) => value + 1);
     setJob(null);
     setRows([]);
@@ -299,6 +304,7 @@ export function ImportPreviewPage() {
             setErrors([]);
             setValidationSummary(null);
             setConfirmSummary(null);
+            setExcelUploadResult(null);
             setSelectedRowKey(null);
             clearMessages();
           }}
@@ -344,6 +350,7 @@ export function ImportPreviewPage() {
               accept=".xlsx"
               onChange={(event) => {
                 setExcelFile(event.target.files?.[0] || null);
+                setExcelUploadResult(null);
                 if (job) {
                   setJob(null);
                   setRows([]);
@@ -402,6 +409,23 @@ export function ImportPreviewPage() {
           <Typography.Text type={canConfirm ? "success" : "secondary"}>{confirmHelpText}</Typography.Text>
         </Space>
       </Card>
+
+      {sourceType === "EXCEL_FILE" && excelUploadResult ? (
+        <Card className="smart-work-panel" title="엑셀 컬럼 인식 결과">
+          <Space direction="vertical" size={8}>
+            <Typography.Text>
+              시트명: {excelUploadResult.worksheet_name || "-"} / 저장 행 수: {excelUploadResult.saved_row_count ?? "-"}
+            </Typography.Text>
+            <Typography.Text>
+              인식된 컬럼: {formatMappedHeaders(excelUploadResult.mapped_headers).join(", ") || "없음"}
+            </Typography.Text>
+            <Typography.Text>
+              미인식 컬럼: {excelUploadResult.unmapped_headers?.length ? excelUploadResult.unmapped_headers.join(", ") : "없음"}
+            </Typography.Text>
+            <Typography.Text type="secondary">미인식 컬럼은 검증에는 사용하지 않습니다.</Typography.Text>
+          </Space>
+        </Card>
+      ) : null}
 
       <div className="smart-summary-grid">
         <SmartSummaryCard label="전체 행" value={job?.total_rows ?? rows.length} />
@@ -566,6 +590,10 @@ function getConfirmDisplayMessage(summary: ImportConfirmResponse) {
     return "상품/바코드 마스터에 반영 완료";
   }
   return summary.message || "확정 결과를 확인했습니다.";
+}
+
+function formatMappedHeaders(mappedHeaders?: Record<string, string>) {
+  return Object.entries(mappedHeaders || {}).map(([standardField, originalHeader]) => `${originalHeader} → ${standardField}`);
 }
 
 function getConfirmHelpText(status: string, rowCount: number, confirming: boolean) {

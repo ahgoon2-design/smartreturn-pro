@@ -60,23 +60,76 @@ EXCEL_UPLOAD_READY_STATUS = "DRAFT"
 EXCEL_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 DEFAULT_IMPORT_BARCODE_TYPE = "EACH"
 
+EXCEL_HEADER_ALIASES = {
+    "product_code": (
+        "product_code",
+        "product code",
+        "상품코드",
+        "상품 코드",
+        "품목코드",
+        "품목 코드",
+        "제품코드",
+        "제품 코드",
+        "SKU",
+        "sku",
+        "옵션코드",
+        "옵션 코드",
+    ),
+    "product_name": (
+        "product_name",
+        "product name",
+        "상품명",
+        "상품 명",
+        "품목명",
+        "품목 명",
+        "제품명",
+        "제품 명",
+        "상품명(옵션명)",
+        "상품명/옵션명",
+        "옵션명",
+    ),
+    "barcode": (
+        "barcode",
+        "bar_code",
+        "바코드",
+        "바코드번호",
+        "바코드 번호",
+        "상품바코드",
+        "상품 바코드",
+        "대표바코드",
+        "대표 바코드",
+    ),
+    "barcode_type": (
+        "barcode_type",
+        "barcode type",
+        "바코드유형",
+        "바코드 유형",
+        "바코드타입",
+        "바코드 타입",
+    ),
+    "unit_qty": (
+        "unit_qty",
+        "unit qty",
+        "수량",
+        "단위수량",
+        "단위 수량",
+        "입수",
+        "구성수량",
+        "구성 수량",
+        "묶음수량",
+        "묶음 수량",
+    ),
+}
+
+
+def _excel_header_lookup_key(header: str) -> str:
+    return "".join(ch for ch in str(header).strip().lower() if ch not in {" ", "\t", "\n", "\r", "_", "-", "/", "(", ")"})
+
+
 EXCEL_HEADER_MAP = {
-    "product_code": "product_code",
-    "product code": "product_code",
-    "상품코드": "product_code",
-    "product_name": "product_name",
-    "product name": "product_name",
-    "상품명": "product_name",
-    "barcode": "barcode",
-    "bar_code": "barcode",
-    "바코드": "barcode",
-    "barcode_type": "barcode_type",
-    "barcode type": "barcode_type",
-    "바코드유형": "barcode_type",
-    "unit_qty": "unit_qty",
-    "unit qty": "unit_qty",
-    "수량": "unit_qty",
-    "단위수량": "unit_qty",
+    _excel_header_lookup_key(alias): standard_key
+    for standard_key, aliases in EXCEL_HEADER_ALIASES.items()
+    for alias in aliases
 }
 
 
@@ -84,6 +137,8 @@ EXCEL_HEADER_MAP = {
 class ParsedExcelRows:
     worksheet_name: str
     headers: list[str]
+    mapped_headers: dict[str, str]
+    unmapped_headers: list[str]
     rows: list[dict]
 
 
@@ -189,8 +244,7 @@ def _ensure_xlsx_file(file_name: str, file_bytes: bytes) -> None:
 
 
 def _normalize_excel_header(header: str) -> str | None:
-    key = " ".join(str(header).strip().lower().replace("-", "_").split())
-    return EXCEL_HEADER_MAP.get(key)
+    return EXCEL_HEADER_MAP.get(_excel_header_lookup_key(header))
 
 
 def _xml_text(element: ET.Element) -> str:
@@ -283,6 +337,21 @@ def _parse_xlsx_rows(file_bytes: bytes) -> ParsedExcelRows:
     if not any(headers):
         raise _business_error("IMPORT_JOB_EXCEL_HEADERS_REQUIRED", "Excel header row is required.")
 
+    mapped_headers: dict[str, str] = {}
+    unmapped_headers: list[str] = []
+    header_mappings: list[str | None] = []
+    for header in headers:
+        if not header:
+            header_mappings.append(None)
+            continue
+        normalized_key = _normalize_excel_header(header)
+        if normalized_key and normalized_key not in mapped_headers:
+            mapped_headers[normalized_key] = header
+            header_mappings.append(normalized_key)
+        else:
+            unmapped_headers.append(header)
+            header_mappings.append(None)
+
     rows: list[dict] = []
     for row_no, values in parsed_rows[1:]:
         if not any(value.strip() for value in values):
@@ -294,7 +363,7 @@ def _parse_xlsx_rows(file_bytes: bytes) -> ParsedExcelRows:
                 continue
             value = values[index].strip() if index < len(values) else ""
             raw_json[header] = value
-            normalized_key = _normalize_excel_header(header)
+            normalized_key = header_mappings[index]
             if normalized_key:
                 normalized_json[normalized_key] = value
         rows.append(
@@ -309,7 +378,13 @@ def _parse_xlsx_rows(file_bytes: bytes) -> ParsedExcelRows:
     if not rows:
         raise _business_error("IMPORT_JOB_EXCEL_NO_ROWS", "Excel file has no data rows.")
 
-    return ParsedExcelRows(worksheet_name=worksheet_name, headers=headers, rows=rows)
+    return ParsedExcelRows(
+        worksheet_name=worksheet_name,
+        headers=headers,
+        mapped_headers=mapped_headers,
+        unmapped_headers=unmapped_headers,
+        rows=rows,
+    )
 
 
 def _ensure_requested_client(db: Session, client_id: int):
@@ -834,7 +909,12 @@ def upload_excel_import_job_file(
             worksheet_name=parsed.worksheet_name,
         )
         updated_job.file_name = file_name
-        updated_job.raw_json = {"headers": parsed.headers, "worksheet_name": parsed.worksheet_name}
+        updated_job.raw_json = {
+            "headers": parsed.headers,
+            "mapped_headers": parsed.mapped_headers,
+            "unmapped_headers": parsed.unmapped_headers,
+            "worksheet_name": parsed.worksheet_name,
+        }
         db.flush()
         db.commit()
         return ImportExcelUploadResponse(
@@ -850,6 +930,8 @@ def upload_excel_import_job_file(
             file_name=file_name,
             worksheet_name=parsed.worksheet_name,
             headers=parsed.headers,
+            mapped_headers=parsed.mapped_headers,
+            unmapped_headers=parsed.unmapped_headers,
         ).model_dump()
     except Exception:
         db.rollback()

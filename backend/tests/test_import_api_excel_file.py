@@ -296,6 +296,12 @@ def test_excel_upload_saves_rows_and_preserves_excel_row_numbers(client: TestCli
     assert body["data"]["status"] == "READY_TO_VALIDATE"
     assert body["data"]["saved_row_count"] == 2
     assert body["data"]["headers"] == ["상품코드", "상품명", "바코드"]
+    assert body["data"]["mapped_headers"] == {
+        "product_code": "상품코드",
+        "product_name": "상품명",
+        "barcode": "바코드",
+    }
+    assert body["data"]["unmapped_headers"] == []
     assert body["data"]["worksheet_name"] == "Products"
 
     rows_response = client.get(f"/api/import-jobs/{job.id}/rows", headers=headers)
@@ -305,6 +311,80 @@ def test_excel_upload_saves_rows_and_preserves_excel_row_numbers(client: TestCli
     assert rows[0]["normalized_json"]["product_code"] == "P001"
     assert db_session.query(ImportJobFile).filter(ImportJobFile.job_id == job.id).count() == 1
     _assert_no_sensitive_values(body)
+
+
+def test_excel_upload_maps_common_field_aliases(client: TestClient, db_session: Session):
+    job = _create_job(db_session)
+    headers = _admin_headers(client, db_session, "excel_alias_admin")
+    content = _xlsx_bytes(
+        ["품목코드", "상품명", "대표바코드", "비고"],
+        [["P010", "Alias product", "B010", "ignored memo"]],
+        sheet_name="AliasProducts",
+    )
+
+    response = _upload(client, job.id, headers=headers, content=content)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["mapped_headers"] == {
+        "product_code": "품목코드",
+        "product_name": "상품명",
+        "barcode": "대표바코드",
+    }
+    assert data["unmapped_headers"] == ["비고"]
+
+    rows_response = client.get(f"/api/import-jobs/{job.id}/rows", headers=headers)
+    row = rows_response.json()["data"]["items"][0]
+    assert row["raw_json"]["비고"] == "ignored memo"
+    assert row["normalized_json"]["product_code"] == "P010"
+    assert row["normalized_json"]["product_name"] == "Alias product"
+    assert row["normalized_json"]["barcode"] == "B010"
+
+
+def test_excel_upload_maps_sku_option_barcode_and_unit_qty_aliases(client: TestClient, db_session: Session):
+    job = _create_job(db_session, import_type="PRODUCT_BARCODE")
+    headers = _admin_headers(client, db_session, "excel_sku_alias_admin")
+    content = _xlsx_bytes(
+        ["SKU", "옵션명", "바코드번호", "입수"],
+        [["P020", "Option product", "B020", "3"]],
+    )
+
+    response = _upload(client, job.id, headers=headers, content=content)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["mapped_headers"] == {
+        "product_code": "SKU",
+        "product_name": "옵션명",
+        "barcode": "바코드번호",
+        "unit_qty": "입수",
+    }
+    assert data["unmapped_headers"] == []
+
+    validate_response = client.post(f"/api/import-jobs/{job.id}/validate", json={}, headers=headers)
+    assert validate_response.status_code == 200
+    assert validate_response.json()["data"]["status"] == "VALIDATED"
+
+
+def test_excel_upload_keeps_first_mapping_when_aliases_overlap(client: TestClient, db_session: Session):
+    job = _create_job(db_session)
+    headers = _admin_headers(client, db_session, "excel_duplicate_alias_admin")
+    content = _xlsx_bytes(
+        ["SKU", "상품코드", "상품명", "바코드"],
+        [["P030", "P031", "Duplicate alias product", "B030"]],
+    )
+
+    response = _upload(client, job.id, headers=headers, content=content)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["mapped_headers"]["product_code"] == "SKU"
+    assert "상품코드" in data["unmapped_headers"]
+
+    rows_response = client.get(f"/api/import-jobs/{job.id}/rows", headers=headers)
+    row = rows_response.json()["data"]["items"][0]
+    assert row["raw_json"]["상품코드"] == "P031"
+    assert row["normalized_json"]["product_code"] == "P030"
 
 
 def test_excel_upload_allows_validate_and_reuses_import_validation(client: TestClient, db_session: Session):

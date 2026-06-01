@@ -52,6 +52,8 @@ export interface ImportExcelUploadResponse {
   file_name: string;
   worksheet_name: string;
   headers: string[];
+  mapped_headers?: Record<string, string>;
+  unmapped_headers?: string[];
 }
 
 export interface ImportPasteRowItem {
