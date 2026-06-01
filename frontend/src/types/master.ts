@@ -70,3 +70,31 @@ export interface ClientWarehouseSettingCreatePayload {
 export interface ClientWarehouseSettingUpdatePayload {
   usage_type?: string;
 }
+
+export interface ProductSummary {
+  product_id: number;
+  client_id: number;
+  client_name: string;
+  product_code: string;
+  product_name: string;
+  barcode?: string | null;
+  active_yn: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ProductBarcodeSummary {
+  barcode_id: number;
+  barcode: string;
+  barcode_type: string;
+  unit_qty: number;
+  active_yn: boolean;
+  remarks?: string | null;
+}
+
+export interface ProductDetail extends ProductSummary {
+  specification?: string | null;
+  unit_name?: string | null;
+  remarks?: string | null;
+  barcodes?: ProductBarcodeSummary[];
+}

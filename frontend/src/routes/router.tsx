@@ -6,6 +6,7 @@ import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
 import { ClientDetailPage } from "../features/master/ClientDetailPage";
 import { ClientListPage } from "../features/master/ClientListPage";
+import { ProductDetailPlaceholderPage, ProductListPage } from "../features/master/ProductListPage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import { NotFoundPage } from "../pages/not-found/NotFoundPage";
 import { ProtectedRoute, PublicRoute } from "./RouteGuard";
@@ -42,6 +43,22 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
             <ClientDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "master/products",
+        element: (
+          <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
+            <ProductListPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "master/products/:productId",
+        element: (
+          <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
+            <ProductDetailPlaceholderPage />
           </ProtectedRoute>
         ),
       },

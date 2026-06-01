@@ -1,4 +1,13 @@
-import { AppstoreOutlined, CloudUploadOutlined, DatabaseOutlined, InboxOutlined, LogoutOutlined, TeamOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  AppstoreOutlined,
+  CloudUploadOutlined,
+  DatabaseOutlined,
+  InboxOutlined,
+  LogoutOutlined,
+  ShoppingOutlined,
+  TeamOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -11,7 +20,11 @@ export function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { authContext, role, hasPermission, logout } = useAuth();
-  const selectedMenuKey = location.pathname.startsWith(ROUTE_PATHS.masterClients) ? ROUTE_PATHS.masterClients : location.pathname;
+  const selectedMenuKey = location.pathname.startsWith(ROUTE_PATHS.masterClients)
+    ? ROUTE_PATHS.masterClients
+    : location.pathname.startsWith(ROUTE_PATHS.masterProducts)
+      ? ROUTE_PATHS.masterProducts
+      : location.pathname;
 
   const menuItems: MenuProps["items"] = [
     {
@@ -24,6 +37,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.masterClients,
       icon: <DatabaseOutlined />,
       label: "고객사/셀러",
+      disabled: !hasPermission("MASTER_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.masterProducts,
+      icon: <ShoppingOutlined />,
+      label: "상품/바코드",
       disabled: !hasPermission("MASTER_VIEW"),
     },
     {

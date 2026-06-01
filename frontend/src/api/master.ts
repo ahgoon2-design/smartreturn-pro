@@ -6,7 +6,10 @@ import type {
   ClientWarehouseSetting,
   ClientWarehouseSettingCreatePayload,
   ClientWarehouseSettingUpdatePayload,
+  ProductDetail,
+  ProductSummary,
 } from "../types/master";
+import type { PageResponse } from "../types/api";
 
 export async function listClients() {
   const data = await apiRequest<ClientSummary[] | { items?: ClientSummary[] }>("/api/master/clients");
@@ -57,4 +60,29 @@ export async function setDefaultClientWarehouseSetting(clientId: number, setting
   return apiRequest<ClientWarehouseSetting>(`/api/master/clients/${clientId}/warehouse-settings/${settingId}/set-default`, {
     method: "POST",
   });
+}
+
+export interface ProductListOptions {
+  clientId?: number;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listProducts(options: ProductListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.keyword?.trim()) {
+    params.set("keyword", options.keyword.trim());
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 50));
+  const query = params.toString();
+  return apiRequest<PageResponse<ProductSummary>>(`/api/master/products${query ? `?${query}` : ""}`);
+}
+
+export async function getProduct(productId: number) {
+  return apiRequest<ProductDetail | null>(`/api/master/products/${productId}`);
 }
