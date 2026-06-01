@@ -283,15 +283,16 @@ def test_validate_blocks_job_without_rows(client: TestClient, db_session: Sessio
     assert response.json()["result_code"] == "IMPORT_JOB_VALIDATE_NO_ROWS"
 
 
-def test_validate_blocks_excel_file_source_type(client: TestClient, db_session: Session):
+def test_validate_allows_excel_file_source_type_with_saved_rows(client: TestClient, db_session: Session):
     job = _create_job(db_session, source_type="EXCEL_FILE")
     _add_row(db_session, job, raw_json={"product_code": "P001", "product_name": "Product", "barcode": "B001"})
     headers = _admin_headers(client, db_session, "validate_excel_admin")
 
     response = client.post(f"/api/import-jobs/{job.id}/validate", json={}, headers=headers)
 
-    assert response.status_code == 400
-    assert response.json()["result_code"] == "IMPORT_JOB_VALIDATE_SOURCE_TYPE_INVALID"
+    assert response.status_code == 200
+    assert response.json()["result_code"] == "IMPORT_JOB_VALIDATED"
+    assert response.json()["data"]["status"] == "VALIDATED"
 
 
 def test_validate_creates_valid_row(client: TestClient, db_session: Session):

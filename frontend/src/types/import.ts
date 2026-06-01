@@ -1,7 +1,7 @@
 import type { PageResponse } from "./api";
 
 export type ImportType = "PRODUCT_MASTER" | "PRODUCT_BARCODE";
-export type SourceType = "PASTE" | "MANUAL";
+export type SourceType = "PASTE" | "EXCEL_FILE" | "MANUAL";
 export type JobStatus = "DRAFT" | "READY_TO_VALIDATE" | "VALIDATING" | "VALIDATED" | "HAS_ERRORS" | "FAILED";
 export type ValidationStatus = "NOT_VALIDATED" | "VALID" | "WARNING" | "INVALID";
 export type ValidationSeverity = "ERROR" | "WARNING";
@@ -19,6 +19,8 @@ export interface ImportJob {
   invalid_rows?: number;
   error_rows?: number;
   progress_percent?: number;
+  file_name?: string | null;
+  worksheet_name?: string | null;
 }
 
 export interface ImportJobCreateRequest {
@@ -26,6 +28,23 @@ export interface ImportJobCreateRequest {
   source_type: SourceType;
   requested_client_id: number;
   source_name?: string;
+  file_name?: string;
+  worksheet_name?: string;
+}
+
+export interface ImportExcelUploadResponse {
+  job_id: number;
+  saved_row_count: number;
+  status: string;
+  total_rows: number;
+  parsed_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  error_rows: number;
+  progress_percent: number;
+  file_name: string;
+  worksheet_name: string;
+  headers: string[];
 }
 
 export interface ImportPasteRowItem {

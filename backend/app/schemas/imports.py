@@ -77,6 +77,21 @@ class ImportPasteRowsResponse(BaseModel):
     progress_percent: int
 
 
+class ImportExcelUploadResponse(BaseModel):
+    job_id: int
+    saved_row_count: int
+    status: str
+    total_rows: int
+    parsed_rows: int
+    valid_rows: int
+    invalid_rows: int
+    error_rows: int
+    progress_percent: int
+    file_name: str
+    worksheet_name: str
+    headers: list[str]
+
+
 class ImportValidationRunRequest(BaseModel):
     force: bool = False
 

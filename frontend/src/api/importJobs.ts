@@ -2,6 +2,7 @@ import { apiRequest } from "./client";
 import type {
   ImportJob,
   ImportJobCreateRequest,
+  ImportExcelUploadResponse,
   ImportJobErrorsResponse,
   ImportJobRowsResponse,
   ImportPasteRowsRequest,
@@ -19,6 +20,15 @@ export function savePasteRows(jobId: number, request: ImportPasteRowsRequest) {
   return apiRequest<ImportValidationRunResponse | ImportJob>(`/api/import-jobs/${jobId}/rows/paste`, {
     method: "POST",
     body: JSON.stringify(request),
+  });
+}
+
+export function uploadImportExcelFile(jobId: number, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<ImportExcelUploadResponse>(`/api/import-jobs/${jobId}/files/excel`, {
+    method: "POST",
+    body: formData,
   });
 }
 

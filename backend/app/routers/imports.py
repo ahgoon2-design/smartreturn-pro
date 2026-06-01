@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_auth_context, get_db
@@ -52,6 +52,32 @@ def save_paste_import_job_rows_api(
         result_code="IMPORT_JOB_ROWS_SAVED",
         message="Import job row瑜???덉뒿?덈떎.",
         data=import_service.save_paste_import_job_rows(db, auth, job_id=job_id, request=request),
+    )
+
+
+@router.post("/{job_id}/files/excel", response_model=ApiResult)
+async def upload_excel_import_job_file_api(
+    job_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    file_name, mime_type, file_bytes = import_service.extract_multipart_file(
+        await request.body(),
+        request.headers.get("content-type", ""),
+    )
+    return api_success(
+        result_code="IMPORT_JOB_EXCEL_FILE_UPLOADED",
+        message="Excel file import rows saved.",
+        data=import_service.upload_excel_import_job_file(
+            db,
+            auth,
+            job_id=job_id,
+            file_name=file_name,
+            mime_type=mime_type,
+            file_bytes=file_bytes,
+        ),
     )
 
 

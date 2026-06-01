@@ -1,7 +1,14 @@
-import { ReloadOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
+import { ReloadOutlined, SaveOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Input, Select, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { createImportJob, listImportJobErrors, listImportJobRows, savePasteRows, validateImportJob } from "../../api/importJobs";
+import {
+  createImportJob,
+  listImportJobErrors,
+  listImportJobRows,
+  savePasteRows,
+  uploadImportExcelFile,
+  validateImportJob,
+} from "../../api/importJobs";
 import { ApiClientError } from "../../api/client";
 import { listClients } from "../../api/master";
 import { SmartActionBar } from "../../components/common/SmartActionBar";
@@ -31,7 +38,7 @@ import {
 } from "./importPreviewGrid";
 
 const IMPORT_TYPES: ImportType[] = ["PRODUCT_MASTER", "PRODUCT_BARCODE"];
-const SOURCE_TYPES: SourceType[] = ["PASTE", "MANUAL"];
+const SOURCE_TYPES: SourceType[] = ["PASTE", "EXCEL_FILE"];
 
 const ERROR_MESSAGES: Record<string, string> = {
   NOT_AUTHENTICATED: "로그인이 필요합니다. 기존 인증 화면에서 로그인한 뒤 다시 시도해 주세요.",
@@ -42,6 +49,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   IMPORT_JOB_VALIDATE_SOURCE_TYPE_INVALID: "현재 source_type에서는 검증을 실행할 수 없습니다.",
   IMPORT_JOB_VALIDATE_STATUS_INVALID: "현재 상태에서는 검증을 실행할 수 없습니다.",
   IMPORT_JOB_VALIDATE_NO_ROWS: "검증할 row가 없습니다.",
+  IMPORT_JOB_EXCEL_FILE_REQUIRED: "엑셀 파일을 선택해 주세요.",
+  IMPORT_JOB_EXCEL_FILE_TYPE_INVALID: ".xlsx 파일만 지원합니다.",
+  IMPORT_JOB_EXCEL_FILE_INVALID: "엑셀 파일을 읽을 수 없습니다.",
+  IMPORT_JOB_EXCEL_NO_ROWS: "엑셀 파일에 저장할 데이터 row가 없습니다.",
+  IMPORT_JOB_EXCEL_HEADERS_REQUIRED: "엑셀 첫 번째 행에 헤더가 필요합니다.",
+  IMPORT_JOB_EXCEL_UPLOAD_SOURCE_TYPE_INVALID: "EXCEL_FILE source_type job에서만 엑셀 업로드를 실행할 수 있습니다.",
+  IMPORT_JOB_EXCEL_UPLOAD_STATUS_INVALID: "현재 job 상태에서는 엑셀 업로드를 실행할 수 없습니다.",
+  IMPORT_JOB_ROWS_ALREADY_EXISTS: "이미 rows가 저장된 job입니다.",
 };
 
 export function ImportPreviewPage() {
@@ -50,6 +65,8 @@ export function ImportPreviewPage() {
   const [importType, setImportType] = useState<ImportType>("PRODUCT_MASTER");
   const [sourceType, setSourceType] = useState<SourceType>("PASTE");
   const [pasteText, setPasteText] = useState(samplePasteText);
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rows, setRows] = useState<ImportJobRow[]>([]);
   const [errors, setErrors] = useState<ImportValidationError[]>([]);
@@ -87,7 +104,12 @@ export function ImportPreviewPage() {
       .finally(() => setLoadingClients(false));
   }, []);
 
-  const canSaveRows = Boolean(clientId && importType && pasteText.trim() && parsedRows.length > 0 && !job);
+  const canSaveRows = Boolean(
+    clientId &&
+      importType &&
+      !job &&
+      (sourceType === "EXCEL_FILE" ? excelFile : pasteText.trim() && parsedRows.length > 0),
+  );
   const canValidate = Boolean(jobStatus(job) === "READY_TO_VALIDATE" && rows.length > 0 && !validating);
 
   async function handleSaveRows() {
@@ -101,18 +123,39 @@ export function ImportPreviewPage() {
         import_type: importType,
         source_type: sourceType,
         requested_client_id: clientId,
-        source_name: "frontend-react-preview",
+        source_name: sourceType === "EXCEL_FILE" ? excelFile?.name || "frontend-excel-preview" : "frontend-react-preview",
+        file_name: sourceType === "EXCEL_FILE" ? excelFile?.name : undefined,
       });
       const nextJobId = getJobId(createdJob);
-      await savePasteRows(nextJobId, {
-        rows: parsedRows,
-        replace_existing: false,
-        source_name: "frontend-react-preview",
-      });
-      setJob({ ...createdJob, status: "READY_TO_VALIDATE", total_rows: parsedRows.length, parsed_rows: parsedRows.length });
+      if (sourceType === "EXCEL_FILE") {
+        if (!excelFile) {
+          throw new ApiClientError({
+            resultCode: "IMPORT_JOB_EXCEL_FILE_REQUIRED",
+            message: "엑셀 파일을 선택해 주세요.",
+            status: 400,
+          });
+        }
+        const uploadResult = await uploadImportExcelFile(nextJobId, excelFile);
+        setJob({
+          ...createdJob,
+          ...uploadResult,
+          id: createdJob.id,
+          job_id: nextJobId,
+          status: uploadResult.status,
+          source_type: sourceType,
+        });
+        setNotice("엑셀 행을 저장했습니다. 검증을 실행할 수 있습니다.");
+      } else {
+        await savePasteRows(nextJobId, {
+          rows: parsedRows,
+          replace_existing: false,
+          source_name: "frontend-react-preview",
+        });
+        setJob({ ...createdJob, status: "READY_TO_VALIDATE", total_rows: parsedRows.length, parsed_rows: parsedRows.length });
+        setNotice("rows 저장이 완료되었습니다. 검증을 실행할 수 있습니다.");
+      }
       setSelectedRowKey(null);
       await refreshRowsAndErrors(nextJobId);
-      setNotice("rows 저장이 완료되었습니다. 검증을 실행할 수 있습니다.");
     } catch (error) {
       setErrorMessage(toUserMessage(error));
     } finally {
@@ -156,6 +199,8 @@ export function ImportPreviewPage() {
 
   function resetInput() {
     setPasteText("");
+    setExcelFile(null);
+    setFileInputKey((value) => value + 1);
     setJob(null);
     setRows([]);
     setErrors([]);
@@ -192,34 +237,77 @@ export function ImportPreviewPage() {
           onChange={setClientId}
         />
         <Select className="smart-control" value={importType} options={IMPORT_TYPES.map(toSelectOption)} onChange={setImportType} />
-        <Select className="smart-control" value={sourceType} options={SOURCE_TYPES.map(toSelectOption)} onChange={setSourceType} />
+        <Select
+          className="smart-control"
+          value={sourceType}
+          options={SOURCE_TYPES.map(toSelectOption)}
+          onChange={(value) => {
+            setSourceType(value);
+            setJob(null);
+            setRows([]);
+            setErrors([]);
+            setValidationSummary(null);
+            setSelectedRowKey(null);
+            clearMessages();
+          }}
+        />
       </section>
 
       <SmartErrorNotice message={errorMessage} />
       {notice ? <Alert type="success" message={notice} showIcon /> : null}
 
-      <Card className="smart-work-panel" title="Paste 입력">
-        <Input.TextArea
-          value={pasteText}
-          rows={7}
-          spellCheck={false}
-          placeholder={"product_code\tproduct_name\tbarcode\nLOCAL-001\t테스트 상품\t880000000001"}
-          onChange={(event) => {
-            setPasteText(event.target.value);
-            if (job) {
-              setJob(null);
-              setRows([]);
-              setErrors([]);
-              setValidationSummary(null);
-            }
-          }}
-        />
+      <Card className="smart-work-panel" title={sourceType === "EXCEL_FILE" ? "엑셀 파일 업로드" : "Paste 입력"}>
+        {sourceType === "EXCEL_FILE" ? (
+          <Space direction="vertical" className="smart-import-file-area">
+            <Typography.Text type="secondary">
+              .xlsx 파일만 지원합니다. 첫 번째 시트를 기준으로 미리보기를 생성하고, 첫 번째 행은 헤더로 사용합니다.
+            </Typography.Text>
+            <Input
+              key={fileInputKey}
+              type="file"
+              accept=".xlsx"
+              onChange={(event) => {
+                setExcelFile(event.target.files?.[0] || null);
+                if (job) {
+                  setJob(null);
+                  setRows([]);
+                  setErrors([]);
+                  setValidationSummary(null);
+                }
+                clearMessages();
+              }}
+            />
+            <Typography.Text>{excelFile ? excelFile.name : "선택된 파일이 없습니다."}</Typography.Text>
+          </Space>
+        ) : (
+          <Input.TextArea
+            value={pasteText}
+            rows={7}
+            spellCheck={false}
+            placeholder={"product_code\tproduct_name\tbarcode\nLOCAL-001\t테스트 상품\t880000000001"}
+            onChange={(event) => {
+              setPasteText(event.target.value);
+              if (job) {
+                setJob(null);
+                setRows([]);
+                setErrors([]);
+                setValidationSummary(null);
+              }
+            }}
+          />
+        )}
         <Space className="smart-inline-actions">
           <Button icon={<ReloadOutlined />} onClick={resetInput} disabled={savingRows || validating}>
-            붙여넣기 초기화
+            {sourceType === "EXCEL_FILE" ? "파일 선택 초기화" : "붙여넣기 초기화"}
           </Button>
-          <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveRows} loading={savingRows} disabled={!canSaveRows || validating}>
-            미리보기/행 저장
+          <Button
+            type="primary"
+            icon={sourceType === "EXCEL_FILE" ? <UploadOutlined /> : <SaveOutlined />}
+            onClick={handleSaveRows}
+            loading={savingRows}
+            disabled={!canSaveRows || validating}
+          >
+            {sourceType === "EXCEL_FILE" ? "업로드/미리보기" : "미리보기/행 저장"}
           </Button>
           <Button icon={<SearchOutlined />} onClick={handleValidate} loading={validating} disabled={!canValidate || savingRows}>
             검증 실행

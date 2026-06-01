@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from io import BytesIO
+import re
+import xml.etree.ElementTree as ET
+from zipfile import BadZipFile, ZipFile
+
 from sqlalchemy.orm import Session
 
 from app.core.auth_context import resolve_effective_client_id
@@ -14,6 +20,7 @@ from app.schemas.imports import (
     ImportJobCreateRequest,
     ImportJobDetailResponse,
     ImportJobErrorsResponse,
+    ImportExcelUploadResponse,
     ImportJobFileResponse,
     ImportJobListResponse,
     ImportJobRowResponse,
@@ -43,9 +50,38 @@ ALLOWED_SOURCE_TYPES = {
 }
 
 PASTE_ROW_SOURCE_TYPES = {"PASTE", "MANUAL"}
-VALIDATION_SOURCE_TYPES = {"PASTE", "MANUAL"}
+EXCEL_FILE_SOURCE_TYPES = {"EXCEL_FILE"}
+VALIDATION_SOURCE_TYPES = {"PASTE", "MANUAL", "EXCEL_FILE"}
 VALIDATION_READY_STATUS = "READY_TO_VALIDATE"
 VALIDATION_COMPLETED_STATUSES = {"VALIDATED", "HAS_ERRORS"}
+EXCEL_UPLOAD_READY_STATUS = "DRAFT"
+EXCEL_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
+
+EXCEL_HEADER_MAP = {
+    "product_code": "product_code",
+    "product code": "product_code",
+    "상품코드": "product_code",
+    "product_name": "product_name",
+    "product name": "product_name",
+    "상품명": "product_name",
+    "barcode": "barcode",
+    "bar_code": "barcode",
+    "바코드": "barcode",
+    "barcode_type": "barcode_type",
+    "barcode type": "barcode_type",
+    "바코드유형": "barcode_type",
+    "unit_qty": "unit_qty",
+    "unit qty": "unit_qty",
+    "수량": "unit_qty",
+    "단위수량": "unit_qty",
+}
+
+
+@dataclass(frozen=True)
+class ParsedExcelRows:
+    worksheet_name: str
+    headers: list[str]
+    rows: list[dict]
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -95,8 +131,182 @@ def _ensure_validation_source_type(source_type: str) -> None:
     if source_type not in VALIDATION_SOURCE_TYPES:
         raise _business_error(
             "IMPORT_JOB_VALIDATE_SOURCE_TYPE_INVALID",
-            "Import validation supports only PASTE or MANUAL source_type.",
+            "Import validation supports only PASTE, MANUAL, or uploaded EXCEL_FILE source_type.",
         )
+
+
+def _ensure_excel_source_type(source_type: str) -> None:
+    if source_type not in EXCEL_FILE_SOURCE_TYPES:
+        raise _business_error(
+            "IMPORT_JOB_EXCEL_UPLOAD_SOURCE_TYPE_INVALID",
+            "Excel file upload supports only EXCEL_FILE source_type.",
+        )
+
+
+def extract_multipart_file(body: bytes, content_type: str) -> tuple[str, str | None, bytes]:
+    """Extract the `file` part without adding python-multipart as a runtime dependency."""
+
+    boundary_match = re.search(r'boundary="?([^";]+)"?', content_type or "")
+    if not boundary_match:
+        raise _business_error("IMPORT_JOB_EXCEL_FILE_REQUIRED", "Excel file is required.")
+
+    boundary = f"--{boundary_match.group(1)}".encode("latin-1")
+    for part in body.split(boundary):
+        if not part or part in {b"--", b"--\r\n"}:
+            continue
+        part = part.lstrip(b"\r\n")
+        if part.endswith(b"--"):
+            part = part[:-2]
+        header_bytes, separator, content = part.partition(b"\r\n\r\n")
+        if not separator:
+            continue
+        headers_text = header_bytes.decode("latin-1", errors="replace")
+        if 'name="file"' not in headers_text:
+            continue
+        file_name_match = re.search(r'filename="([^"]*)"', headers_text)
+        file_name = file_name_match.group(1).strip() if file_name_match else ""
+        if not file_name:
+            raise _business_error("IMPORT_JOB_EXCEL_FILE_REQUIRED", "Excel file is required.")
+        mime_type_match = re.search(r"content-type:\s*([^\r\n]+)", headers_text, re.IGNORECASE)
+        mime_type = mime_type_match.group(1).strip() if mime_type_match else None
+        if content.endswith(b"\r\n"):
+            content = content[:-2]
+        if not content:
+            raise _business_error("IMPORT_JOB_EXCEL_FILE_REQUIRED", "Excel file is required.")
+        return file_name, mime_type, content
+
+    raise _business_error("IMPORT_JOB_EXCEL_FILE_REQUIRED", "Excel file is required.")
+
+
+def _ensure_xlsx_file(file_name: str, file_bytes: bytes) -> None:
+    if not file_name.lower().endswith(".xlsx"):
+        raise _business_error("IMPORT_JOB_EXCEL_FILE_TYPE_INVALID", "Only .xlsx files are supported.")
+    if len(file_bytes) > EXCEL_MAX_FILE_SIZE_BYTES:
+        raise _business_error("IMPORT_JOB_EXCEL_FILE_TOO_LARGE", "Excel file is too large.")
+
+
+def _normalize_excel_header(header: str) -> str | None:
+    key = " ".join(str(header).strip().lower().replace("-", "_").split())
+    return EXCEL_HEADER_MAP.get(key)
+
+
+def _xml_text(element: ET.Element) -> str:
+    return "".join(element.itertext())
+
+
+def _read_shared_strings(zip_file: ZipFile) -> list[str]:
+    try:
+        shared_xml = zip_file.read("xl/sharedStrings.xml")
+    except KeyError:
+        return []
+    root = ET.fromstring(shared_xml)
+    return [_xml_text(item) for item in root.iter() if item.tag.endswith("}si") or item.tag == "si"]
+
+
+def _first_sheet_name(zip_file: ZipFile) -> str:
+    try:
+        workbook_xml = zip_file.read("xl/workbook.xml")
+    except KeyError:
+        return "Sheet1"
+    root = ET.fromstring(workbook_xml)
+    for item in root.iter():
+        if item.tag.endswith("}sheet") or item.tag == "sheet":
+            return item.attrib.get("name") or "Sheet1"
+    return "Sheet1"
+
+
+def _cell_column_index(cell_ref: str) -> int:
+    letters = "".join(ch for ch in cell_ref if ch.isalpha()).upper()
+    value = 0
+    for char in letters:
+        value = value * 26 + (ord(char) - ord("A") + 1)
+    return max(value - 1, 0)
+
+
+def _read_cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
+    cell_type = cell.attrib.get("t")
+    if cell_type == "inlineStr":
+        return _xml_text(cell).strip()
+    value_node = next((child for child in cell if child.tag.endswith("}v") or child.tag == "v"), None)
+    if value_node is None or value_node.text is None:
+        return ""
+    text = value_node.text.strip()
+    if cell_type == "s":
+        try:
+            return shared_strings[int(text)].strip()
+        except (IndexError, ValueError):
+            return ""
+    return text
+
+
+def _parse_xlsx_rows(file_bytes: bytes) -> ParsedExcelRows:
+    try:
+        with ZipFile(BytesIO(file_bytes)) as zip_file:
+            worksheet_paths = sorted(
+                path
+                for path in zip_file.namelist()
+                if path.startswith("xl/worksheets/sheet") and path.endswith(".xml")
+            )
+            if not worksheet_paths:
+                raise _business_error("IMPORT_JOB_EXCEL_WORKSHEET_NOT_FOUND", "Excel worksheet was not found.")
+
+            worksheet_name = _first_sheet_name(zip_file)
+            shared_strings = _read_shared_strings(zip_file)
+            sheet_root = ET.fromstring(zip_file.read(worksheet_paths[0]))
+    except BadZipFile:
+        raise _business_error("IMPORT_JOB_EXCEL_FILE_INVALID", "Excel file is invalid.") from None
+    except ET.ParseError:
+        raise _business_error("IMPORT_JOB_EXCEL_FILE_INVALID", "Excel file is invalid.") from None
+
+    parsed_rows: list[tuple[int, list[str]]] = []
+    for row in sheet_root.iter():
+        if not (row.tag.endswith("}row") or row.tag == "row"):
+            continue
+        row_no = int(row.attrib.get("r") or len(parsed_rows) + 1)
+        values: dict[int, str] = {}
+        for cell in row:
+            if not (cell.tag.endswith("}c") or cell.tag == "c"):
+                continue
+            values[_cell_column_index(cell.attrib.get("r", ""))] = _read_cell_value(cell, shared_strings)
+        if values:
+            max_index = max(values)
+            parsed_rows.append((row_no, [values.get(index, "") for index in range(max_index + 1)]))
+
+    if not parsed_rows:
+        raise _business_error("IMPORT_JOB_EXCEL_HEADERS_REQUIRED", "Excel header row is required.")
+
+    _header_row_no, header_values = parsed_rows[0]
+    headers = [header.strip() for header in header_values]
+    if not any(headers):
+        raise _business_error("IMPORT_JOB_EXCEL_HEADERS_REQUIRED", "Excel header row is required.")
+
+    rows: list[dict] = []
+    for row_no, values in parsed_rows[1:]:
+        if not any(value.strip() for value in values):
+            continue
+        raw_json: dict[str, str] = {}
+        normalized_json: dict[str, str] = {}
+        for index, header in enumerate(headers):
+            if not header:
+                continue
+            value = values[index].strip() if index < len(values) else ""
+            raw_json[header] = value
+            normalized_key = _normalize_excel_header(header)
+            if normalized_key:
+                normalized_json[normalized_key] = value
+        rows.append(
+            {
+                "row_no": row_no,
+                "raw_json": raw_json,
+                "normalized_json": normalized_json or None,
+                "source_row_key": f"{worksheet_name}!{row_no}",
+            }
+        )
+
+    if not rows:
+        raise _business_error("IMPORT_JOB_EXCEL_NO_ROWS", "Excel file has no data rows.")
+
+    return ParsedExcelRows(worksheet_name=worksheet_name, headers=headers, rows=rows)
 
 
 def _ensure_requested_client(db: Session, client_id: int):
@@ -503,6 +713,77 @@ def save_paste_import_job_rows(
             invalid_rows=updated_job.invalid_rows,
             error_rows=updated_job.error_rows,
             progress_percent=updated_job.progress_percent,
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def upload_excel_import_job_file(
+    db: Session,
+    auth: AuthContext,
+    *,
+    job_id: int,
+    file_name: str,
+    mime_type: str | None,
+    file_bytes: bytes,
+) -> dict:
+    _require_import_manage(auth)
+    row = repo.get_import_job(db, job_id)
+    if row is None:
+        raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job was not found.", 404)
+    job, _, _ = row
+    _ensure_job_access(auth, job)
+    _ensure_excel_source_type(job.source_type)
+    if job.status != EXCEL_UPLOAD_READY_STATUS:
+        raise _business_error("IMPORT_JOB_EXCEL_UPLOAD_STATUS_INVALID", "Import job is not ready for Excel upload.")
+    if repo.count_import_job_rows(db, job_id=job.id) > 0:
+        raise _business_error("IMPORT_JOB_ROWS_ALREADY_EXISTS", "Import job already has rows.")
+
+    _ensure_xlsx_file(file_name, file_bytes)
+    parsed = _parse_xlsx_rows(file_bytes)
+
+    try:
+        repo.create_import_job_file(
+            db,
+            job_id=job.id,
+            file_name=file_name,
+            stored_file_name=None,
+            relative_path=None,
+            mime_type=mime_type,
+            size_bytes=len(file_bytes),
+            uploaded_by=auth.user_id,
+        )
+        repo.bulk_create_import_job_rows(
+            db,
+            job_id=job.id,
+            client_id=job.requested_client_id,
+            rows=parsed.rows,
+        )
+        updated_job = repo.update_import_job_after_rows_saved(
+            db,
+            job=job,
+            row_count=len(parsed.rows),
+            source_name=file_name,
+            worksheet_name=parsed.worksheet_name,
+        )
+        updated_job.file_name = file_name
+        updated_job.raw_json = {"headers": parsed.headers, "worksheet_name": parsed.worksheet_name}
+        db.flush()
+        db.commit()
+        return ImportExcelUploadResponse(
+            job_id=updated_job.id,
+            saved_row_count=len(parsed.rows),
+            status=updated_job.status,
+            total_rows=updated_job.total_rows,
+            parsed_rows=updated_job.parsed_rows,
+            valid_rows=updated_job.valid_rows,
+            invalid_rows=updated_job.invalid_rows,
+            error_rows=updated_job.error_rows,
+            progress_percent=updated_job.progress_percent,
+            file_name=file_name,
+            worksheet_name=parsed.worksheet_name,
+            headers=parsed.headers,
         ).model_dump()
     except Exception:
         db.rollback()

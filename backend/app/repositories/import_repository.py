@@ -82,6 +82,31 @@ def bulk_create_import_job_rows(
     return row_models
 
 
+def create_import_job_file(
+    db: Session,
+    *,
+    job_id: int,
+    file_name: str,
+    stored_file_name: str | None,
+    relative_path: str | None,
+    mime_type: str | None,
+    size_bytes: int | None,
+    uploaded_by: int,
+) -> ImportJobFile:
+    file = ImportJobFile(
+        job_id=job_id,
+        file_name=file_name,
+        stored_file_name=stored_file_name,
+        relative_path=relative_path,
+        mime_type=mime_type,
+        size_bytes=size_bytes,
+        uploaded_by=uploaded_by,
+    )
+    db.add(file)
+    db.flush()
+    return file
+
+
 def update_import_job_after_rows_saved(
     db: Session,
     *,
