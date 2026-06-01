@@ -115,3 +115,50 @@ export interface ProductBarcodeUpdatePayload {
   unit_qty?: number;
   remarks?: string | null;
 }
+
+export interface CommonCodeGroupSummary {
+  group_id: number;
+  group_code: string;
+  group_name: string;
+  active_yn: boolean;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CommonCodeSummary {
+  code_id: number;
+  group_code: string;
+  code_value: string;
+  code_name: string;
+  sort_order: number;
+  active_yn: boolean;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CommonCodeGroupCreatePayload {
+  group_code: string;
+  group_name: string;
+  description?: string | null;
+}
+
+export interface CommonCodeGroupUpdatePayload {
+  group_name?: string;
+  description?: string | null;
+}
+
+export interface CommonCodeCreatePayload {
+  group_id: number;
+  code_value: string;
+  code_name: string;
+  sort_order?: number;
+  description?: string | null;
+}
+
+export interface CommonCodeUpdatePayload {
+  code_name?: string;
+  sort_order?: number;
+  description?: string | null;
+}

@@ -24,6 +24,8 @@ export function MainLayout() {
     ? ROUTE_PATHS.masterClients
     : location.pathname.startsWith(ROUTE_PATHS.masterProducts)
       ? ROUTE_PATHS.masterProducts
+      : location.pathname.startsWith(ROUTE_PATHS.masterCommonCodes)
+        ? ROUTE_PATHS.masterCommonCodes
       : location.pathname;
 
   const menuItems: MenuProps["items"] = [
@@ -46,8 +48,14 @@ export function MainLayout() {
       disabled: !hasPermission("MASTER_VIEW"),
     },
     {
-      key: "master-other-ready",
+      key: ROUTE_PATHS.masterCommonCodes,
       icon: <TeamOutlined />,
+      label: "공통코드",
+      disabled: !hasPermission("MASTER_VIEW"),
+    },
+    {
+      key: "master-other-ready",
+      icon: <DatabaseOutlined />,
       label: "기준정보 후속 준비중",
       disabled: true,
     },

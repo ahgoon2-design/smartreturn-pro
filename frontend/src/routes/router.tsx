@@ -6,6 +6,7 @@ import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
 import { ClientDetailPage } from "../features/master/ClientDetailPage";
 import { ClientListPage } from "../features/master/ClientListPage";
+import { CommonCodeManagementPage } from "../features/master/CommonCodeManagementPage";
 import { ProductDetailPage } from "../features/master/ProductDetailPage";
 import { ProductListPage } from "../features/master/ProductListPage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
@@ -60,6 +61,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
             <ProductDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "master/common-codes",
+        element: (
+          <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
+            <CommonCodeManagementPage />
           </ProtectedRoute>
         ),
       },

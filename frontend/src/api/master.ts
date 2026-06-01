@@ -6,6 +6,12 @@ import type {
   ClientWarehouseSetting,
   ClientWarehouseSettingCreatePayload,
   ClientWarehouseSettingUpdatePayload,
+  CommonCodeCreatePayload,
+  CommonCodeGroupCreatePayload,
+  CommonCodeGroupSummary,
+  CommonCodeGroupUpdatePayload,
+  CommonCodeSummary,
+  CommonCodeUpdatePayload,
   ProductBarcodeCreatePayload,
   ProductBarcodeSummary,
   ProductBarcodeUpdatePayload,
@@ -112,6 +118,71 @@ export async function disableProductBarcode(barcodeId: number) {
 
 export async function enableProductBarcode(barcodeId: number) {
   return apiRequest<ProductBarcodeSummary>(`/api/master/product-barcodes/${barcodeId}/enable`, {
+    method: "POST",
+  });
+}
+
+export async function listCommonCodeGroups() {
+  return apiRequest<CommonCodeGroupSummary[]>("/api/master/common-code-groups");
+}
+
+export async function createCommonCodeGroup(payload: CommonCodeGroupCreatePayload) {
+  return apiRequest<CommonCodeGroupSummary>("/api/master/common-code-groups", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCommonCodeGroup(groupId: number, payload: CommonCodeGroupUpdatePayload) {
+  return apiRequest<CommonCodeGroupSummary>(`/api/master/common-code-groups/${groupId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function disableCommonCodeGroup(groupId: number) {
+  return apiRequest<CommonCodeGroupSummary>(`/api/master/common-code-groups/${groupId}/disable`, {
+    method: "POST",
+  });
+}
+
+export async function enableCommonCodeGroup(groupId: number) {
+  return apiRequest<CommonCodeGroupSummary>(`/api/master/common-code-groups/${groupId}/enable`, {
+    method: "POST",
+  });
+}
+
+export async function listCommonCodes(groupCode?: string) {
+  const params = new URLSearchParams();
+  if (groupCode) {
+    params.set("group_code", groupCode);
+  }
+  const query = params.toString();
+  return apiRequest<CommonCodeSummary[]>(`/api/master/common-codes${query ? `?${query}` : ""}`);
+}
+
+export async function createCommonCode(payload: CommonCodeCreatePayload) {
+  return apiRequest<CommonCodeSummary>("/api/master/common-codes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCommonCode(codeId: number, payload: CommonCodeUpdatePayload) {
+  return apiRequest<CommonCodeSummary>(`/api/master/common-codes/${codeId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function disableCommonCode(codeId: number) {
+  return apiRequest<CommonCodeSummary>(`/api/master/common-codes/${codeId}/disable`, {
+    method: "POST",
+  });
+}
+
+export async function enableCommonCode(codeId: number) {
+  return apiRequest<CommonCodeSummary>(`/api/master/common-codes/${codeId}/enable`, {
     method: "POST",
   });
 }

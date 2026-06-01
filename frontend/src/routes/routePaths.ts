@@ -5,6 +5,7 @@ export const ROUTE_PATHS = {
   importPreview: "/imports/preview",
   masterClients: "/master/clients",
   masterProducts: "/master/products",
+  masterCommonCodes: "/master/common-codes",
   forbidden: "/forbidden",
   notFound: "/not-found",
 } as const;

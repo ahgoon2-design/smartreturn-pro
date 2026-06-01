@@ -120,6 +120,21 @@ body {
   border-radius: 8px;
 }
 
+.smart-master-split {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.95fr) minmax(520px, 1.25fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.smart-master-split-panel {
+  min-width: 0;
+}
+
+.smart-grid-row--selected > td {
+  background: #eff6ff !important;
+}
+
 .smart-inline-actions {
   margin-top: 10px;
 }
