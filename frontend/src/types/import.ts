@@ -18,9 +18,16 @@ export interface ImportJob {
   valid_rows?: number;
   invalid_rows?: number;
   error_rows?: number;
+  warning_rows?: number;
+  inserted_rows?: number;
+  updated_rows?: number;
+  skipped_rows?: number;
+  applied_rows?: number;
+  failed_rows?: number;
   progress_percent?: number;
   file_name?: string | null;
   worksheet_name?: string | null;
+  message?: string | null;
 }
 
 export interface ImportJobCreateRequest {
@@ -112,6 +119,8 @@ export interface ImportConfirmResponse {
   result_code: string;
   message: string;
 }
+
+export type ImportConfirmResult = ImportConfirmResponse;
 
 export type ImportJobRowsResponse = PageResponse<ImportJobRow>;
 export type ImportJobErrorsResponse = PageResponse<ImportValidationError>;

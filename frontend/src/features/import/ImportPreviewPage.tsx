@@ -100,6 +100,9 @@ export function ImportPreviewPage() {
   );
   const selectedRowErrors = useMemo(() => (selectedRow ? getRowErrors(errors, selectedRow) : []), [errors, selectedRow]);
   const detailErrors = selectedRow ? selectedRowErrors : errors;
+  const currentJobStatus = jobStatus(job);
+  const confirmResult = useMemo(() => getConfirmResultSummary(confirmSummary, job), [confirmSummary, job]);
+  const confirmHelpText = getConfirmHelpText(currentJobStatus, rows.length, confirming);
 
   useEffect(() => {
     setLoadingClients(true);
@@ -119,8 +122,8 @@ export function ImportPreviewPage() {
       !job &&
       (sourceType === "EXCEL_FILE" ? excelFile : pasteText.trim() && parsedRows.length > 0),
   );
-  const canValidate = Boolean(jobStatus(job) === "READY_TO_VALIDATE" && rows.length > 0 && !validating);
-  const canConfirm = Boolean(jobStatus(job) === "VALIDATED" && rows.length > 0 && !confirming);
+  const canValidate = Boolean(currentJobStatus === "READY_TO_VALIDATE" && rows.length > 0 && !validating);
+  const canConfirm = Boolean(currentJobStatus === "VALIDATED" && rows.length > 0 && !confirming);
 
   async function handleSaveRows() {
     if (!clientId) {
@@ -269,7 +272,7 @@ export function ImportPreviewPage() {
       <SmartPageHeader
         title="Import Preview"
         description="paste rows 저장, validation 실행, rows/errors 조회 흐름을 확인하는 React skeleton 화면입니다."
-        extra={<SmartStatusBadge status={jobStatus(job)} />}
+        extra={<SmartStatusBadge status={currentJobStatus} />}
       />
 
       <section className="smart-toolbar">
@@ -304,14 +307,29 @@ export function ImportPreviewPage() {
 
       <SmartErrorNotice message={errorMessage} />
       {notice ? <Alert type="success" message={notice} showIcon /> : null}
-      {jobStatus(job) === "HAS_ERRORS" ? <Alert type="warning" message="오류 행이 있어 확정할 수 없습니다." showIcon /> : null}
-      {jobStatus(job) === "APPLIED" ? <Alert type="info" message="이미 확정된 자료입니다." showIcon /> : null}
-      {confirmSummary ? (
+      {currentJobStatus === "HAS_ERRORS" ? <Alert type="warning" message="오류 행이 있어 확정할 수 없습니다." showIcon /> : null}
+      {currentJobStatus === "APPLIED" ? <Alert type="info" message="이미 확정된 자료입니다." showIcon /> : null}
+      {confirmResult ? (
         <Alert
-          type={confirmSummary.failed_rows > 0 ? "warning" : "success"}
-          message={`반영 건수 ${confirmSummary.applied_rows} / 건너뜀 ${confirmSummary.skipped_rows} / 실패 ${confirmSummary.failed_rows}`}
+          type={confirmResult.failed_rows > 0 ? "warning" : "success"}
+          message={getConfirmDisplayMessage(confirmResult)}
+          description={`반영 ${confirmResult.applied_rows}건 / 건너뜀 ${confirmResult.skipped_rows}건 / 실패 ${confirmResult.failed_rows}건`}
           showIcon
         />
+      ) : null}
+
+      {confirmResult ? (
+        <Card className="smart-work-panel" title="확정 결과" extra={<SmartStatusBadge status={confirmResult.status} />}>
+          <div className="smart-summary-grid">
+            <SmartSummaryCard label="총 행 수" value={confirmResult.total_rows} />
+            <SmartSummaryCard label="반영 건수" value={confirmResult.applied_rows} />
+            <SmartSummaryCard label="건너뜀" value={confirmResult.skipped_rows} />
+            <SmartSummaryCard label="실패" value={confirmResult.failed_rows} />
+            <SmartSummaryCard label="경고" value={confirmResult.warning_rows} />
+            <SmartSummaryCard label="오류" value={confirmResult.invalid_rows} />
+          </div>
+          <Typography.Text type="secondary">마지막 확정 메시지: {getConfirmDisplayMessage(confirmResult)}</Typography.Text>
+        </Card>
       ) : null}
 
       <Card className="smart-work-panel" title={sourceType === "EXCEL_FILE" ? "엑셀 파일 업로드" : "Paste 입력"}>
@@ -377,9 +395,11 @@ export function ImportPreviewPage() {
             onClick={handleConfirmClick}
             loading={confirming}
             disabled={!canConfirm || savingRows || validating}
+            title={confirmHelpText}
           >
             확정 반영
           </Button>
+          <Typography.Text type={canConfirm ? "success" : "secondary"}>{confirmHelpText}</Typography.Text>
         </Space>
       </Card>
 
@@ -508,6 +528,66 @@ function getRowId(row: ImportJobRow) {
 
 function getErrorId(error: ImportValidationError) {
   return Number(error.error_id || error.id || error.row_no);
+}
+
+function getConfirmResultSummary(confirmSummary: ImportConfirmResponse | null, job: ImportJob | null): ImportConfirmResponse | null {
+  if (confirmSummary) {
+    return confirmSummary;
+  }
+  if (!job || !["APPLIED", "FAILED"].includes(job.status)) {
+    return null;
+  }
+  const hasSummary =
+    typeof job.applied_rows === "number" || typeof job.inserted_rows === "number" || typeof job.skipped_rows === "number" || typeof job.failed_rows === "number";
+  if (!hasSummary) {
+    return null;
+  }
+  return {
+    job_id: getJobId(job),
+    import_type: job.import_type,
+    source_type: job.source_type,
+    status: job.status,
+    total_rows: job.total_rows ?? 0,
+    applied_rows: job.applied_rows ?? job.inserted_rows ?? 0,
+    skipped_rows: job.skipped_rows ?? 0,
+    failed_rows: job.failed_rows ?? 0,
+    warning_rows: job.warning_rows ?? 0,
+    invalid_rows: job.invalid_rows ?? job.error_rows ?? 0,
+    result_code: "",
+    message: job.message || "",
+  };
+}
+
+function getConfirmDisplayMessage(summary: ImportConfirmResponse) {
+  if (summary.result_code === "IMPORT_JOB_CONFIRM_PARTIAL_FAILED" || summary.failed_rows > 0) {
+    return "일부 row를 반영하지 못했습니다.";
+  }
+  if (summary.status === "APPLIED") {
+    return "상품/바코드 마스터에 반영 완료";
+  }
+  return summary.message || "확정 결과를 확인했습니다.";
+}
+
+function getConfirmHelpText(status: string, rowCount: number, confirming: boolean) {
+  if (confirming) {
+    return "확정 반영 중입니다.";
+  }
+  if (status === "VALIDATED" && rowCount > 0) {
+    return "검증 완료된 자료를 확정 반영할 수 있습니다.";
+  }
+  if (status === "HAS_ERRORS") {
+    return "오류 행이 있어 확정할 수 없습니다.";
+  }
+  if (status === "APPLIED") {
+    return "이미 확정된 자료입니다.";
+  }
+  if (status === "FAILED") {
+    return "확정 처리 실패 상태입니다. 결과를 확인하세요.";
+  }
+  if (rowCount === 0) {
+    return "저장된 row가 있어야 확정할 수 있습니다.";
+  }
+  return "검증 완료 후 확정할 수 있습니다.";
 }
 
 function jobStatus(job: ImportJob | null) {
