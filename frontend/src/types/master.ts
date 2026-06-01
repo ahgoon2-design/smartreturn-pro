@@ -23,3 +23,50 @@ export interface ClientDetail extends ClientSummary {
   use_settlement?: boolean;
   remarks?: string | null;
 }
+
+export interface ClientWarehouseAllowedActions {
+  can_update?: boolean;
+  can_disable?: boolean;
+  can_enable?: boolean;
+  can_set_default?: boolean;
+}
+
+export interface ClientWarehouseSetting {
+  setting_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  warehouse_id: number;
+  warehouse_code: string;
+  warehouse_name: string;
+  warehouse_type?: string | null;
+  warehouse_active_yn?: boolean | null;
+  usage_type: string;
+  usage_type_label?: string | null;
+  is_default: boolean;
+  active_yn: boolean;
+  allowed_actions?: ClientWarehouseAllowedActions;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ClientWarehouseOption {
+  warehouse_id: number;
+  warehouse_code: string;
+  warehouse_name: string;
+  warehouse_type?: string | null;
+  active_yn: boolean;
+  already_linked?: boolean;
+  linked_usage_types?: string[];
+  default_usage_types?: string[];
+}
+
+export interface ClientWarehouseSettingCreatePayload {
+  warehouse_id: number;
+  usage_type: string;
+  is_default?: boolean;
+}
+
+export interface ClientWarehouseSettingUpdatePayload {
+  usage_type?: string;
+}

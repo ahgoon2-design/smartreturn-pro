@@ -1,5 +1,5 @@
 import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Descriptions, Result, Skeleton, Space, Typography } from "antd";
+import { Button, Card, Descriptions, Result, Skeleton, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
@@ -10,6 +10,7 @@ import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { ROUTE_PATHS } from "../../routes/routePaths";
 import type { ClientDetail } from "../../types/master";
+import { ClientWarehouseSettingsSection } from "./ClientWarehouseSettingsSection";
 
 export function ClientDetailPage() {
   const navigate = useNavigate();
@@ -123,14 +124,7 @@ export function ClientDetailPage() {
             </Descriptions>
           </Card>
 
-          <Card className="smart-work-panel" title="창고/처리장소 설정">
-            <Alert
-              type="info"
-              showIcon
-              message="후속 구현"
-              description="창고/처리장소 설정은 다음 단계에서 client_warehouse_settings API 보강 후 이 고객사 상세 안에 연결합니다."
-            />
-          </Card>
+          <ClientWarehouseSettingsSection clientId={getClientId(client)} />
         </>
       ) : null}
     </SmartPage>
