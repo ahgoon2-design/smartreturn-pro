@@ -9,6 +9,7 @@ import { ClientListPage } from "../features/master/ClientListPage";
 import { CommonCodeManagementPage } from "../features/master/CommonCodeManagementPage";
 import { ProductDetailPage } from "../features/master/ProductDetailPage";
 import { ProductListPage } from "../features/master/ProductListPage";
+import { ReturnIntakeHubPage } from "../features/returns/ReturnIntakeHubPage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import { NotFoundPage } from "../pages/not-found/NotFoundPage";
 import { ProtectedRoute, PublicRoute } from "./RouteGuard";
@@ -69,6 +70,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["MASTER_VIEW"]}>
             <CommonCodeManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "returns/intake",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ReturnIntakeHubPage />
           </ProtectedRoute>
         ),
       },

@@ -6,6 +6,7 @@ export const ROUTE_PATHS = {
   masterClients: "/master/clients",
   masterProducts: "/master/products",
   masterCommonCodes: "/master/common-codes",
+  returnIntake: "/returns/intake",
   forbidden: "/forbidden",
   notFound: "/not-found",
 } as const;

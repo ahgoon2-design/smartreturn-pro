@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+from sqlalchemy.orm import Session
+
+from app.models.master import Client
+from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow
+
+
+def create_batch(
+    db: Session,
+    *,
+    client_id: int,
+    source_type: str,
+    source_name: str | None,
+    status: str,
+    created_by: int,
+    memo: str | None = None,
+) -> ReturnIntakeBatch:
+    batch = ReturnIntakeBatch(
+        client_id=client_id,
+        source_type=source_type,
+        source_name=source_name,
+        status=status,
+        created_by=created_by,
+        memo=memo,
+    )
+    db.add(batch)
+    db.flush()
+    return batch
+
+
+def list_batches(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[tuple[ReturnIntakeBatch, Client]], int]:
+    query = db.query(ReturnIntakeBatch, Client).join(Client, Client.id == ReturnIntakeBatch.client_id)
+    if client_id is not None:
+        query = query.filter(ReturnIntakeBatch.client_id == client_id)
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnIntakeBatch.created_at.desc(), ReturnIntakeBatch.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count
+
+
+def get_batch_with_client(db: Session, batch_id: int) -> tuple[ReturnIntakeBatch, Client] | None:
+    return (
+        db.query(ReturnIntakeBatch, Client)
+        .join(Client, Client.id == ReturnIntakeBatch.client_id)
+        .filter(ReturnIntakeBatch.id == batch_id)
+        .one_or_none()
+    )
+
+
+def get_batch(db: Session, batch_id: int) -> ReturnIntakeBatch | None:
+    return db.query(ReturnIntakeBatch).filter(ReturnIntakeBatch.id == batch_id).one_or_none()
+
+
+def delete_rows_for_batch(db: Session, batch_id: int) -> None:
+    db.query(ReturnIntakeRow).filter(ReturnIntakeRow.batch_id == batch_id).delete(synchronize_session=False)
+    db.flush()
+
+
+def count_rows(db: Session, batch_id: int) -> int:
+    return db.query(ReturnIntakeRow).filter(ReturnIntakeRow.batch_id == batch_id).count()
+
+
+def create_rows(db: Session, rows: list[ReturnIntakeRow]) -> list[ReturnIntakeRow]:
+    db.add_all(rows)
+    db.flush()
+    return rows
+
+
+def list_rows(
+    db: Session,
+    *,
+    batch_id: int,
+    page: int = 1,
+    page_size: int = 200,
+) -> tuple[list[ReturnIntakeRow], int]:
+    query = db.query(ReturnIntakeRow).filter(ReturnIntakeRow.batch_id == batch_id)
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnIntakeRow.row_no, ReturnIntakeRow.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count
+
+
+def update_batch_counts(
+    db: Session,
+    batch: ReturnIntakeBatch,
+    *,
+    status: str,
+    total_rows: int,
+    valid_rows: int,
+    warning_rows: int,
+    error_rows: int,
+) -> ReturnIntakeBatch:
+    batch.status = status
+    batch.total_rows = total_rows
+    batch.valid_rows = valid_rows
+    batch.warning_rows = warning_rows
+    batch.error_rows = error_rows
+    db.flush()
+    return batch
+
+
+def update_row_validation(
+    db: Session,
+    row: ReturnIntakeRow,
+    *,
+    validation_status: str,
+    validation_message: str | None,
+    status: str,
+) -> ReturnIntakeRow:
+    row.validation_status = validation_status
+    row.validation_message = validation_message
+    row.status = status
+    db.flush()
+    return row

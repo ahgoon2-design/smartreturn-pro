@@ -4,6 +4,7 @@ import {
   DatabaseOutlined,
   InboxOutlined,
   LogoutOutlined,
+  RollbackOutlined,
   ShoppingOutlined,
   TeamOutlined,
   UserOutlined,
@@ -26,6 +27,8 @@ export function MainLayout() {
       ? ROUTE_PATHS.masterProducts
       : location.pathname.startsWith(ROUTE_PATHS.masterCommonCodes)
         ? ROUTE_PATHS.masterCommonCodes
+      : location.pathname.startsWith(ROUTE_PATHS.returnIntake)
+        ? ROUTE_PATHS.returnIntake
       : location.pathname;
 
   const menuItems: MenuProps["items"] = [
@@ -52,6 +55,12 @@ export function MainLayout() {
       icon: <TeamOutlined />,
       label: "공통코드",
       disabled: !hasPermission("MASTER_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnIntake,
+      icon: <RollbackOutlined />,
+      label: "반품 접수 허브",
+      disabled: !hasPermission("RETURN_VIEW"),
     },
     {
       key: "master-other-ready",

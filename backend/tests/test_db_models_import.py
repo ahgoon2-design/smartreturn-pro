@@ -20,6 +20,8 @@ P0_TABLES = {
     "products",
     "role_permissions",
     "roles",
+    "return_intake_batches",
+    "return_intake_rows",
     "user_roles",
     "users",
     "warehouses",
