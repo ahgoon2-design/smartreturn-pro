@@ -156,6 +156,16 @@ def list_client_warehouses(
     return query.order_by(ClientWarehouseSetting.is_default.desc(), Warehouse.warehouse_name).all()
 
 
+def list_client_warehouse_settings_only(
+    db: Session,
+    client_id: int,
+    active_only: bool = True,
+) -> list[ClientWarehouseSetting]:
+    query = db.query(ClientWarehouseSetting).filter(ClientWarehouseSetting.client_id == client_id)
+    query = _active(query, ClientWarehouseSetting, active_only)
+    return query.order_by(ClientWarehouseSetting.usage_type, ClientWarehouseSetting.id).all()
+
+
 def get_client_warehouse_setting_by_id(db: Session, setting_id: int) -> ClientWarehouseSetting | None:
     return db.query(ClientWarehouseSetting).filter(ClientWarehouseSetting.id == setting_id).one_or_none()
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -150,18 +152,26 @@ class WarehouseUpdateRequest(BaseModel):
 
 
 class ClientWarehouseSummary(BaseModel):
+    setting_id: int
     client_id: int
+    client_code: str | None = None
     client_name: str
     warehouse_id: int
     warehouse_code: str
     warehouse_name: str
+    warehouse_type: str | None = None
+    warehouse_active_yn: bool | None = None
     usage_type: str
+    usage_type_label: str
     is_default: bool
     active_yn: bool
+    allowed_actions: dict[str, bool] = Field(default_factory=dict)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ClientWarehouseSettingResponse(ClientWarehouseSummary):
-    setting_id: int
+    pass
 
 
 class ClientWarehouseSettingCreateRequest(BaseModel):
@@ -191,6 +201,31 @@ class ClientWarehouseSettingUpdateRequest(BaseModel):
         if not value:
             raise ValueError("required")
         return value
+
+
+class ClientWarehouseSettingNestedCreateRequest(BaseModel):
+    warehouse_id: int
+    usage_type: str
+    is_default: bool = False
+
+    @field_validator("usage_type")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+
+class WarehouseOptionResponse(BaseModel):
+    warehouse_id: int
+    warehouse_code: str
+    warehouse_name: str
+    warehouse_type: str | None = None
+    active_yn: bool
+    already_linked: bool
+    linked_usage_types: list[str] = Field(default_factory=list)
+    default_usage_types: list[str] = Field(default_factory=list)
 
 
 class ProductBarcodeDto(BaseModel):
