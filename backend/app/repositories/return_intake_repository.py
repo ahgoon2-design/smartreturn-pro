@@ -127,3 +127,52 @@ def update_row_validation(
     row.status = status
     db.flush()
     return row
+
+
+def update_batch_status(db: Session, batch: ReturnIntakeBatch, *, status: str) -> ReturnIntakeBatch:
+    batch.status = status
+    db.flush()
+    return batch
+
+
+def list_rows_for_batch(db: Session, batch_id: int) -> list[ReturnIntakeRow]:
+    return (
+        db.query(ReturnIntakeRow)
+        .filter(ReturnIntakeRow.batch_id == batch_id)
+        .order_by(ReturnIntakeRow.row_no, ReturnIntakeRow.id)
+        .all()
+    )
+
+
+def list_processing_tasks(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    batch_id: int | None = None,
+    tracking_no: str | None = None,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[ReturnIntakeRow, Client]], int]:
+    query = db.query(ReturnIntakeRow, Client).join(Client, Client.id == ReturnIntakeRow.client_id)
+    if client_id is not None:
+        query = query.filter(ReturnIntakeRow.client_id == client_id)
+    if batch_id is not None:
+        query = query.filter(ReturnIntakeRow.batch_id == batch_id)
+    if status:
+        query = query.filter(ReturnIntakeRow.status == status)
+    if tracking_no:
+        pattern = f"%{tracking_no}%"
+        query = query.filter(
+            (ReturnIntakeRow.return_tracking_no.ilike(pattern))
+            | (ReturnIntakeRow.original_tracking_no.ilike(pattern))
+            | (ReturnIntakeRow.order_no.ilike(pattern))
+        )
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnIntakeRow.created_at.desc(), ReturnIntakeRow.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count

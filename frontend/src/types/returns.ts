@@ -92,3 +92,39 @@ export interface ReturnIntakeValidateResponse {
   warning_rows: number;
   error_rows: number;
 }
+
+export interface ReturnIntakePrepareProcessingResponse {
+  batch_id: number;
+  total_rows: number;
+  prepared_rows: number;
+  skipped_rows: number;
+  invalid_rows: number;
+  warning_rows: number;
+  status: string;
+  message: string;
+}
+
+export interface ReturnProcessingTask {
+  task_id: number;
+  row_id: number;
+  batch_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  row_no: number;
+  order_no?: string | null;
+  return_tracking_no?: string | null;
+  original_tracking_no?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_name?: string | null;
+  option_name?: string | null;
+  qty?: number | null;
+  return_reason?: string | null;
+  validation_status: ReturnIntakeRowValidationStatus | string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReturnProcessingTaskListResponse = PageResponse<ReturnProcessingTask>;

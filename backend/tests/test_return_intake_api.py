@@ -284,6 +284,7 @@ def test_validate_marks_matching_products_valid(client: TestClient, db_session: 
     assert data["warning_rows"] == 0
     assert data["error_rows"] == 0
     assert {row["validation_status"] for row in rows_response.json()["data"]["items"]} == {"VALID"}
+    assert {row["status"] for row in rows_response.json()["data"]["items"]} == {"RECEIVED"}
 
 
 def test_validate_marks_missing_product_as_warning(client: TestClient, db_session: Session):
@@ -305,6 +306,142 @@ def test_validate_marks_missing_product_as_warning(client: TestClient, db_sessio
     assert data["status"] == "VALIDATED"
     assert data["warning_rows"] == 2
     assert data["error_rows"] == 0
+
+
+def test_prepare_processing_converts_valid_and_warning_rows_only(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_prepare_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_prepare_admin")
+    batch_id = _create_batch(client, db_session, "return_prepare_admin", client_row.id)
+    client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-VALID",
+                    "return_tracking_no": "RTN-VALID",
+                    "product_code": "P001",
+                    "qty": 1,
+                },
+                {
+                    "row_no": 2,
+                    "order_no": "ORDER-WARNING",
+                    "return_tracking_no": "RTN-WARNING",
+                    "product_code": "UNKNOWN-PRODUCT",
+                    "qty": 1,
+                },
+                {
+                    "row_no": 3,
+                    "order_no": "ORDER-INVALID",
+                    "return_tracking_no": "RTN-INVALID",
+                    "product_code": "P001",
+                    "qty": 0,
+                },
+            ]
+        },
+        headers=headers,
+    )
+    validate_response = client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+
+    response = client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+    rows_response = client.get(f"/api/returns/intake/batches/{batch_id}/rows", headers=headers)
+    tasks_response = client.get(
+        f"/api/returns/processing/tasks?client_id={client_row.id}&batch_id={batch_id}",
+        headers=headers,
+    )
+
+    assert validate_response.status_code == 200
+    assert validate_response.json()["data"]["status"] == "HAS_ERRORS"
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["prepared_rows"] == 2
+    assert data["skipped_rows"] == 0
+    assert data["invalid_rows"] == 1
+    assert data["warning_rows"] == 1
+    assert data["status"] == "READY_FOR_PROCESSING"
+    rows = {row["row_no"]: row for row in rows_response.json()["data"]["items"]}
+    assert rows[1]["status"] == "READY_FOR_PROCESSING"
+    assert rows[2]["status"] == "READY_FOR_PROCESSING"
+    assert rows[3]["status"] == "RECEIVED"
+    assert tasks_response.status_code == 200
+    tasks = tasks_response.json()["data"]["items"]
+    assert [task["row_no"] for task in tasks] == [2, 1]
+    assert all(task["status"] == "READY_FOR_PROCESSING" for task in tasks)
+    _assert_no_sensitive_values(tasks_response.json())
+
+
+def test_prepare_processing_is_idempotent(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_prepare_repeat_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_prepare_repeat_admin")
+    batch_id = _create_batch(client, db_session, "return_prepare_repeat_admin", client_row.id)
+    client.post(f"/api/returns/intake/batches/{batch_id}/rows/paste", json=_rows_payload(), headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    first_response = client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+
+    second_response = client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+
+    assert first_response.status_code == 200
+    assert first_response.json()["data"]["prepared_rows"] == 2
+    assert second_response.status_code == 200
+    second_data = second_response.json()["data"]
+    assert second_data["prepared_rows"] == 0
+    assert second_data["skipped_rows"] == 2
+    assert second_data["invalid_rows"] == 0
+
+
+def test_prepare_processing_blocks_unvalidated_batch(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_user(
+        db_session,
+        login_id="return_prepare_block_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_prepare_block_admin")
+    batch_id = _create_batch(client, db_session, "return_prepare_block_admin", client_row.id)
+    client.post(f"/api/returns/intake/batches/{batch_id}/rows/paste", json=_rows_payload(), headers=headers)
+
+    response = client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "RETURN_INTAKE_PREPARE_STATUS_INVALID"
+
+
+def test_processing_tasks_support_tracking_search(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_task_search_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_task_search_admin")
+    batch_id = _create_batch(client, db_session, "return_task_search_admin", client_row.id)
+    client.post(f"/api/returns/intake/batches/{batch_id}/rows/paste", json=_rows_payload(), headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+
+    response = client.get("/api/returns/processing/tasks?tracking_no=RTN-002", headers=headers)
+
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["return_tracking_no"] == "RTN-002"
 
 
 @pytest.mark.parametrize(

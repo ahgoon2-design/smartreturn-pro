@@ -1,13 +1,15 @@
 import { CheckCircleOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Input, Select, Space, Typography, message } from "antd";
+import { Alert, Button, Input, Modal, Select, Space, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import { listClients } from "../../api/master";
 import {
   createReturnIntakeBatch,
   listReturnIntakeBatches,
+  listReturnProcessingTasks,
   listReturnIntakeRows,
   pasteReturnIntakeRows,
+  prepareReturnIntakeBatchForProcessing,
   validateReturnIntakeBatch,
 } from "../../api/returnIntake";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
@@ -18,7 +20,12 @@ import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid/SmartDataGrid.types";
 import type { ClientSummary } from "../../types/master";
-import type { ReturnIntakeBatchSummary, ReturnIntakePasteRow, ReturnIntakeRow } from "../../types/returns";
+import type {
+  ReturnIntakeBatchSummary,
+  ReturnIntakePasteRow,
+  ReturnIntakeRow,
+  ReturnProcessingTask,
+} from "../../types/returns";
 
 const PASTE_SAMPLE = [
   "order_no\treturn_tracking_no\tproduct_code\tbarcode\tproduct_name\tqty\treturn_reason",
@@ -34,10 +41,14 @@ export function ReturnIntakeHubPage() {
   const [batches, setBatches] = useState<ReturnIntakeBatchSummary[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<number | undefined>();
   const [rows, setRows] = useState<ReturnIntakeRow[]>([]);
+  const [processingTasks, setProcessingTasks] = useState<ReturnProcessingTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [rowsLoading, setRowsLoading] = useState(false);
+  const [tasksLoading, setTasksLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [prepareSummary, setPrepareSummary] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [keyword, setKeyword] = useState("");
 
@@ -53,9 +64,19 @@ export function ReturnIntakeHubPage() {
     }
   }, [selectedBatchId]);
 
+  useEffect(() => {
+    void loadProcessingTasks();
+  }, [selectedBatchId, selectedClientId]);
+
   const selectedBatch = useMemo(
     () => batches.find((batch) => batch.batch_id === selectedBatchId),
     [batches, selectedBatchId],
+  );
+
+  const canPrepareProcessing = Boolean(
+    selectedBatch &&
+      selectedBatch.total_rows > 0 &&
+      ["VALIDATED", "HAS_ERRORS", "READY_FOR_PROCESSING"].includes(String(selectedBatch.status)),
   );
 
   const filteredBatches = useMemo(() => {
@@ -124,6 +145,35 @@ export function ReturnIntakeHubPage() {
     [],
   );
 
+  const processingTaskColumns = useMemo<SmartDataGridColumn<ReturnProcessingTask>[]>(
+    () => [
+      { key: "batch_id", title: "Batch", dataIndex: "batch_id", width: 90, sortable: true },
+      { key: "row_no", title: "행", dataIndex: "row_no", width: 70, sortable: true },
+      { key: "client_name", title: "고객사", dataIndex: "client_name", width: 160, copyable: true },
+      { key: "return_tracking_no", title: "반품 운송장", dataIndex: "return_tracking_no", width: 150, copyable: true },
+      { key: "order_no", title: "주문번호", dataIndex: "order_no", width: 150, copyable: true },
+      { key: "product_code", title: "상품코드", dataIndex: "product_code", width: 130, copyable: true },
+      { key: "barcode", title: "바코드", dataIndex: "barcode", width: 140, copyable: true },
+      { key: "product_name", title: "상품명", dataIndex: "product_name", width: 180 },
+      { key: "qty", title: "수량", dataIndex: "qty", width: 80, align: "right" },
+      {
+        key: "validation_status",
+        title: "검증",
+        dataIndex: "validation_status",
+        width: 110,
+        render: (value) => <SmartStatusBadge status={String(value)} label={toValidationLabel(value)} />,
+      },
+      {
+        key: "status",
+        title: "작업상태",
+        dataIndex: "status",
+        width: 130,
+        render: (value) => <SmartStatusBadge status={String(value)} label={toRowStatusLabel(value)} />,
+      },
+    ],
+    [],
+  );
+
   async function initialize() {
     setLoading(true);
     setErrorMessage("");
@@ -166,6 +216,21 @@ export function ReturnIntakeHubPage() {
       setErrorMessage(toUserMessage(error, "반품 접수 row를 불러오지 못했습니다."));
     } finally {
       setRowsLoading(false);
+    }
+  }
+
+  async function loadProcessingTasks() {
+    setTasksLoading(true);
+    try {
+      const page = await listReturnProcessingTasks({
+        clientId: selectedClientId,
+        batchId: selectedBatchId,
+      });
+      setProcessingTasks(page.items || []);
+    } catch (error) {
+      setErrorMessage(toUserMessage(error, "반품처리 대기 대상 목록을 불러오지 못했습니다."));
+    } finally {
+      setTasksLoading(false);
     }
   }
 
@@ -218,6 +283,37 @@ export function ReturnIntakeHubPage() {
     }
   }
 
+  function handlePrepareProcessing() {
+    if (!selectedBatchId) {
+      setErrorMessage("처리대상을 생성할 batch를 선택해 주세요.");
+      return;
+    }
+    Modal.confirm({
+      title: "처리대상을 생성할까요?",
+      content: "정상/경고 row를 반품처리 대기 대상으로 전환합니다. 오류 row는 제외됩니다.",
+      okText: "처리대상 생성",
+      cancelText: "취소",
+      onOk: async () => {
+        setPreparing(true);
+        setErrorMessage("");
+        setPrepareSummary("");
+        try {
+          const result = await prepareReturnIntakeBatchForProcessing(selectedBatchId);
+          const summary = `준비된 행: ${result.prepared_rows}건 / 이미 준비됨: ${result.skipped_rows}건 / 제외된 오류 행: ${result.invalid_rows}건`;
+          setPrepareSummary(summary);
+          message.success(result.message || "처리대상 생성 완료");
+          await loadBatches();
+          await loadRows(selectedBatchId);
+          await loadProcessingTasks();
+        } catch (error) {
+          setErrorMessage(toUserMessage(error, "처리대상을 생성하지 못했습니다."));
+        } finally {
+          setPreparing(false);
+        }
+      },
+    });
+  }
+
   return (
     <SmartPage>
       <SmartPageHeader
@@ -230,6 +326,9 @@ export function ReturnIntakeHubPage() {
             </Button>
             <Button icon={<CheckCircleOutlined />} onClick={handleValidate} loading={validating} disabled={!selectedBatchId}>
               검증 실행
+            </Button>
+            <Button onClick={handlePrepareProcessing} loading={preparing} disabled={!canPrepareProcessing}>
+              처리대상 생성
             </Button>
           </Space>
         }
@@ -266,6 +365,7 @@ export function ReturnIntakeHubPage() {
       />
 
       <SmartErrorNotice message={errorMessage} />
+      {prepareSummary ? <Alert type="success" showIcon message="처리대상 생성 완료" description={prepareSummary} /> : null}
 
       <div className="smart-summary-row">
         <SmartSummaryCard label="전체" value={selectedBatch?.total_rows || 0} />
@@ -332,6 +432,23 @@ export function ReturnIntakeHubPage() {
               ? "smart-grid-row-warning"
               : ""
         }
+      />
+
+      <Typography.Title level={4}>반품처리 대기 대상</Typography.Title>
+      <SmartDataGrid<ReturnProcessingTask>
+        rowKey="task_id"
+        rows={processingTasks}
+        columns={processingTaskColumns}
+        loading={tasksLoading}
+        error={null}
+        emptyText="반품처리 대기 대상이 없습니다."
+        enableCopy
+        preserveOriginalOrder
+        originalOrderKey="row_no"
+        enableOriginalOrderReset
+        pagination={false}
+        maxHeight={300}
+        getRowClassName={(record) => (record.validation_status === "WARNING" ? "smart-grid-row-warning" : "")}
       />
     </SmartPage>
   );
@@ -414,6 +531,18 @@ function toValidationLabel(value: unknown) {
     VALID: "정상",
     WARNING: "경고",
     INVALID: "오류",
+  };
+  return labels[status] || status;
+}
+
+function toRowStatusLabel(value: unknown) {
+  const status = String(value || "");
+  const labels: Record<string, string> = {
+    RECEIVED: "접수",
+    READY_FOR_PROCESSING: "처리 대기",
+    PROCESSING: "처리 중",
+    COMPLETED: "처리 완료",
+    HOLD: "보류",
   };
   return labels[status] || status;
 }

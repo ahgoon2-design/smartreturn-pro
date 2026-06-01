@@ -5,8 +5,10 @@ import type {
   ReturnIntakeBatchSummary,
   ReturnIntakePasteRowsPayload,
   ReturnIntakePasteRowsResponse,
+  ReturnIntakePrepareProcessingResponse,
   ReturnIntakeRowsResponse,
   ReturnIntakeValidateResponse,
+  ReturnProcessingTaskListResponse,
 } from "../types/returns";
 
 export interface ReturnIntakeListOptions {
@@ -54,4 +56,41 @@ export async function validateReturnIntakeBatch(batchId: number) {
   return apiRequest<ReturnIntakeValidateResponse>(`/api/returns/intake/batches/${batchId}/validate`, {
     method: "POST",
   });
+}
+
+export async function prepareReturnIntakeBatchForProcessing(batchId: number) {
+  return apiRequest<ReturnIntakePrepareProcessingResponse>(
+    `/api/returns/intake/batches/${batchId}/prepare-processing`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export interface ReturnProcessingTaskListOptions {
+  clientId?: number;
+  batchId?: number;
+  trackingNo?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnProcessingTasks(options: ReturnProcessingTaskListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.batchId) {
+    params.set("batch_id", String(options.batchId));
+  }
+  if (options.trackingNo) {
+    params.set("tracking_no", options.trackingNo);
+  }
+  if (options.status) {
+    params.set("status", options.status);
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnProcessingTaskListResponse>(`/api/returns/processing/tasks?${params.toString()}`);
 }

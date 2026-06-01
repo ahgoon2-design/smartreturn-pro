@@ -18,8 +18,11 @@ from app.schemas.returns import (
     ReturnIntakeBatchSummaryResponse,
     ReturnIntakePasteRowsRequest,
     ReturnIntakePasteRowsResponse,
+    ReturnIntakePrepareProcessingResponse,
     ReturnIntakeRowResponse,
     ReturnIntakeRowsResponse,
+    ReturnProcessingTaskListResponse,
+    ReturnProcessingTaskResponse,
     ReturnIntakeValidateResponse,
 )
 
@@ -28,6 +31,7 @@ BATCH_STATUS_DRAFT = "DRAFT"
 BATCH_STATUS_RECEIVED = "RECEIVED"
 BATCH_STATUS_VALIDATED = "VALIDATED"
 BATCH_STATUS_HAS_ERRORS = "HAS_ERRORS"
+BATCH_STATUS_READY_FOR_PROCESSING = "READY_FOR_PROCESSING"
 
 ROW_VALIDATION_NOT_VALIDATED = "NOT_VALIDATED"
 ROW_VALIDATION_VALID = "VALID"
@@ -36,6 +40,9 @@ ROW_VALIDATION_INVALID = "INVALID"
 
 ROW_STATUS_RECEIVED = "RECEIVED"
 ROW_STATUS_READY_FOR_PROCESSING = "READY_FOR_PROCESSING"
+ROW_STATUS_PROCESSING = "PROCESSING"
+ROW_STATUS_COMPLETED = "COMPLETED"
+ROW_STATUS_HOLD = "HOLD"
 
 ALLOWED_SOURCE_TYPES = {"PASTE", "MANUAL"}
 
@@ -157,6 +164,31 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         raw_data=row.raw_data,
         validation_status=row.validation_status,
         validation_message=row.validation_message,
+        status=row.status,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    ).model_dump()
+
+
+def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
+    return ReturnProcessingTaskResponse(
+        task_id=row.id,
+        row_id=row.id,
+        batch_id=row.batch_id,
+        client_id=row.client_id,
+        client_code=client.client_code,
+        client_name=client.client_name,
+        row_no=row.row_no,
+        order_no=row.order_no,
+        return_tracking_no=row.return_tracking_no,
+        original_tracking_no=row.original_tracking_no,
+        product_code=row.product_code,
+        barcode=row.barcode,
+        product_name=row.product_name,
+        option_name=row.option_name,
+        qty=row.qty,
+        return_reason=row.return_reason,
+        validation_status=row.validation_status,
         status=row.status,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -323,19 +355,16 @@ def validate_return_intake_batch(db: Session, auth: AuthContext, batch_id: int) 
             validation_status, message = _validate_row(db, row)
             if validation_status == ROW_VALIDATION_INVALID:
                 error_rows += 1
-                next_status = ROW_STATUS_RECEIVED
             elif validation_status == ROW_VALIDATION_WARNING:
                 warning_rows += 1
-                next_status = ROW_STATUS_READY_FOR_PROCESSING
             else:
                 valid_rows += 1
-                next_status = ROW_STATUS_READY_FOR_PROCESSING
             repo.update_row_validation(
                 db,
                 row,
                 validation_status=validation_status,
                 validation_message=message,
-                status=next_status,
+                status=ROW_STATUS_RECEIVED,
             )
 
         batch_status = BATCH_STATUS_HAS_ERRORS if error_rows else BATCH_STATUS_VALIDATED
@@ -360,6 +389,106 @@ def validate_return_intake_batch(db: Session, auth: AuthContext, batch_id: int) 
     except Exception:
         db.rollback()
         raise
+
+
+def prepare_return_intake_batch_for_processing(db: Session, auth: AuthContext, batch_id: int) -> dict:
+    _require_return_prepare(auth)
+    batch, _client = _get_batch_for_auth(db, auth, batch_id)
+    if batch.status not in {
+        BATCH_STATUS_VALIDATED,
+        BATCH_STATUS_HAS_ERRORS,
+        BATCH_STATUS_READY_FOR_PROCESSING,
+    }:
+        raise _business_error(
+            "RETURN_INTAKE_PREPARE_STATUS_INVALID",
+            "검증 완료 후 반품처리 대기 대상으로 전환할 수 있습니다.",
+        )
+
+    rows = repo.list_rows_for_batch(db, batch.id)
+    if not rows:
+        raise _business_error("RETURN_INTAKE_PREPARE_NO_ROWS", "전환할 반품 접수 row가 없습니다.")
+
+    prepared_rows = 0
+    skipped_rows = 0
+    invalid_rows = 0
+    warning_rows = 0
+    terminal_statuses = {
+        ROW_STATUS_READY_FOR_PROCESSING,
+        ROW_STATUS_PROCESSING,
+        ROW_STATUS_COMPLETED,
+        ROW_STATUS_HOLD,
+    }
+
+    try:
+        for row in rows:
+            if row.validation_status == ROW_VALIDATION_INVALID:
+                invalid_rows += 1
+                continue
+            if row.validation_status == ROW_VALIDATION_WARNING:
+                warning_rows += 1
+            if row.validation_status not in {ROW_VALIDATION_VALID, ROW_VALIDATION_WARNING}:
+                skipped_rows += 1
+                continue
+            if row.status in terminal_statuses:
+                skipped_rows += 1
+                continue
+            row.status = ROW_STATUS_READY_FOR_PROCESSING
+            prepared_rows += 1
+
+        if prepared_rows > 0 or skipped_rows > 0:
+            repo.update_batch_status(db, batch, status=BATCH_STATUS_READY_FOR_PROCESSING)
+        db.commit()
+        message = "반품처리 대기 대상으로 전환했습니다."
+        if prepared_rows == 0 and skipped_rows > 0:
+            message = "이미 전환된 row는 건너뛰었습니다."
+        elif prepared_rows == 0 and invalid_rows > 0:
+            message = "전환 가능한 정상/경고 row가 없습니다."
+        return ReturnIntakePrepareProcessingResponse(
+            batch_id=batch.id,
+            total_rows=len(rows),
+            prepared_rows=prepared_rows,
+            skipped_rows=skipped_rows,
+            invalid_rows=invalid_rows,
+            warning_rows=warning_rows,
+            status=batch.status,
+            message=message,
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def list_return_processing_tasks(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    batch_id: int | None = None,
+    tracking_no: str | None = None,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    task_status = status or ROW_STATUS_READY_FOR_PROCESSING
+    rows, total_count = repo.list_processing_tasks(
+        db,
+        client_id=effective_client_id,
+        batch_id=batch_id,
+        tracking_no=_safe_text(tracking_no),
+        status=task_status,
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnProcessingTaskListResponse(
+        items=[ReturnProcessingTaskResponse(**_processing_task_response(row, client)) for row, client in rows],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
 
 
 def _build_raw_data(source: dict[str, Any], *, customer_phone_masked: str | None) -> dict[str, Any]:

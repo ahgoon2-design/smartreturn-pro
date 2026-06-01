@@ -148,3 +148,44 @@ class ReturnIntakeValidateResponse(BaseModel):
     valid_rows: int
     warning_rows: int
     error_rows: int
+
+
+class ReturnIntakePrepareProcessingResponse(BaseModel):
+    batch_id: int
+    total_rows: int
+    prepared_rows: int
+    skipped_rows: int
+    invalid_rows: int
+    warning_rows: int
+    status: str
+    message: str
+
+
+class ReturnProcessingTaskResponse(BaseModel):
+    task_id: int
+    row_id: int
+    batch_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    row_no: int
+    order_no: str | None = None
+    return_tracking_no: str | None = None
+    original_tracking_no: str | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    product_name: str | None = None
+    option_name: str | None = None
+    qty: int | None = None
+    return_reason: str | None = None
+    validation_status: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReturnProcessingTaskListResponse(BaseModel):
+    items: list[ReturnProcessingTaskResponse]
+    page: int
+    page_size: int
+    total_count: int
