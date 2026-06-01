@@ -90,6 +90,8 @@ export interface ProductBarcodeSummary {
   unit_qty: number;
   active_yn: boolean;
   remarks?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface ProductDetail extends ProductSummary {
@@ -97,4 +99,19 @@ export interface ProductDetail extends ProductSummary {
   unit_name?: string | null;
   remarks?: string | null;
   barcodes?: ProductBarcodeSummary[];
+}
+
+export interface ProductBarcodeCreatePayload {
+  product_id: number;
+  barcode: string;
+  barcode_type: string;
+  unit_qty: number;
+  remarks?: string | null;
+}
+
+export interface ProductBarcodeUpdatePayload {
+  barcode?: string;
+  barcode_type?: string;
+  unit_qty?: number;
+  remarks?: string | null;
 }

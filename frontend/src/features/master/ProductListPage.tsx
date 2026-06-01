@@ -1,7 +1,7 @@
 import { EyeOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Input, Result, Select, Space, Typography } from "antd";
+import { Alert, Button, Input, Select, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { listProducts } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
@@ -10,7 +10,6 @@ import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid/SmartDataGrid.types";
-import { ROUTE_PATHS } from "../../routes/routePaths";
 import type { ProductSummary } from "../../types/master";
 
 type ProductStatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
@@ -222,26 +221,6 @@ export function ProductListPage() {
         showIcon
         message="상품 상세와 바코드 관리는 다음 단계에서 구현합니다."
         description="현재 상품 목록 API에는 대표 바코드 외 바코드 수, 상품군, 비활성 포함 조회가 없어 해당 값은 '-' 또는 후속 항목으로 표시합니다."
-      />
-    </SmartPage>
-  );
-}
-
-export function ProductDetailPlaceholderPage() {
-  const navigate = useNavigate();
-  const { productId } = useParams();
-
-  return (
-    <SmartPage>
-      <Result
-        status="info"
-        title="상품 상세와 바코드 관리는 다음 단계에서 구현합니다."
-        subTitle={`선택한 product_id: ${productId || "-"}. 이번 단계에서는 상품/바코드 목록과 상세 진입 경로만 연결했습니다.`}
-        extra={
-          <Space>
-            <Button onClick={() => navigate(ROUTE_PATHS.masterProducts)}>상품 목록으로</Button>
-          </Space>
-        }
       />
     </SmartPage>
   );

@@ -6,6 +6,9 @@ import type {
   ClientWarehouseSetting,
   ClientWarehouseSettingCreatePayload,
   ClientWarehouseSettingUpdatePayload,
+  ProductBarcodeCreatePayload,
+  ProductBarcodeSummary,
+  ProductBarcodeUpdatePayload,
   ProductDetail,
   ProductSummary,
 } from "../types/master";
@@ -85,4 +88,30 @@ export async function listProducts(options: ProductListOptions = {}) {
 
 export async function getProduct(productId: number) {
   return apiRequest<ProductDetail | null>(`/api/master/products/${productId}`);
+}
+
+export async function createProductBarcode(payload: ProductBarcodeCreatePayload) {
+  return apiRequest<ProductBarcodeSummary>("/api/master/product-barcodes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProductBarcode(barcodeId: number, payload: ProductBarcodeUpdatePayload) {
+  return apiRequest<ProductBarcodeSummary>(`/api/master/product-barcodes/${barcodeId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function disableProductBarcode(barcodeId: number) {
+  return apiRequest<ProductBarcodeSummary>(`/api/master/product-barcodes/${barcodeId}/disable`, {
+    method: "POST",
+  });
+}
+
+export async function enableProductBarcode(barcodeId: number) {
+  return apiRequest<ProductBarcodeSummary>(`/api/master/product-barcodes/${barcodeId}/enable`, {
+    method: "POST",
+  });
 }
