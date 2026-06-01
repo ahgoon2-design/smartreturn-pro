@@ -101,6 +101,21 @@ def validate_import_job_api(
     )
 
 
+@router.post("/{job_id}/confirm", response_model=ApiResult)
+def confirm_import_job_api(
+    job_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    data = import_service.confirm_import_job(db, auth, job_id=job_id)
+    return api_success(
+        result_code=data["result_code"],
+        message=data["message"],
+        data=data,
+    )
+
+
 @router.get("", response_model=ApiResult)
 def list_import_jobs_api(
     client_id: int | None = None,

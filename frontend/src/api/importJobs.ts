@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import type {
+  ImportConfirmResponse,
   ImportJob,
   ImportJobCreateRequest,
   ImportExcelUploadResponse,
@@ -36,6 +37,12 @@ export function validateImportJob(jobId: number) {
   return apiRequest<ImportValidationRunResponse>(`/api/import-jobs/${jobId}/validate`, {
     method: "POST",
     body: JSON.stringify({ force: false }),
+  });
+}
+
+export function confirmImportJob(jobId: number) {
+  return apiRequest<ImportConfirmResponse>(`/api/import-jobs/${jobId}/confirm`, {
+    method: "POST",
   });
 }
 

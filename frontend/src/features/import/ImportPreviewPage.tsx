@@ -1,7 +1,8 @@
-import { ReloadOutlined, SaveOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Input, Select, Space, Typography } from "antd";
+import { CheckCircleOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Input, Modal, Select, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import {
+  confirmImportJob,
   createImportJob,
   listImportJobErrors,
   listImportJobRows,
@@ -25,6 +26,7 @@ import type {
   ImportPasteRowItem,
   ImportType,
   SourceType,
+  ImportConfirmResponse,
   ImportValidationError,
   ImportValidationRunResponse,
 } from "../../types/import";
@@ -57,6 +59,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   IMPORT_JOB_EXCEL_UPLOAD_SOURCE_TYPE_INVALID: "EXCEL_FILE source_type job에서만 엑셀 업로드를 실행할 수 있습니다.",
   IMPORT_JOB_EXCEL_UPLOAD_STATUS_INVALID: "현재 job 상태에서는 엑셀 업로드를 실행할 수 없습니다.",
   IMPORT_JOB_ROWS_ALREADY_EXISTS: "이미 rows가 저장된 job입니다.",
+  IMPORT_JOB_CONFIRM_STATUS_INVALID: "검증 완료 후 확정할 수 있습니다.",
+  IMPORT_JOB_CONFIRM_ALREADY_DONE: "이미 확정된 자료입니다.",
+  IMPORT_JOB_CONFIRM_HAS_ERRORS: "오류 행이 있어 확정할 수 없습니다.",
+  IMPORT_JOB_CONFIRM_NO_ROWS: "확정 반영할 row가 없습니다.",
+  IMPORT_JOB_CONFIRM_UNSUPPORTED_TYPE: "현재 import_type은 확정 반영을 지원하지 않습니다.",
 };
 
 export function ImportPreviewPage() {
@@ -71,10 +78,12 @@ export function ImportPreviewPage() {
   const [rows, setRows] = useState<ImportJobRow[]>([]);
   const [errors, setErrors] = useState<ImportValidationError[]>([]);
   const [validationSummary, setValidationSummary] = useState<ImportValidationRunResponse | null>(null);
+  const [confirmSummary, setConfirmSummary] = useState<ImportConfirmResponse | null>(null);
   const [rowFilter, setRowFilter] = useState<ImportPreviewRowFilter>("ALL");
   const [loadingClients, setLoadingClients] = useState(false);
   const [savingRows, setSavingRows] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [gridErrorMessage, setGridErrorMessage] = useState("");
@@ -111,6 +120,7 @@ export function ImportPreviewPage() {
       (sourceType === "EXCEL_FILE" ? excelFile : pasteText.trim() && parsedRows.length > 0),
   );
   const canValidate = Boolean(jobStatus(job) === "READY_TO_VALIDATE" && rows.length > 0 && !validating);
+  const canConfirm = Boolean(jobStatus(job) === "VALIDATED" && rows.length > 0 && !confirming);
 
   async function handleSaveRows() {
     if (!clientId) {
@@ -155,6 +165,7 @@ export function ImportPreviewPage() {
         setNotice("rows 저장이 완료되었습니다. 검증을 실행할 수 있습니다.");
       }
       setSelectedRowKey(null);
+      setConfirmSummary(null);
       await refreshRowsAndErrors(nextJobId);
     } catch (error) {
       setErrorMessage(toUserMessage(error));
@@ -173,6 +184,7 @@ export function ImportPreviewPage() {
       const jobId = getJobId(job);
       const summary = await validateImportJob(jobId);
       setValidationSummary(summary);
+      setConfirmSummary(null);
       setJob({ ...job, ...summary, id: job.id, job_id: jobId });
       setSelectedRowKey(null);
       await refreshRowsAndErrors(jobId);
@@ -181,6 +193,41 @@ export function ImportPreviewPage() {
       setErrorMessage(toUserMessage(error));
     } finally {
       setValidating(false);
+    }
+  }
+
+  function handleConfirmClick() {
+    if (!job || !canConfirm) {
+      return;
+    }
+    Modal.confirm({
+      title: "확정 반영",
+      content: "검증 완료된 VALID/WARNING row를 상품/바코드 마스터에 반영합니다. 계속할까요?",
+      okText: "확정 반영",
+      cancelText: "취소",
+      onOk: runConfirm,
+    });
+  }
+
+  async function runConfirm() {
+    if (!job) {
+      return;
+    }
+    setConfirming(true);
+    clearMessages();
+    try {
+      const jobId = getJobId(job);
+      const summary = await confirmImportJob(jobId);
+      setConfirmSummary(summary);
+      setJob({ ...job, ...summary, id: job.id, job_id: jobId });
+      setSelectedRowKey(null);
+      await refreshRowsAndErrors(jobId);
+      setNotice("상품/바코드 마스터에 반영했습니다.");
+    } catch (error) {
+      setErrorMessage(toUserMessage(error));
+      throw error;
+    } finally {
+      setConfirming(false);
     }
   }
 
@@ -205,6 +252,7 @@ export function ImportPreviewPage() {
     setRows([]);
     setErrors([]);
     setValidationSummary(null);
+    setConfirmSummary(null);
     setRowFilter("ALL");
     setGridErrorMessage("");
     setSelectedRowKey(null);
@@ -247,6 +295,7 @@ export function ImportPreviewPage() {
             setRows([]);
             setErrors([]);
             setValidationSummary(null);
+            setConfirmSummary(null);
             setSelectedRowKey(null);
             clearMessages();
           }}
@@ -255,6 +304,15 @@ export function ImportPreviewPage() {
 
       <SmartErrorNotice message={errorMessage} />
       {notice ? <Alert type="success" message={notice} showIcon /> : null}
+      {jobStatus(job) === "HAS_ERRORS" ? <Alert type="warning" message="오류 행이 있어 확정할 수 없습니다." showIcon /> : null}
+      {jobStatus(job) === "APPLIED" ? <Alert type="info" message="이미 확정된 자료입니다." showIcon /> : null}
+      {confirmSummary ? (
+        <Alert
+          type={confirmSummary.failed_rows > 0 ? "warning" : "success"}
+          message={`반영 건수 ${confirmSummary.applied_rows} / 건너뜀 ${confirmSummary.skipped_rows} / 실패 ${confirmSummary.failed_rows}`}
+          showIcon
+        />
+      ) : null}
 
       <Card className="smart-work-panel" title={sourceType === "EXCEL_FILE" ? "엑셀 파일 업로드" : "Paste 입력"}>
         {sourceType === "EXCEL_FILE" ? (
@@ -273,6 +331,7 @@ export function ImportPreviewPage() {
                   setRows([]);
                   setErrors([]);
                   setValidationSummary(null);
+                  setConfirmSummary(null);
                 }
                 clearMessages();
               }}
@@ -292,12 +351,13 @@ export function ImportPreviewPage() {
                 setRows([]);
                 setErrors([]);
                 setValidationSummary(null);
+                setConfirmSummary(null);
               }
             }}
           />
         )}
         <Space className="smart-inline-actions">
-          <Button icon={<ReloadOutlined />} onClick={resetInput} disabled={savingRows || validating}>
+          <Button icon={<ReloadOutlined />} onClick={resetInput} disabled={savingRows || validating || confirming}>
             {sourceType === "EXCEL_FILE" ? "파일 선택 초기화" : "붙여넣기 초기화"}
           </Button>
           <Button
@@ -305,12 +365,20 @@ export function ImportPreviewPage() {
             icon={sourceType === "EXCEL_FILE" ? <UploadOutlined /> : <SaveOutlined />}
             onClick={handleSaveRows}
             loading={savingRows}
-            disabled={!canSaveRows || validating}
+            disabled={!canSaveRows || validating || confirming}
           >
             {sourceType === "EXCEL_FILE" ? "업로드/미리보기" : "미리보기/행 저장"}
           </Button>
-          <Button icon={<SearchOutlined />} onClick={handleValidate} loading={validating} disabled={!canValidate || savingRows}>
+          <Button icon={<SearchOutlined />} onClick={handleValidate} loading={validating} disabled={!canValidate || savingRows || confirming}>
             검증 실행
+          </Button>
+          <Button
+            icon={<CheckCircleOutlined />}
+            onClick={handleConfirmClick}
+            loading={confirming}
+            disabled={!canConfirm || savingRows || validating}
+          >
+            확정 반영
           </Button>
         </Space>
       </Card>

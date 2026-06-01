@@ -2,7 +2,7 @@ import type { PageResponse } from "./api";
 
 export type ImportType = "PRODUCT_MASTER" | "PRODUCT_BARCODE";
 export type SourceType = "PASTE" | "EXCEL_FILE" | "MANUAL";
-export type JobStatus = "DRAFT" | "READY_TO_VALIDATE" | "VALIDATING" | "VALIDATED" | "HAS_ERRORS" | "FAILED";
+export type JobStatus = "DRAFT" | "READY_TO_VALIDATE" | "VALIDATING" | "VALIDATED" | "HAS_ERRORS" | "FAILED" | "APPLIED";
 export type ValidationStatus = "NOT_VALIDATED" | "VALID" | "WARNING" | "INVALID";
 export type ValidationSeverity = "ERROR" | "WARNING";
 
@@ -96,6 +96,21 @@ export interface ImportValidationRunResponse {
   error_rows?: number;
   validation_error_count?: number;
   progress_percent?: number;
+}
+
+export interface ImportConfirmResponse {
+  job_id: number;
+  import_type: string;
+  source_type: string;
+  status: string;
+  total_rows: number;
+  applied_rows: number;
+  skipped_rows: number;
+  failed_rows: number;
+  warning_rows: number;
+  invalid_rows: number;
+  result_code: string;
+  message: string;
 }
 
 export type ImportJobRowsResponse = PageResponse<ImportJobRow>;

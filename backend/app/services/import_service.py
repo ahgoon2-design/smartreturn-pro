@@ -17,6 +17,7 @@ from app.repositories import master_repository
 from app.repositories import import_repository as repo
 from app.schemas.auth import AuthContext
 from app.schemas.imports import (
+    ImportConfirmResponse,
     ImportJobCreateRequest,
     ImportJobDetailResponse,
     ImportJobErrorsResponse,
@@ -54,8 +55,10 @@ EXCEL_FILE_SOURCE_TYPES = {"EXCEL_FILE"}
 VALIDATION_SOURCE_TYPES = {"PASTE", "MANUAL", "EXCEL_FILE"}
 VALIDATION_READY_STATUS = "READY_TO_VALIDATE"
 VALIDATION_COMPLETED_STATUSES = {"VALIDATED", "HAS_ERRORS"}
+IMPORT_APPLIED_STATUS = "APPLIED"
 EXCEL_UPLOAD_READY_STATUS = "DRAFT"
 EXCEL_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
+DEFAULT_IMPORT_BARCODE_TYPE = "EACH"
 
 EXCEL_HEADER_MAP = {
     "product_code": "product_code",
@@ -553,6 +556,69 @@ def _row_data(row) -> dict:
     return {}
 
 
+def _text_value(data: dict, field_name: str) -> str | None:
+    value = data.get(field_name)
+    if _is_blank(value):
+        return None
+    return str(value).strip()
+
+
+def _normalize_barcode_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _int_value_or_default(data: dict, field_name: str, default: int) -> int:
+    value = data.get(field_name)
+    if _is_blank(value):
+        return default
+    try:
+        number = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        raise _business_error("INVALID_NUMBER", f"{field_name} must be a number.")
+    if number < 1:
+        raise _business_error("INVALID_MIN_VALUE", f"{field_name} must be at least 1.")
+    return number
+
+
+def _barcode_exists(db: Session, *, client_id: int, barcode: str | None) -> bool:
+    barcode_norm = _normalize_barcode_value(barcode)
+    if barcode_norm is None:
+        return False
+    return bool(
+        master_repository.find_product_by_barcode(db, client_id, barcode_norm)
+        or master_repository.find_product_barcode_by_norm(db, client_id, barcode_norm)
+    )
+
+
+def _create_barcode_if_missing(
+    db: Session,
+    *,
+    client_id: int,
+    product_id: int,
+    barcode: str | None,
+    barcode_type: str | None,
+    unit_qty: int,
+) -> tuple[bool, int | None]:
+    barcode_norm = _normalize_barcode_value(barcode)
+    if barcode_norm is None:
+        return False, None
+    if _barcode_exists(db, client_id=client_id, barcode=barcode_norm):
+        return False, None
+    product_barcode = master_repository.create_product_barcode(
+        db,
+        client_id=client_id,
+        product_id=product_id,
+        barcode=barcode_norm,
+        barcode_norm=barcode_norm,
+        barcode_type=barcode_type or DEFAULT_IMPORT_BARCODE_TYPE,
+        unit_qty=unit_qty,
+    )
+    return True, product_barcode.id
+
+
 def _validate_product_master(data: dict) -> list[dict]:
     issues = []
     issues.extend(_required_field(data, "product_code"))
@@ -888,6 +954,194 @@ def validate_import_job(
             error_rows=updated_job.error_rows,
             validation_error_count=len(validation_errors),
             progress_percent=updated_job.progress_percent,
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _apply_product_master_row(db: Session, *, client_id: int, row_item) -> tuple[str, int | None, str | None]:
+    data = _row_data(row_item)
+    product_code = _text_value(data, "product_code")
+    product_name = _text_value(data, "product_name")
+    barcode = _text_value(data, "barcode")
+    barcode_type = _text_value(data, "barcode_type")
+    if not product_code or not product_name:
+        return "FAILED", None, "REQUIRED_FIELD_MISSING"
+
+    product = master_repository.find_product_by_code(db, client_id, product_code)
+    created_product = False
+    if product is None:
+        product = master_repository.create_product(
+            db,
+            client_id=client_id,
+            product_code=product_code,
+            product_name=product_name,
+            barcode=None,
+        )
+        created_product = True
+
+    created_barcode = False
+    if barcode:
+        created_barcode, _barcode_id = _create_barcode_if_missing(
+            db,
+            client_id=client_id,
+            product_id=product.id,
+            barcode=barcode,
+            barcode_type=barcode_type,
+            unit_qty=1,
+        )
+
+    if created_product or created_barcode:
+        return "APPLIED", product.id, None
+    return "SKIPPED", product.id, None
+
+
+def _apply_product_barcode_row(db: Session, *, client_id: int, row_item) -> tuple[str, int | None, str | None]:
+    data = _row_data(row_item)
+    product_code = _text_value(data, "product_code")
+    barcode = _text_value(data, "barcode")
+    barcode_type = _text_value(data, "barcode_type") or DEFAULT_IMPORT_BARCODE_TYPE
+    if not product_code or not barcode:
+        return "FAILED", None, "REQUIRED_FIELD_MISSING"
+
+    product = master_repository.find_product_by_code(db, client_id, product_code)
+    if product is None:
+        return "FAILED", None, "PRODUCT_NOT_FOUND"
+
+    unit_qty = _int_value_or_default(data, "unit_qty", 1)
+    created_barcode, barcode_id = _create_barcode_if_missing(
+        db,
+        client_id=client_id,
+        product_id=product.id,
+        barcode=barcode,
+        barcode_type=barcode_type,
+        unit_qty=unit_qty,
+    )
+    if created_barcode:
+        return "APPLIED", barcode_id, None
+    return "SKIPPED", product.id, None
+
+
+def confirm_import_job(db: Session, auth: AuthContext, *, job_id: int) -> dict:
+    _require_import_manage(auth)
+    row = repo.get_import_job(db, job_id)
+    if row is None:
+        raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job was not found.", 404)
+    job, _, _ = row
+    _ensure_job_access(auth, job)
+
+    if job.status in {IMPORT_APPLIED_STATUS, "CONFIRMED", "IMPORTED"}:
+        raise _business_error("IMPORT_JOB_CONFIRM_ALREADY_DONE", "Import job is already confirmed.")
+    if job.status == "HAS_ERRORS":
+        raise _business_error("IMPORT_JOB_CONFIRM_HAS_ERRORS", "Import job has invalid rows.")
+    if job.status != "VALIDATED":
+        raise _business_error("IMPORT_JOB_CONFIRM_STATUS_INVALID", "Import job is not ready to confirm.")
+    if job.import_type not in {"PRODUCT_MASTER", "PRODUCT_BARCODE"}:
+        raise _business_error("IMPORT_JOB_CONFIRM_UNSUPPORTED_TYPE", "Import type is not supported for confirm.")
+    if job.requested_client_id is None:
+        raise _business_error("IMPORT_JOB_REQUESTED_CLIENT_REQUIRED", "requested_client_id is required.")
+
+    rows = repo.list_import_job_rows_for_validation(db, job_id=job.id)
+    if not rows:
+        raise _business_error("IMPORT_JOB_CONFIRM_NO_ROWS", "Import job has no rows to confirm.")
+    if any(row_item.validation_status == "INVALID" for row_item in rows) or job.invalid_rows > 0:
+        raise _business_error("IMPORT_JOB_CONFIRM_HAS_ERRORS", "Import job has invalid rows.")
+
+    try:
+        applied_rows = 0
+        skipped_rows = 0
+        failed_rows = 0
+        failure_errors: list[dict] = []
+
+        for row_item in rows:
+            if row_item.validation_status not in {"VALID", "WARNING"}:
+                row_item.target_action = "FAILED"
+                failed_rows += 1
+                failure_errors.append(
+                    {
+                        "job_id": job.id,
+                        "row_id": row_item.id,
+                        "row_no": row_item.row_no,
+                        "field_name": None,
+                        "raw_value": None,
+                        "error_code": "IMPORT_ROW_NOT_VALIDATED",
+                        "error_message": "Row is not validated.",
+                        "severity": "ERROR",
+                    }
+                )
+                continue
+
+            if job.import_type == "PRODUCT_MASTER":
+                action, target_id, error_code = _apply_product_master_row(
+                    db,
+                    client_id=job.requested_client_id,
+                    row_item=row_item,
+                )
+                row_item.target_table = "products"
+            else:
+                action, target_id, error_code = _apply_product_barcode_row(
+                    db,
+                    client_id=job.requested_client_id,
+                    row_item=row_item,
+                )
+                row_item.target_table = "product_barcodes"
+
+            row_item.target_action = action
+            row_item.target_id = target_id
+            if action == "APPLIED":
+                applied_rows += 1
+            elif action == "SKIPPED":
+                skipped_rows += 1
+            else:
+                failed_rows += 1
+                failure_errors.append(
+                    {
+                        "job_id": job.id,
+                        "row_id": row_item.id,
+                        "row_no": row_item.row_no,
+                        "field_name": None,
+                        "raw_value": None,
+                        "error_code": error_code or "IMPORT_JOB_CONFIRM_ROW_FAILED",
+                        "error_message": "Row could not be applied.",
+                        "severity": "ERROR",
+                    }
+                )
+
+        if failure_errors:
+            repo.bulk_create_import_validation_errors(db, errors=failure_errors)
+
+        warning_rows = sum(1 for row_item in rows if row_item.validation_status == "WARNING")
+        next_status = "FAILED" if failed_rows > 0 else IMPORT_APPLIED_STATUS
+        result_code = "IMPORT_JOB_CONFIRM_PARTIAL_FAILED" if failed_rows > 0 else "IMPORT_JOB_CONFIRMED"
+        message = (
+            f"confirm completed: applied={applied_rows}, skipped={skipped_rows}, "
+            f"failed={failed_rows}, warnings={warning_rows}"
+        )
+        updated_job = repo.update_import_job_after_confirm(
+            db,
+            job=job,
+            status=next_status,
+            inserted_rows=applied_rows,
+            updated_rows=0,
+            skipped_rows=skipped_rows,
+            error_rows=failed_rows,
+            message=message,
+        )
+        db.commit()
+        return ImportConfirmResponse(
+            job_id=updated_job.id,
+            import_type=updated_job.import_type,
+            source_type=updated_job.source_type,
+            status=updated_job.status,
+            total_rows=updated_job.total_rows,
+            applied_rows=applied_rows,
+            skipped_rows=skipped_rows,
+            failed_rows=failed_rows,
+            warning_rows=warning_rows,
+            invalid_rows=updated_job.invalid_rows,
+            result_code=result_code,
+            message=message,
         ).model_dump()
     except Exception:
         db.rollback()

@@ -109,6 +109,21 @@ class ImportValidationRunResponse(BaseModel):
     progress_percent: int
 
 
+class ImportConfirmResponse(BaseModel):
+    job_id: int
+    import_type: str
+    source_type: str
+    status: str
+    total_rows: int
+    applied_rows: int
+    skipped_rows: int
+    failed_rows: int
+    warning_rows: int
+    invalid_rows: int
+    result_code: str
+    message: str
+
+
 class ImportPageMeta(BaseModel):
     page: int
     page_size: int

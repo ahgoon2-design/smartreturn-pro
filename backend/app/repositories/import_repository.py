@@ -201,6 +201,32 @@ def update_import_job_after_validation(
     return job
 
 
+def update_import_job_after_confirm(
+    db: Session,
+    *,
+    job: ImportJob,
+    status: str,
+    inserted_rows: int,
+    updated_rows: int,
+    skipped_rows: int,
+    error_rows: int,
+    message: str | None,
+) -> ImportJob:
+    now = datetime.now(timezone.utc)
+    if job.started_at is None:
+        job.started_at = now
+    job.finished_at = now
+    job.status = status
+    job.inserted_rows = inserted_rows
+    job.updated_rows = updated_rows
+    job.skipped_rows = skipped_rows
+    job.error_rows = error_rows
+    job.progress_percent = 100
+    job.message = message
+    db.flush()
+    return job
+
+
 def has_existing_validation_errors(db: Session, *, job_id: int) -> bool:
     return (
         db.query(ImportValidationError.id)
