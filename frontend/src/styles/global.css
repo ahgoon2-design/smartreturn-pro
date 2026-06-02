@@ -223,6 +223,14 @@ body {
   padding-bottom: 2px;
 }
 
+.return-processing-scan-feedback {
+  align-self: stretch;
+}
+
+.return-processing-scan-feedback .ant-alert-message {
+  font-weight: 700;
+}
+
 .return-processing-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;

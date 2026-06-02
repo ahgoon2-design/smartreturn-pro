@@ -1,6 +1,7 @@
 import { ClearOutlined, ScanOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Descriptions, Input, Space, Typography } from "antd";
 import type { InputRef } from "antd";
+import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import { listReturnProcessingTasks } from "../../api/returnIntake";
@@ -12,6 +13,17 @@ import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.types";
 import type { ReturnProcessingTask } from "../../types/returns";
 
+type ScanFeedback = {
+  type: "info" | "success" | "warning" | "error";
+  message: string;
+  description?: string;
+};
+
+const INITIAL_SCAN_FEEDBACK: ScanFeedback = {
+  type: "info",
+  message: "운송장번호를 스캔하거나 Enter로 대기 대상을 조회하세요.",
+};
+
 export function ReturnProcessingWorkspacePage() {
   const scanInputRef = useRef<InputRef>(null);
   const [trackingNo, setTrackingNo] = useState("");
@@ -19,10 +31,10 @@ export function ReturnProcessingWorkspacePage() {
   const [selectedTask, setSelectedTask] = useState<ReturnProcessingTask | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [noticeMessage, setNoticeMessage] = useState("운송장번호를 스캔하거나 Enter로 대기 대상을 조회하세요.");
+  const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(INITIAL_SCAN_FEEDBACK);
 
   useEffect(() => {
-    scanInputRef.current?.focus();
+    focusScanInput(scanInputRef);
     void loadTasks();
   }, []);
 
@@ -90,20 +102,24 @@ export function ReturnProcessingWorkspacePage() {
         pageSize: 200,
       });
       const nextItems = page.items || [];
+      const nextSelectedTask = pickPreferredProcessingTask(nextItems);
       setTasks(nextItems);
-      setSelectedTask(nextItems.length === 1 ? nextItems[0] : nextItems[0] || null);
-      if (normalizedTrackingNo && nextItems.length === 0) {
-        setNoticeMessage("반품처리 대기 대상을 찾지 못했습니다.");
-      } else if (normalizedTrackingNo) {
-        setNoticeMessage(`대기 대상 조회 완료: ${nextItems.length}건`);
-      } else {
-        setNoticeMessage("전체 반품처리 대기 대상을 조회했습니다.");
-      }
+      setSelectedTask(nextSelectedTask);
+      setScanFeedback(buildScanFeedback(normalizedTrackingNo, nextItems.length, nextSelectedTask));
+      focusScanInput(scanInputRef, { select: nextItems.length === 0 || Boolean(normalizedTrackingNo) });
     } catch (error) {
-      setErrorMessage(toUserMessage(error, "반품처리 대기 대상을 불러오지 못했습니다."));
+      const message = toUserMessage(error, "반품처리 대상을 조회하지 못했습니다.");
+      setTasks([]);
+      setSelectedTask(null);
+      setErrorMessage(message);
+      setScanFeedback({
+        type: "error",
+        message,
+        description: "운송장번호를 확인한 뒤 다시 스캔하세요.",
+      });
+      focusScanInput(scanInputRef, { select: true });
     } finally {
       setLoading(false);
-      window.setTimeout(() => scanInputRef.current?.focus(), 0);
     }
   }
 
@@ -114,7 +130,7 @@ export function ReturnProcessingWorkspacePage() {
   function handleReset() {
     setTrackingNo("");
     setSelectedTask(null);
-    setNoticeMessage("운송장번호를 스캔하거나 Enter로 대기 대상을 조회하세요.");
+    setScanFeedback(INITIAL_SCAN_FEEDBACK);
     void loadTasks("");
   }
 
@@ -153,8 +169,14 @@ export function ReturnProcessingWorkspacePage() {
         <div className="return-processing-scan-status">
           <Typography.Text strong>{summaryText}</Typography.Text>
           <Typography.Text type={warningCount > 0 ? "warning" : "secondary"}>경고 {warningCount}건</Typography.Text>
-          <Typography.Text type="secondary">{noticeMessage}</Typography.Text>
         </div>
+        <Alert
+          className="return-processing-scan-feedback"
+          type={scanFeedback.type}
+          showIcon
+          message={scanFeedback.message}
+          description={scanFeedback.description}
+        />
       </section>
 
       <SmartErrorNotice message={errorMessage} />
@@ -212,12 +234,24 @@ export function ReturnProcessingWorkspacePage() {
                 className="return-processing-placeholder"
                 type="info"
                 showIcon
+                message="다음 단계"
+                description="다음 단계에서 상품 바코드 스캔을 연결합니다. 현재는 선택 row 확인까지만 수행합니다."
+              />
+              <Alert
+                className="return-processing-placeholder"
+                type="info"
+                showIcon
                 message="후속 구현 범위"
                 description="판정 선택, 사진 등록, 라벨 출력, 처리 완료는 다음 단계에서 API와 함께 연결합니다."
               />
             </>
           ) : (
-            <Alert type="info" showIcon message="작업 row를 선택하세요." description="운송장 스캔 결과 또는 그리드 row를 선택하면 상세가 표시됩니다." />
+            <Alert
+              type="info"
+              showIcon
+              message="운송장번호를 스캔하거나 목록에서 대상을 선택하세요."
+              description="조회 결과가 있으면 처리 가능한 첫 번째 row가 자동 선택됩니다."
+            />
           )}
         </aside>
       </div>
@@ -246,6 +280,66 @@ function toRowStatusLabel(value: unknown) {
     HOLD: "보류",
   };
   return labels[status] || status;
+}
+
+function pickPreferredProcessingTask(items: ReturnProcessingTask[]) {
+  return (
+    items.find((item) => item.status === "READY_FOR_PROCESSING") ||
+    items.find((item) => item.status === "RECEIVED") ||
+    items[0] ||
+    null
+  );
+}
+
+function buildScanFeedback(trackingNo: string, resultCount: number, selectedTask: ReturnProcessingTask | null): ScanFeedback {
+  if (trackingNo && resultCount === 0) {
+    return {
+      type: "warning",
+      message: "해당 운송장번호의 반품처리 대기 대상이 없습니다.",
+      description: "운송장번호를 확인한 뒤 다시 스캔하세요.",
+    };
+  }
+
+  if (trackingNo && resultCount === 1) {
+    return {
+      type: "success",
+      message: "대기 대상 1건을 찾았습니다.",
+      description: "해당 처리 대상을 자동 선택했습니다.",
+    };
+  }
+
+  if (trackingNo && resultCount > 1) {
+    return {
+      type: "success",
+      message: `대기 대상 ${resultCount}건을 찾았습니다.`,
+      description: selectedTask
+        ? "첫 번째 처리 가능 대상을 자동 선택했습니다."
+        : "목록에서 처리할 대상을 선택하세요.",
+    };
+  }
+
+  if (resultCount === 0) {
+    return {
+      type: "info",
+      message: "반품처리 대기 대상이 없습니다.",
+      description: "운송장번호를 스캔하면 해당 대상을 조회합니다.",
+    };
+  }
+
+  return {
+    type: "info",
+    message: `전체 반품처리 대기 대상 ${resultCount}건을 조회했습니다.`,
+    description: selectedTask ? "첫 번째 처리 가능 대상을 자동 선택했습니다." : undefined,
+  };
+}
+
+function focusScanInput(ref: RefObject<InputRef | null>, options: { select?: boolean } = {}) {
+  window.setTimeout(() => {
+    ref.current?.focus();
+    if (options.select) {
+      ref.current?.select?.();
+    }
+  }, 0);
 }
 
 function toDisplayText(value: unknown, fallback = "-") {
