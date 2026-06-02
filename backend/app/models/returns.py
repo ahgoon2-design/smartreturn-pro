@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +41,7 @@ class ReturnIntakeRow(Base):
         Index("ix_return_intake_rows_batch_row_no", "batch_id", "row_no"),
         Index("ix_return_intake_rows_batch_validation", "batch_id", "validation_status"),
         Index("ix_return_intake_rows_client_status", "client_id", "status"),
+        Index("ix_return_intake_rows_client_judgement", "client_id", "judgement_status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -62,6 +63,15 @@ class ReturnIntakeRow(Base):
     validation_status: Mapped[str] = mapped_column(String(50), nullable=False, default="NOT_VALIDATED")
     validation_message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="RECEIVED")
+    judgement_status: Mapped[str | None] = mapped_column(String(50))
+    judgement_memo: Mapped[str | None] = mapped_column(Text)
+    judged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    judged_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    return_management_no: Mapped[str | None] = mapped_column(String(80))
+    return_label_no: Mapped[str | None] = mapped_column(String(80))
+    label_print_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    label_print_status: Mapped[str | None] = mapped_column(String(50))
+    label_printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -7,7 +7,11 @@ from app.core.dependencies import get_current_auth_context, get_db
 from app.core.permissions import require_password_change_completed
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
-from app.schemas.returns import ReturnIntakeBatchCreateRequest, ReturnIntakePasteRowsRequest
+from app.schemas.returns import (
+    ReturnIntakeBatchCreateRequest,
+    ReturnIntakePasteRowsRequest,
+    ReturnProcessingJudgeRequest,
+)
 from app.services import return_intake_service
 
 
@@ -152,4 +156,19 @@ def list_return_processing_tasks_api(
             page=page,
             page_size=page_size,
         ),
+    )
+
+
+@router.post("/processing/tasks/{task_id}/judge", response_model=ApiResult)
+def judge_return_processing_task_api(
+    task_id: int,
+    request: ReturnProcessingJudgeRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_PROCESSING_TASK_JUDGED",
+        message="반품처리 판정을 저장했습니다.",
+        data=return_intake_service.judge_return_processing_task(db, auth, task_id, request),
     )

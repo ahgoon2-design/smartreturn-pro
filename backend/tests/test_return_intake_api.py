@@ -444,6 +444,158 @@ def test_processing_tasks_support_tracking_search(client: TestClient, db_session
     assert items[0]["return_tracking_no"] == "RTN-002"
 
 
+def test_judge_good_completes_task_without_label(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_judge_good_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_judge_good_admin")
+    batch_id = _create_batch(client, db_session, "return_judge_good_admin", client_row.id)
+    client.post(f"/api/returns/intake/batches/{batch_id}/rows/paste", json=_rows_payload(), headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+    tasks_response = client.get(f"/api/returns/processing/tasks?batch_id={batch_id}", headers=headers)
+    task_id = tasks_response.json()["data"]["items"][0]["task_id"]
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "GOOD", "judgement_memo": "normal return"},
+        headers=headers,
+    )
+    completed_response = client.get(
+        f"/api/returns/processing/tasks?batch_id={batch_id}&status=COMPLETED",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "COMPLETED"
+    assert data["judgement_status"] == "GOOD"
+    assert data["judgement_memo"] == "normal return"
+    assert data["label_print_required"] is False
+    assert data["label_print_status"] == "NOT_REQUIRED"
+    assert data["return_label_no"] is None
+    assert data["return_management_no"] is None
+    assert data["judged_at"] is not None
+    assert data["judged_by"] is not None
+    completed_items = completed_response.json()["data"]["items"]
+    assert completed_items[0]["judgement_status"] == "GOOD"
+    assert completed_items[0]["label_print_required"] is False
+    _assert_no_sensitive_values(response.json())
+
+
+def test_judge_refurb_generates_label_number_and_keeps_save_when_agent_missing(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_judge_refurb_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_judge_refurb_admin")
+    batch_id = _create_batch(client, db_session, "return_judge_refurb_admin", client_row.id)
+    client.post(f"/api/returns/intake/batches/{batch_id}/rows/paste", json=_rows_payload(), headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+    tasks_response = client.get(f"/api/returns/processing/tasks?batch_id={batch_id}", headers=headers)
+    task_id = tasks_response.json()["data"]["items"][0]["task_id"]
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "REFURB", "judgement_memo": "needs refurb"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "COMPLETED"
+    assert data["judgement_status"] == "REFURB"
+    assert data["label_print_required"] is True
+    assert data["label_print_status"] == "LOCAL_AGENT_NOT_CONNECTED"
+    assert data["return_label_no"].startswith("RTN-")
+    assert data["return_management_no"] == data["return_label_no"]
+    _assert_no_sensitive_values(response.json())
+
+
+def test_judge_blocks_invalid_validation_row(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_user(
+        db_session,
+        login_id="return_judge_invalid_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_judge_invalid_admin")
+    batch_id = _create_batch(client, db_session, "return_judge_invalid_admin", client_row.id)
+    client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json={"rows": [{"row_no": 1, "order_no": "ORDER-BAD", "product_code": "P001", "qty": 0}]},
+        headers=headers,
+    )
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    rows_response = client.get(f"/api/returns/intake/batches/{batch_id}/rows", headers=headers)
+    row_id = rows_response.json()["data"]["items"][0]["row_id"]
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{row_id}/judge",
+        json={"judgement_status": "GOOD"},
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "RETURN_PROCESSING_TASK_INVALID_VALIDATION"
+
+
+def test_judge_blocks_completed_task_and_invalid_judgement(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_judge_block_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_judge_block_admin")
+    batch_id = _create_batch(client, db_session, "return_judge_block_admin", client_row.id)
+    client.post(f"/api/returns/intake/batches/{batch_id}/rows/paste", json=_rows_payload(), headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+    tasks_response = client.get(f"/api/returns/processing/tasks?batch_id={batch_id}", headers=headers)
+    tasks = tasks_response.json()["data"]["items"]
+    first_task_id = tasks[0]["task_id"]
+    second_task_id = tasks[1]["task_id"]
+
+    invalid_judgement_response = client.post(
+        f"/api/returns/processing/tasks/{second_task_id}/judge",
+        json={"judgement_status": "UNKNOWN"},
+        headers=headers,
+    )
+    assert invalid_judgement_response.status_code == 400
+    assert invalid_judgement_response.json()["result_code"] == "RETURN_PROCESSING_JUDGEMENT_INVALID"
+
+    client.post(
+        f"/api/returns/processing/tasks/{first_task_id}/judge",
+        json={"judgement_status": "GOOD"},
+        headers=headers,
+    )
+    completed_response = client.post(
+        f"/api/returns/processing/tasks/{first_task_id}/judge",
+        json={"judgement_status": "REFURB"},
+        headers=headers,
+    )
+
+    assert completed_response.status_code == 400
+    assert completed_response.json()["result_code"] == "RETURN_PROCESSING_TASK_ALREADY_COMPLETED"
+
+
 @pytest.mark.parametrize(
     ("row", "expected_message"),
     [

@@ -2,6 +2,13 @@ import type { PageResponse } from "./api";
 
 export type ReturnIntakeBatchStatus = "DRAFT" | "RECEIVED" | "VALIDATED" | "HAS_ERRORS" | "READY_FOR_PROCESSING";
 export type ReturnIntakeRowValidationStatus = "NOT_VALIDATED" | "VALID" | "WARNING" | "INVALID";
+export type ReturnJudgementStatus = "GOOD" | "REFURB" | "SAMPLE" | "MANUFACTURER_RETURN" | "DISPOSAL" | "HOLD";
+export type ReturnLabelPrintStatus =
+  | "NOT_REQUIRED"
+  | "PRINT_PENDING"
+  | "PRINTED"
+  | "PRINT_FAILED"
+  | "LOCAL_AGENT_NOT_CONNECTED";
 
 export interface ReturnIntakeBatchSummary {
   batch_id: number;
@@ -78,6 +85,15 @@ export interface ReturnIntakeRow {
   validation_status: ReturnIntakeRowValidationStatus | string;
   validation_message?: string | null;
   status: string;
+  judgement_status?: ReturnJudgementStatus | string | null;
+  judgement_memo?: string | null;
+  judged_at?: string | null;
+  judged_by?: number | null;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  label_print_required?: boolean;
+  label_print_status?: ReturnLabelPrintStatus | string | null;
+  label_printed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -123,8 +139,27 @@ export interface ReturnProcessingTask {
   return_reason?: string | null;
   validation_status: ReturnIntakeRowValidationStatus | string;
   status: string;
+  judgement_status?: ReturnJudgementStatus | string | null;
+  judgement_memo?: string | null;
+  judged_at?: string | null;
+  judged_by?: number | null;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  label_print_required?: boolean;
+  label_print_status?: ReturnLabelPrintStatus | string | null;
+  label_printed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export type ReturnProcessingTaskListResponse = PageResponse<ReturnProcessingTask>;
+
+export interface JudgeReturnProcessingTaskPayload {
+  judgement_status: ReturnJudgementStatus;
+  judgement_memo?: string | null;
+  print_label?: boolean;
+}
+
+export interface JudgeReturnProcessingTaskResponse extends ReturnProcessingTask {
+  message: string;
+}

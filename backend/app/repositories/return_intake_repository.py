@@ -176,3 +176,12 @@ def list_processing_tasks(
         .all()
     )
     return items, total_count
+
+
+def get_processing_task_with_client(db: Session, task_id: int) -> tuple[ReturnIntakeRow, Client] | None:
+    return (
+        db.query(ReturnIntakeRow, Client)
+        .join(Client, Client.id == ReturnIntakeRow.client_id)
+        .filter(ReturnIntakeRow.id == task_id)
+        .one_or_none()
+    )

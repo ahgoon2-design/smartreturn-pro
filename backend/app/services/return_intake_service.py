@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -21,6 +22,8 @@ from app.schemas.returns import (
     ReturnIntakePrepareProcessingResponse,
     ReturnIntakeRowResponse,
     ReturnIntakeRowsResponse,
+    ReturnProcessingJudgeRequest,
+    ReturnProcessingJudgeResponse,
     ReturnProcessingTaskListResponse,
     ReturnProcessingTaskResponse,
     ReturnIntakeValidateResponse,
@@ -43,6 +46,30 @@ ROW_STATUS_READY_FOR_PROCESSING = "READY_FOR_PROCESSING"
 ROW_STATUS_PROCESSING = "PROCESSING"
 ROW_STATUS_COMPLETED = "COMPLETED"
 ROW_STATUS_HOLD = "HOLD"
+
+JUDGEMENT_GOOD = "GOOD"
+JUDGEMENT_REFURB = "REFURB"
+JUDGEMENT_SAMPLE = "SAMPLE"
+JUDGEMENT_MANUFACTURER_RETURN = "MANUFACTURER_RETURN"
+JUDGEMENT_DISPOSAL = "DISPOSAL"
+JUDGEMENT_HOLD = "HOLD"
+
+ALLOWED_JUDGEMENT_STATUSES = {
+    JUDGEMENT_GOOD,
+    JUDGEMENT_REFURB,
+    JUDGEMENT_SAMPLE,
+    JUDGEMENT_MANUFACTURER_RETURN,
+    JUDGEMENT_DISPOSAL,
+    JUDGEMENT_HOLD,
+}
+LABEL_REQUIRED_JUDGEMENT_STATUSES = {
+    JUDGEMENT_REFURB,
+    JUDGEMENT_SAMPLE,
+    JUDGEMENT_MANUFACTURER_RETURN,
+    JUDGEMENT_HOLD,
+}
+LABEL_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
+LABEL_STATUS_LOCAL_AGENT_NOT_CONNECTED = "LOCAL_AGENT_NOT_CONNECTED"
 
 ALLOWED_SOURCE_TYPES = {"PASTE", "MANUAL"}
 
@@ -165,6 +192,15 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         validation_status=row.validation_status,
         validation_message=row.validation_message,
         status=row.status,
+        judgement_status=row.judgement_status,
+        judgement_memo=row.judgement_memo,
+        judged_at=row.judged_at,
+        judged_by=row.judged_by,
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
+        label_print_required=row.label_print_required,
+        label_print_status=row.label_print_status,
+        label_printed_at=row.label_printed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -190,6 +226,15 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         return_reason=row.return_reason,
         validation_status=row.validation_status,
         status=row.status,
+        judgement_status=row.judgement_status,
+        judgement_memo=row.judgement_memo,
+        judged_at=row.judged_at,
+        judged_by=row.judged_by,
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
+        label_print_required=row.label_print_required,
+        label_print_status=row.label_print_status,
+        label_printed_at=row.label_printed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -489,6 +534,85 @@ def list_return_processing_tasks(
         page_size=safe_page_size,
         total_count=total_count,
     ).model_dump()
+
+
+def judge_return_processing_task(
+    db: Session,
+    auth: AuthContext,
+    task_id: int,
+    request: ReturnProcessingJudgeRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    task_row = repo.get_processing_task_with_client(db, task_id)
+    if task_row is None:
+        raise _business_error(
+            "RETURN_PROCESSING_TASK_NOT_FOUND",
+            "반품처리 작업 대상을 찾을 수 없습니다.",
+            404,
+        )
+    row, client = task_row
+    resolve_effective_client_id(auth, row.client_id)
+
+    judgement_status = request.judgement_status.strip().upper()
+    if judgement_status not in ALLOWED_JUDGEMENT_STATUSES:
+        raise _business_error("RETURN_PROCESSING_JUDGEMENT_INVALID", "지원하지 않는 판정값입니다.")
+
+    if row.validation_status == ROW_VALIDATION_INVALID:
+        raise _business_error(
+            "RETURN_PROCESSING_TASK_INVALID_VALIDATION",
+            "오류 row는 판정을 저장할 수 없습니다.",
+        )
+    if row.validation_status not in {ROW_VALIDATION_VALID, ROW_VALIDATION_WARNING}:
+        raise _business_error(
+            "RETURN_PROCESSING_TASK_INVALID_VALIDATION",
+            "검증 완료된 정상/경고 row만 판정을 저장할 수 있습니다.",
+        )
+    if row.status == ROW_STATUS_COMPLETED:
+        raise _business_error(
+            "RETURN_PROCESSING_TASK_ALREADY_COMPLETED",
+            "이미 처리 완료된 항목입니다.",
+        )
+    if row.status not in {ROW_STATUS_READY_FOR_PROCESSING, ROW_STATUS_PROCESSING}:
+        raise _business_error(
+            "RETURN_PROCESSING_TASK_INVALID_STATUS",
+            "처리 대기 또는 처리 중 상태에서만 판정을 저장할 수 있습니다.",
+        )
+
+    label_print_required = _is_label_print_required(judgement_status, request.print_label)
+    if label_print_required:
+        next_label_no = row.return_label_no or _generate_return_label_no(row)
+        row.return_label_no = next_label_no
+        row.return_management_no = row.return_management_no or next_label_no
+        row.label_print_status = LABEL_STATUS_LOCAL_AGENT_NOT_CONNECTED
+    else:
+        row.label_print_status = LABEL_STATUS_NOT_REQUIRED
+
+    now = datetime.now(timezone.utc)
+    row.judgement_status = judgement_status
+    row.judgement_memo = _safe_text(request.judgement_memo)
+    row.label_print_required = label_print_required
+    row.judged_at = now
+    row.judged_by = auth.user_id
+    row.status = ROW_STATUS_COMPLETED
+
+    try:
+        db.commit()
+        db.refresh(row)
+        return ReturnProcessingJudgeResponse(
+            **_processing_task_response(row, client),
+            message="판정을 저장했습니다.",
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _is_label_print_required(judgement_status: str, print_label: bool | None) -> bool:
+    return judgement_status in LABEL_REQUIRED_JUDGEMENT_STATUSES or bool(print_label)
+
+
+def _generate_return_label_no(row: ReturnIntakeRow) -> str:
+    return f"RTN-{datetime.now(timezone.utc):%Y%m%d}-{row.id}"
 
 
 def _build_raw_data(source: dict[str, Any], *, customer_phone_masked: str | None) -> dict[str, Any]:

@@ -4,14 +4,14 @@ import type { InputRef } from "antd";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClientError } from "../../api/client";
-import { listReturnProcessingTasks } from "../../api/returnIntake";
+import { judgeReturnProcessingTask, listReturnProcessingTasks } from "../../api/returnIntake";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.types";
-import type { ReturnProcessingTask } from "../../types/returns";
+import type { ReturnJudgementStatus, ReturnProcessingTask } from "../../types/returns";
 
 type ScanFeedback = {
   type: "info" | "success" | "warning" | "error";
@@ -39,6 +39,22 @@ const NO_TARGET_PRODUCT_FEEDBACK: ProductCheckFeedback = {
   message: "먼저 운송장번호를 스캔해 처리 대상을 선택하세요.",
 };
 
+const JUDGEMENT_OPTIONS: Array<{ value: ReturnJudgementStatus; label: string }> = [
+  { value: "GOOD", label: "양품" },
+  { value: "REFURB", label: "리퍼" },
+  { value: "SAMPLE", label: "샘플" },
+  { value: "MANUFACTURER_RETURN", label: "제조사반품" },
+  { value: "DISPOSAL", label: "폐기" },
+  { value: "HOLD", label: "보류" },
+];
+
+const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
+  "REFURB",
+  "SAMPLE",
+  "MANUFACTURER_RETURN",
+  "HOLD",
+]);
+
 export function ReturnProcessingWorkspacePage() {
   const scanInputRef = useRef<InputRef>(null);
   const productScanInputRef = useRef<InputRef>(null);
@@ -50,6 +66,10 @@ export function ReturnProcessingWorkspacePage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(INITIAL_SCAN_FEEDBACK);
   const [productCheckFeedback, setProductCheckFeedback] = useState<ProductCheckFeedback>(NO_TARGET_PRODUCT_FEEDBACK);
+  const [selectedJudgement, setSelectedJudgement] = useState<ReturnJudgementStatus | null>(null);
+  const [judgementMemo, setJudgementMemo] = useState("");
+  const [judging, setJudging] = useState(false);
+  const [judgementFeedback, setJudgementFeedback] = useState<ScanFeedback | null>(null);
 
   useEffect(() => {
     focusScanInput(scanInputRef);
@@ -98,9 +118,38 @@ export function ReturnProcessingWorkspacePage() {
         minWidth: 120,
         render: (value) => <SmartStatusBadge status={String(value)} label={toRowStatusLabel(value)} />,
       },
-      { key: "judgement", title: "판정", width: 110, minWidth: 100, render: () => <Typography.Text type="secondary">후속</Typography.Text> },
+      {
+        key: "judgement",
+        title: "판정",
+        dataIndex: "judgement_status",
+        width: 130,
+        minWidth: 120,
+        render: (value) =>
+          value ? (
+            <SmartStatusBadge status="SUCCESS" label={toJudgementLabel(value)} />
+          ) : (
+            <Typography.Text type="secondary">미판정</Typography.Text>
+          ),
+      },
+      {
+        key: "return_label_no",
+        title: "라벨번호",
+        dataIndex: "return_label_no",
+        width: 170,
+        minWidth: 160,
+        copyable: true,
+        render: (value) => toDisplayText(value),
+      },
       { key: "photo", title: "사진", width: 100, minWidth: 90, render: () => <Typography.Text type="secondary">후속</Typography.Text> },
-      { key: "label", title: "라벨", width: 100, minWidth: 90, render: () => <Typography.Text type="secondary">후속</Typography.Text> },
+      {
+        key: "label",
+        title: "라벨",
+        width: 150,
+        minWidth: 140,
+        render: (_value, record) => (
+          <SmartStatusBadge status={toLabelBadgeStatus(record.label_print_status, record.label_print_required)} label={toLabelStatusLabel(record)} />
+        ),
+      },
     ],
     [],
   );
@@ -108,6 +157,14 @@ export function ReturnProcessingWorkspacePage() {
   const selectedKey = selectedTask ? [selectedTask.task_id] : [];
   const summaryText = `${tasks.length}건 표시`;
   const warningCount = tasks.filter((item) => item.validation_status === "WARNING").length;
+  const isSelectedTaskCompleted = selectedTask?.status === "COMPLETED";
+  const canSaveJudgement =
+    Boolean(selectedTask) &&
+    !isSelectedTaskCompleted &&
+    selectedTask?.validation_status !== "INVALID" &&
+    productCheckFeedback.status === "MATCHED" &&
+    Boolean(selectedJudgement) &&
+    !judging;
 
   async function loadTasks(nextTrackingNo = trackingNo) {
     setLoading(true);
@@ -157,8 +214,11 @@ export function ReturnProcessingWorkspacePage() {
   function selectProcessingTask(task: ReturnProcessingTask | null, options: { focusProduct?: boolean } = {}) {
     setSelectedTask(task);
     setProductScanValue("");
+    setSelectedJudgement(toJudgementStatus(task?.judgement_status));
+    setJudgementMemo(task?.judgement_memo || "");
+    setJudgementFeedback(null);
     setProductCheckFeedback(task ? buildPendingProductFeedback(task) : NO_TARGET_PRODUCT_FEEDBACK);
-    if (options.focusProduct && task) {
+    if (options.focusProduct && task && task.status !== "COMPLETED") {
       focusScanInput(productScanInputRef, { select: true });
     }
   }
@@ -213,6 +273,70 @@ export function ReturnProcessingWorkspacePage() {
       description: "선택된 row의 바코드 또는 상품코드와 다른 값입니다. 상품을 다시 확인하세요.",
     });
     focusScanInput(productScanInputRef, { select: true });
+  }
+
+  async function handleJudgementSave() {
+    if (!selectedTask) {
+      setJudgementFeedback({
+        type: "warning",
+        message: "판정할 반품처리 대상을 선택하세요.",
+      });
+      focusScanInput(scanInputRef, { select: true });
+      return;
+    }
+    if (selectedTask.status === "COMPLETED") {
+      setJudgementFeedback({
+        type: "warning",
+        message: "이미 처리 완료된 항목입니다.",
+      });
+      return;
+    }
+    if (productCheckFeedback.status !== "MATCHED") {
+      setJudgementFeedback({
+        type: "warning",
+        message: "상품 확인 후 판정할 수 있습니다.",
+        description: "선택된 반품 상품의 바코드 또는 상품코드를 먼저 스캔하세요.",
+      });
+      focusScanInput(productScanInputRef, { select: true });
+      return;
+    }
+    if (!selectedJudgement) {
+      setJudgementFeedback({
+        type: "warning",
+        message: "판정을 선택하세요.",
+      });
+      return;
+    }
+
+    setJudging(true);
+    setJudgementFeedback(null);
+    try {
+      const response = await judgeReturnProcessingTask(selectedTask.task_id, {
+        judgement_status: selectedJudgement,
+        judgement_memo: judgementMemo,
+        print_label: isLabelRequiredJudgement(selectedJudgement),
+      });
+      const updatedTask: ReturnProcessingTask = { ...selectedTask, ...response };
+      setTasks((previous) => previous.map((item) => (item.task_id === updatedTask.task_id ? updatedTask : item)));
+      setSelectedTask(updatedTask);
+      setSelectedJudgement(toJudgementStatus(updatedTask.judgement_status));
+      setJudgementMemo(updatedTask.judgement_memo || "");
+      setJudgementFeedback({
+        type: "success",
+        message: "판정을 저장했습니다.",
+        description: buildJudgementSavedDescription(updatedTask),
+      });
+      setTrackingNo("");
+      focusScanInput(scanInputRef, { select: true });
+    } catch (error) {
+      setJudgementFeedback({
+        type: "error",
+        message: toUserMessage(error, "판정을 저장하지 못했습니다."),
+        description: "처리 상태와 권한을 확인한 뒤 다시 시도하세요.",
+      });
+    } finally {
+      setJudging(false);
+    }
   }
 
   return (
@@ -303,9 +427,15 @@ export function ReturnProcessingWorkspacePage() {
               size="large"
               prefix={<ScanOutlined />}
               allowClear
-              disabled={!selectedTask}
+              disabled={!selectedTask || selectedTask.status === "COMPLETED"}
               value={productScanValue}
-              placeholder={selectedTask ? "선택된 반품 상품의 바코드를 스캔하세요" : "먼저 운송장번호를 스캔해 처리 대상을 선택하세요"}
+              placeholder={
+                selectedTask?.status === "COMPLETED"
+                  ? "이미 처리 완료된 항목입니다"
+                  : selectedTask
+                    ? "선택된 반품 상품의 바코드를 스캔하세요"
+                    : "먼저 운송장번호를 스캔해 처리 대상을 선택하세요"
+              }
               onChange={(event) => setProductScanValue(event.target.value)}
               onPressEnter={handleProductScanEnter}
             />
@@ -334,24 +464,69 @@ export function ReturnProcessingWorkspacePage() {
                 <Descriptions.Item label="작업상태">
                   <SmartStatusBadge status={selectedTask.status} label={toRowStatusLabel(selectedTask.status)} />
                 </Descriptions.Item>
+                <Descriptions.Item label="판정">
+                  {selectedTask.judgement_status ? (
+                    <SmartStatusBadge status="SUCCESS" label={toJudgementLabel(selectedTask.judgement_status)} />
+                  ) : (
+                    toDisplayText(null)
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="반품관리번호">{toDisplayText(selectedTask.return_management_no)}</Descriptions.Item>
+                <Descriptions.Item label="라벨번호">{toDisplayText(selectedTask.return_label_no)}</Descriptions.Item>
+                <Descriptions.Item label="라벨상태">{toLabelStatusLabel(selectedTask)}</Descriptions.Item>
               </Descriptions>
-              <Alert
-                className="return-processing-placeholder"
-                type="info"
-                showIcon
-                message={productCheckFeedback.status === "MATCHED" ? "다음 단계" : "상품 확인 필요"}
-                description={
-                  productCheckFeedback.status === "MATCHED"
-                    ? "다음 단계에서 판정 저장 API/화면을 연결합니다."
-                    : "상품 확인 후 판정 단계로 진행합니다."
-                }
-              />
+              <section className="return-processing-judgement-panel" aria-label="판정 저장">
+                <Space align="center" wrap>
+                  <Typography.Text strong>판정 선택</Typography.Text>
+                  {selectedJudgement ? (
+                    <SmartStatusBadge status="SUCCESS" label={toJudgementLabel(selectedJudgement)} />
+                  ) : (
+                    <SmartStatusBadge status="WAITING" label="미선택" />
+                  )}
+                </Space>
+                <Space wrap className="return-processing-judgement-buttons">
+                  {JUDGEMENT_OPTIONS.map((option) => (
+                    <Button
+                      key={option.value}
+                      type={selectedJudgement === option.value ? "primary" : "default"}
+                      disabled={isSelectedTaskCompleted || judging}
+                      onClick={() => {
+                        setSelectedJudgement(option.value);
+                        setJudgementFeedback({
+                          type: "info",
+                          message: `${option.label} 판정을 선택했습니다.`,
+                          description: buildLabelPolicyDescription(option.value),
+                        });
+                      }}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </Space>
+                <Input.TextArea
+                  rows={3}
+                  value={judgementMemo}
+                  disabled={isSelectedTaskCompleted || judging}
+                  placeholder="판정 메모를 입력하세요"
+                  onChange={(event) => setJudgementMemo(event.target.value)}
+                />
+                <Alert
+                  className="return-processing-placeholder"
+                  type={judgementFeedback?.type || "info"}
+                  showIcon
+                  message={judgementFeedback?.message || getJudgementHelpMessage(selectedTask, productCheckFeedback.status, selectedJudgement)}
+                  description={judgementFeedback?.description || buildSelectedJudgementDescription(selectedJudgement)}
+                />
+                <Button type="primary" onClick={handleJudgementSave} disabled={!canSaveJudgement} loading={judging}>
+                  판정 저장
+                </Button>
+              </section>
               <Alert
                 className="return-processing-placeholder"
                 type="info"
                 showIcon
                 message="후속 구현 범위"
-                description="판정 선택, 사진 등록, 라벨 출력, 처리 완료는 다음 단계에서 API와 함께 연결합니다."
+                description="사진 등록, 실제 Local Agent 라벨 출력, 재고 반영은 다음 단계에서 연결합니다."
               />
             </>
           ) : (
@@ -391,7 +566,112 @@ function toRowStatusLabel(value: unknown) {
   return labels[status] || status;
 }
 
+function toJudgementLabel(value: unknown) {
+  const status = String(value || "");
+  const labels: Record<string, string> = {
+    GOOD: "양품",
+    REFURB: "리퍼",
+    SAMPLE: "샘플",
+    MANUFACTURER_RETURN: "제조사반품",
+    DISPOSAL: "폐기",
+    HOLD: "보류",
+  };
+  return labels[status] || status;
+}
+
+function toJudgementStatus(value: unknown): ReturnJudgementStatus | null {
+  const status = String(value || "") as ReturnJudgementStatus;
+  return JUDGEMENT_OPTIONS.some((option) => option.value === status) ? status : null;
+}
+
+function isLabelRequiredJudgement(value: ReturnJudgementStatus) {
+  return LABEL_REQUIRED_JUDGEMENTS.has(value);
+}
+
+function toLabelBadgeStatus(status: unknown, required: unknown) {
+  if (!required) {
+    return "WAITING";
+  }
+  const normalized = String(status || "");
+  const statusMap: Record<string, string> = {
+    PRINT_PENDING: "WARNING",
+    PRINTED: "SUCCESS",
+    PRINT_FAILED: "ERROR",
+    LOCAL_AGENT_NOT_CONNECTED: "WARNING",
+  };
+  return statusMap[normalized] || "WARNING";
+}
+
+function toLabelStatusLabel(task: ReturnProcessingTask) {
+  if (!task.label_print_required) {
+    return "라벨 미대상";
+  }
+  const status = String(task.label_print_status || "");
+  const labels: Record<string, string> = {
+    PRINT_PENDING: "출력 대기",
+    PRINTED: "출력 완료",
+    PRINT_FAILED: "출력 실패",
+    LOCAL_AGENT_NOT_CONNECTED: "Local Agent 미연결",
+  };
+  return labels[status] || "라벨 출력 필요";
+}
+
+function buildLabelPolicyDescription(judgementStatus: ReturnJudgementStatus) {
+  if (isLabelRequiredJudgement(judgementStatus)) {
+    return "추적 대상 판정입니다. 저장 시 반품관리번호/라벨번호를 생성하고 Local Agent 출력 연결을 시도할 수 있는 상태로 표시합니다.";
+  }
+  if (judgementStatus === "DISPOSAL") {
+    return "폐기는 1차 정책에서 기본 라벨 미출력 대상입니다. 필요 시 후속 정책으로 선택 출력 여부를 정합니다.";
+  }
+  return "양품은 기본 라벨 미출력 대상입니다.";
+}
+
+function buildSelectedJudgementDescription(judgementStatus: ReturnJudgementStatus | null) {
+  if (!judgementStatus) {
+    return "상품 확인 후 판정을 선택하고 저장하세요.";
+  }
+  return buildLabelPolicyDescription(judgementStatus);
+}
+
+function getJudgementHelpMessage(
+  task: ReturnProcessingTask | null,
+  productCheckStatus: ProductCheckStatus,
+  judgementStatus: ReturnJudgementStatus | null,
+) {
+  if (!task) {
+    return "판정할 처리 대상을 선택하세요.";
+  }
+  if (task.status === "COMPLETED") {
+    return "이미 처리 완료된 항목입니다.";
+  }
+  if (productCheckStatus !== "MATCHED") {
+    return "상품 확인 후 판정할 수 있습니다.";
+  }
+  if (!judgementStatus) {
+    return "판정을 선택하세요.";
+  }
+  return "판정을 저장할 수 있습니다.";
+}
+
+function buildJudgementSavedDescription(task: ReturnProcessingTask) {
+  const labelNo = task.return_label_no || task.return_management_no;
+  if (task.label_print_required) {
+    return labelNo
+      ? `반품관리번호/라벨번호 ${labelNo}가 생성되었습니다. ${toLabelStatusLabel(task)} 상태입니다.`
+      : `${toLabelStatusLabel(task)} 상태입니다.`;
+  }
+  return "라벨 출력 대상이 아니며 처리 완료로 표시했습니다.";
+}
+
 function buildPendingProductFeedback(task: ReturnProcessingTask): ProductCheckFeedback {
+  if (task.status === "COMPLETED") {
+    return {
+      status: "MATCHED",
+      type: "success",
+      message: "이미 처리 완료된 항목입니다.",
+      description: "저장된 판정과 라벨 상태를 확인하세요.",
+    };
+  }
   const expectedValues = getExpectedProductScanValues(task);
   if (expectedValues.length === 0) {
     return {

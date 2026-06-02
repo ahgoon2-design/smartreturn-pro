@@ -1,5 +1,7 @@
 import { apiRequest } from "./client";
 import type {
+  JudgeReturnProcessingTaskPayload,
+  JudgeReturnProcessingTaskResponse,
   ReturnIntakeBatchCreatePayload,
   ReturnIntakeBatchListResponse,
   ReturnIntakeBatchSummary,
@@ -93,4 +95,11 @@ export async function listReturnProcessingTasks(options: ReturnProcessingTaskLis
   params.set("page", String(options.page || 1));
   params.set("page_size", String(options.pageSize || 100));
   return apiRequest<ReturnProcessingTaskListResponse>(`/api/returns/processing/tasks?${params.toString()}`);
+}
+
+export async function judgeReturnProcessingTask(taskId: number, payload: JudgeReturnProcessingTaskPayload) {
+  return apiRequest<JudgeReturnProcessingTaskResponse>(`/api/returns/processing/tasks/${taskId}/judge`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

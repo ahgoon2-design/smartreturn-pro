@@ -120,6 +120,15 @@ class ReturnIntakeRowResponse(BaseModel):
     validation_status: str
     validation_message: str | None = None
     status: str
+    judgement_status: str | None = None
+    judgement_memo: str | None = None
+    judged_at: datetime | None = None
+    judged_by: int | None = None
+    return_management_no: str | None = None
+    return_label_no: str | None = None
+    label_print_required: bool = False
+    label_print_status: str | None = None
+    label_printed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -180,6 +189,15 @@ class ReturnProcessingTaskResponse(BaseModel):
     return_reason: str | None = None
     validation_status: str
     status: str
+    judgement_status: str | None = None
+    judgement_memo: str | None = None
+    judged_at: datetime | None = None
+    judged_by: int | None = None
+    return_management_no: str | None = None
+    return_label_no: str | None = None
+    label_print_required: bool = False
+    label_print_status: str | None = None
+    label_printed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -189,3 +207,29 @@ class ReturnProcessingTaskListResponse(BaseModel):
     page: int
     page_size: int
     total_count: int
+
+
+class ReturnProcessingJudgeRequest(BaseModel):
+    judgement_status: str
+    judgement_memo: str | None = None
+    print_label: bool | None = None
+
+    @field_validator("judgement_status")
+    @classmethod
+    def _required_status(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("judgement_memo")
+    @classmethod
+    def _optional_memo(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ReturnProcessingJudgeResponse(ReturnProcessingTaskResponse):
+    message: str
