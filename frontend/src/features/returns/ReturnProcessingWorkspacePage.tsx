@@ -19,19 +19,37 @@ type ScanFeedback = {
   description?: string;
 };
 
+type ProductCheckStatus = "NO_TARGET" | "PENDING" | "NEEDS_INPUT" | "MATCHED" | "MISMATCHED";
+
+type ProductCheckFeedback = {
+  status: ProductCheckStatus;
+  type: "info" | "success" | "warning" | "error";
+  message: string;
+  description?: string;
+};
+
 const INITIAL_SCAN_FEEDBACK: ScanFeedback = {
   type: "info",
   message: "운송장번호를 스캔하거나 Enter로 대기 대상을 조회하세요.",
 };
 
+const NO_TARGET_PRODUCT_FEEDBACK: ProductCheckFeedback = {
+  status: "NO_TARGET",
+  type: "info",
+  message: "먼저 운송장번호를 스캔해 처리 대상을 선택하세요.",
+};
+
 export function ReturnProcessingWorkspacePage() {
   const scanInputRef = useRef<InputRef>(null);
+  const productScanInputRef = useRef<InputRef>(null);
   const [trackingNo, setTrackingNo] = useState("");
+  const [productScanValue, setProductScanValue] = useState("");
   const [tasks, setTasks] = useState<ReturnProcessingTask[]>([]);
   const [selectedTask, setSelectedTask] = useState<ReturnProcessingTask | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(INITIAL_SCAN_FEEDBACK);
+  const [productCheckFeedback, setProductCheckFeedback] = useState<ProductCheckFeedback>(NO_TARGET_PRODUCT_FEEDBACK);
 
   useEffect(() => {
     focusScanInput(scanInputRef);
@@ -104,13 +122,15 @@ export function ReturnProcessingWorkspacePage() {
       const nextItems = page.items || [];
       const nextSelectedTask = pickPreferredProcessingTask(nextItems);
       setTasks(nextItems);
-      setSelectedTask(nextSelectedTask);
+      selectProcessingTask(nextSelectedTask, { focusProduct: Boolean(normalizedTrackingNo && nextSelectedTask) });
       setScanFeedback(buildScanFeedback(normalizedTrackingNo, nextItems.length, nextSelectedTask));
-      focusScanInput(scanInputRef, { select: nextItems.length === 0 || Boolean(normalizedTrackingNo) });
+      if (!nextSelectedTask || !normalizedTrackingNo) {
+        focusScanInput(scanInputRef, { select: nextItems.length === 0 || Boolean(normalizedTrackingNo) });
+      }
     } catch (error) {
       const message = toUserMessage(error, "반품처리 대상을 조회하지 못했습니다.");
       setTasks([]);
-      setSelectedTask(null);
+      selectProcessingTask(null);
       setErrorMessage(message);
       setScanFeedback({
         type: "error",
@@ -129,9 +149,70 @@ export function ReturnProcessingWorkspacePage() {
 
   function handleReset() {
     setTrackingNo("");
-    setSelectedTask(null);
+    selectProcessingTask(null);
     setScanFeedback(INITIAL_SCAN_FEEDBACK);
     void loadTasks("");
+  }
+
+  function selectProcessingTask(task: ReturnProcessingTask | null, options: { focusProduct?: boolean } = {}) {
+    setSelectedTask(task);
+    setProductScanValue("");
+    setProductCheckFeedback(task ? buildPendingProductFeedback(task) : NO_TARGET_PRODUCT_FEEDBACK);
+    if (options.focusProduct && task) {
+      focusScanInput(productScanInputRef, { select: true });
+    }
+  }
+
+  function handleProductScanEnter() {
+    const scannedBarcode = productScanValue.trim();
+    if (!selectedTask) {
+      setProductCheckFeedback(NO_TARGET_PRODUCT_FEEDBACK);
+      focusScanInput(scanInputRef, { select: true });
+      return;
+    }
+
+    if (!scannedBarcode) {
+      setProductCheckFeedback({
+        status: "NEEDS_INPUT",
+        type: "warning",
+        message: "상품 바코드를 입력하세요.",
+        description: "선택된 반품 상품의 바코드 또는 상품코드를 스캔하세요.",
+      });
+      focusScanInput(productScanInputRef, { select: true });
+      return;
+    }
+
+    const expectedValues = getExpectedProductScanValues(selectedTask);
+    if (expectedValues.length === 0) {
+      setProductCheckFeedback({
+        status: "MISMATCHED",
+        type: "warning",
+        message: "선택 row에 비교할 바코드/상품코드가 없습니다.",
+        description: "상품마스터 또는 접수 자료 보강이 필요합니다.",
+      });
+      focusScanInput(productScanInputRef, { select: true });
+      return;
+    }
+
+    if (expectedValues.includes(scannedBarcode)) {
+      setProductCheckFeedback({
+        status: "MATCHED",
+        type: "success",
+        message: "상품 확인 완료",
+        description: "스캔한 바코드가 선택된 상품과 일치합니다.",
+      });
+      setProductScanValue("");
+      focusScanInput(productScanInputRef);
+      return;
+    }
+
+    setProductCheckFeedback({
+      status: "MISMATCHED",
+      type: "error",
+      message: "바코드가 일치하지 않습니다.",
+      description: "선택된 row의 바코드 또는 상품코드와 다른 값입니다. 상품을 다시 확인하세요.",
+    });
+    focusScanInput(productScanInputRef, { select: true });
   }
 
   return (
@@ -198,7 +279,7 @@ export function ReturnProcessingWorkspacePage() {
             maxHeight={420}
             selectedRowKeys={selectedKey}
             enableMultiSelect={false}
-            onRowClick={(record) => setSelectedTask(record)}
+            onRowClick={(record) => selectProcessingTask(record, { focusProduct: true })}
             getRowClassName={(record) =>
               [
                 record.validation_status === "WARNING" ? "smart-grid-row-warning" : "",
@@ -212,6 +293,30 @@ export function ReturnProcessingWorkspacePage() {
 
         <aside className="return-processing-detail-panel" aria-label="선택 row 상세">
           <Typography.Title level={4}>선택 row 상세</Typography.Title>
+          <div className="return-processing-product-scan" aria-label="상품 바코드 스캔">
+            <Space align="center" wrap>
+              <Typography.Text strong>상품 바코드 스캔</Typography.Text>
+              <SmartStatusBadge status={toProductCheckBadgeStatus(productCheckFeedback.status)} label={toProductCheckLabel(productCheckFeedback.status)} />
+            </Space>
+            <Input
+              ref={productScanInputRef}
+              size="large"
+              prefix={<ScanOutlined />}
+              allowClear
+              disabled={!selectedTask}
+              value={productScanValue}
+              placeholder={selectedTask ? "선택된 반품 상품의 바코드를 스캔하세요" : "먼저 운송장번호를 스캔해 처리 대상을 선택하세요"}
+              onChange={(event) => setProductScanValue(event.target.value)}
+              onPressEnter={handleProductScanEnter}
+            />
+            <Alert
+              className="return-processing-product-feedback"
+              type={productCheckFeedback.type}
+              showIcon
+              message={productCheckFeedback.message}
+              description={productCheckFeedback.description}
+            />
+          </div>
           {selectedTask ? (
             <>
               <Descriptions size="small" column={1} bordered>
@@ -234,8 +339,12 @@ export function ReturnProcessingWorkspacePage() {
                 className="return-processing-placeholder"
                 type="info"
                 showIcon
-                message="다음 단계"
-                description="다음 단계에서 상품 바코드 스캔을 연결합니다. 현재는 선택 row 확인까지만 수행합니다."
+                message={productCheckFeedback.status === "MATCHED" ? "다음 단계" : "상품 확인 필요"}
+                description={
+                  productCheckFeedback.status === "MATCHED"
+                    ? "다음 단계에서 판정 저장 API/화면을 연결합니다."
+                    : "상품 확인 후 판정 단계로 진행합니다."
+                }
               />
               <Alert
                 className="return-processing-placeholder"
@@ -280,6 +389,53 @@ function toRowStatusLabel(value: unknown) {
     HOLD: "보류",
   };
   return labels[status] || status;
+}
+
+function buildPendingProductFeedback(task: ReturnProcessingTask): ProductCheckFeedback {
+  const expectedValues = getExpectedProductScanValues(task);
+  if (expectedValues.length === 0) {
+    return {
+      status: "PENDING",
+      type: "warning",
+      message: "선택된 상품을 확인하세요.",
+      description: "선택 row에 비교할 바코드/상품코드가 없어 접수 자료 확인이 필요합니다.",
+    };
+  }
+
+  return {
+    status: "PENDING",
+    type: "info",
+    message: "선택된 상품을 확인하세요.",
+    description: "선택된 반품 상품의 바코드 또는 상품코드를 스캔하세요.",
+  };
+}
+
+function getExpectedProductScanValues(task: ReturnProcessingTask) {
+  return [task.barcode, task.product_code]
+    .map((value) => String(value || "").trim())
+    .filter((value) => value.length > 0);
+}
+
+function toProductCheckBadgeStatus(status: ProductCheckStatus) {
+  const statusMap: Record<ProductCheckStatus, string> = {
+    NO_TARGET: "WAITING",
+    PENDING: "WAITING",
+    NEEDS_INPUT: "WARNING",
+    MATCHED: "SUCCESS",
+    MISMATCHED: "ERROR",
+  };
+  return statusMap[status];
+}
+
+function toProductCheckLabel(status: ProductCheckStatus) {
+  const labels: Record<ProductCheckStatus, string> = {
+    NO_TARGET: "대상 미선택",
+    PENDING: "미확인",
+    NEEDS_INPUT: "입력 필요",
+    MATCHED: "확인 완료",
+    MISMATCHED: "불일치",
+  };
+  return labels[status];
 }
 
 function pickPreferredProcessingTask(items: ReturnProcessingTask[]) {

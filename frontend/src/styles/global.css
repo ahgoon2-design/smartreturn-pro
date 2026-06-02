@@ -257,6 +257,15 @@ body {
   margin: 0;
 }
 
+.return-processing-product-scan {
+  display: grid;
+  gap: 8px;
+}
+
+.return-processing-product-feedback .ant-alert-message {
+  font-weight: 700;
+}
+
 .return-processing-placeholder {
   margin-top: 2px;
 }
