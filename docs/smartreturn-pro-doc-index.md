@@ -71,3 +71,4 @@
 
 | `docs/return-processing-worker-screen-ux-plan-2026-05-29.md` | 반품처리 작업 화면 구현 전 작업자 UX, 스캔 흐름, SmartDataGrid 가로 스크롤 기준, 1차 skeleton 범위를 정리한다. | 반품처리 작업 화면 skeleton 구현 전 | 필수 |
 | `docs/local-agent-label-print-integration-plan-2026-05-29.md` | 기존 SmartReturn Local Agent 확인 결과와 SmartReturn Pro 라벨 출력 연동 기준을 정리한다. | Local Agent 연결 상태/라벨 출력/재출력 UI 구현 전 | 필수 |
+| `docs/return-closing-inventory-flow-plan-2026-05-29.md` | 반품 판정 완료 후 일마감 후보, 재고 이벤트, current inventory 반영 기준을 정리한다. | 반품 일마감/재고반영 skeleton 구현 전 | 필수 |
