@@ -1,5 +1,5 @@
-import { ClearOutlined, DeleteOutlined, PaperClipOutlined, ScanOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, Button, Descriptions, Input, List, Space, Typography } from "antd";
+import { ClearOutlined, DeleteOutlined, PaperClipOutlined, PrinterOutlined, ScanOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
+import { Alert, Button, Descriptions, Input, List, Space, Tooltip, Typography } from "antd";
 import type { InputRef } from "antd";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -151,14 +151,14 @@ export function ReturnProcessingWorkspacePage() {
         width: 170,
         minWidth: 160,
         copyable: true,
-        render: (value) => toDisplayText(value),
+        render: (_value, record) => renderLabelNumber(record),
       },
       { key: "photo", title: "사진", width: 100, minWidth: 90, render: () => <Typography.Text type="secondary">후속</Typography.Text> },
       {
         key: "label",
-        title: "라벨",
-        width: 150,
-        minWidth: 140,
+        title: "라벨상태",
+        width: 170,
+        minWidth: 160,
         render: (_value, record) => (
           <SmartStatusBadge status={toLabelBadgeStatus(record.label_print_status, record.label_print_required)} label={toLabelStatusLabel(record)} />
         ),
@@ -591,8 +591,61 @@ export function ReturnProcessingWorkspacePage() {
                 </Descriptions.Item>
                 <Descriptions.Item label="반품관리번호">{toDisplayText(selectedTask.return_management_no)}</Descriptions.Item>
                 <Descriptions.Item label="라벨번호">{toDisplayText(selectedTask.return_label_no)}</Descriptions.Item>
-                <Descriptions.Item label="라벨상태">{toLabelStatusLabel(selectedTask)}</Descriptions.Item>
+                <Descriptions.Item label="라벨 출력 대상">
+                  <SmartStatusBadge
+                    status={selectedTask.label_print_required ? "WARNING" : "WAITING"}
+                    label={selectedTask.label_print_required ? "라벨 출력 대상" : "라벨 출력 대상 아님"}
+                  />
+                </Descriptions.Item>
+                <Descriptions.Item label="라벨상태">
+                  <SmartStatusBadge
+                    status={toLabelBadgeStatus(selectedTask.label_print_status, selectedTask.label_print_required)}
+                    label={toLabelStatusLabel(selectedTask)}
+                  />
+                </Descriptions.Item>
+                <Descriptions.Item label="출력일시">{toDisplayText(selectedTask.label_printed_at)}</Descriptions.Item>
               </Descriptions>
+              <section className="return-processing-label-panel" aria-label="Local Agent 라벨 출력">
+                <Space align="center" wrap>
+                  <PrinterOutlined />
+                  <Typography.Text strong>Local Agent 라벨 출력</Typography.Text>
+                  <SmartStatusBadge status="WARNING" label="Local Agent 미연결" />
+                </Space>
+                <Alert
+                  className="return-processing-placeholder"
+                  type="warning"
+                  showIcon
+                  message="라벨 출력 준비중"
+                  description="기존 SmartReturn Local Agent endpoint가 확인되기 전까지 실제 출력 호출은 하지 않습니다. 현재는 라벨번호 생성과 출력 필요 상태만 표시합니다."
+                />
+                <Descriptions size="small" column={1} bordered>
+                  <Descriptions.Item label="반품관리번호">{toDisplayText(selectedTask.return_management_no)}</Descriptions.Item>
+                  <Descriptions.Item label="라벨번호">{toDisplayText(selectedTask.return_label_no)}</Descriptions.Item>
+                  <Descriptions.Item label="라벨상태">
+                    <SmartStatusBadge
+                      status={toLabelBadgeStatus(selectedTask.label_print_status, selectedTask.label_print_required)}
+                      label={toLabelStatusLabel(selectedTask)}
+                    />
+                  </Descriptions.Item>
+                  <Descriptions.Item label="출력 정책">{buildLabelTargetDescription(selectedTask)}</Descriptions.Item>
+                </Descriptions>
+                <Space wrap>
+                  <Tooltip title={getLabelActionDisabledReason(selectedTask)}>
+                    <span>
+                      <Button icon={<PrinterOutlined />} disabled>
+                        라벨 출력
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title={getLabelActionDisabledReason(selectedTask)}>
+                    <span>
+                      <Button icon={<PrinterOutlined />} disabled>
+                        라벨 재출력
+                      </Button>
+                    </span>
+                  </Tooltip>
+                </Space>
+              </section>
               <section className="return-processing-judgement-panel" aria-label="판정 저장">
                 <Space align="center" wrap>
                   <Typography.Text strong>판정 선택</Typography.Text>
@@ -806,6 +859,38 @@ function toLabelStatusLabel(task: ReturnProcessingTask) {
     LOCAL_AGENT_NOT_CONNECTED: "Local Agent 미연결",
   };
   return labels[status] || "라벨 출력 필요";
+}
+
+function getLabelNumber(task: ReturnProcessingTask) {
+  return task.return_label_no || task.return_management_no || "";
+}
+
+function renderLabelNumber(task: ReturnProcessingTask) {
+  if (!task.label_print_required) {
+    return <Typography.Text type="secondary">미대상</Typography.Text>;
+  }
+  const labelNo = getLabelNumber(task);
+  return labelNo ? labelNo : <Typography.Text type="secondary">라벨번호 미생성</Typography.Text>;
+}
+
+function buildLabelTargetDescription(task: ReturnProcessingTask) {
+  if (!task.label_print_required) {
+    return "라벨 출력 대상 아님";
+  }
+  if (!getLabelNumber(task)) {
+    return "라벨 출력 대상이지만 라벨번호가 아직 생성되지 않았습니다.";
+  }
+  return "라벨 출력 대상입니다. Local Agent 연동 후 출력/재출력을 사용할 수 있습니다.";
+}
+
+function getLabelActionDisabledReason(task: ReturnProcessingTask) {
+  if (!task.label_print_required) {
+    return "라벨 출력 대상이 아닙니다.";
+  }
+  if (!getLabelNumber(task)) {
+    return "라벨번호가 생성된 뒤 출력할 수 있습니다.";
+  }
+  return "Local Agent 연동 후 사용할 수 있습니다.";
 }
 
 function isAllowedAttachmentFile(file: File) {

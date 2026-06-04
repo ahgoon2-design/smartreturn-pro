@@ -270,6 +270,12 @@ body {
   margin-top: 2px;
 }
 
+.return-processing-label-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
 .return-processing-attachments-panel {
   display: grid;
   gap: 8px;
