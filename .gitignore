@@ -15,6 +15,8 @@ backend/local.secret.json
 backend/*.local.json
 backend/*.secret.json
 !backend/local.secret.example.json
+backend/uploads/
+backend/pytest-cache-files*/
 
 # Python
 __pycache__/

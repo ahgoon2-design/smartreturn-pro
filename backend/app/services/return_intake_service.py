@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from app.core.auth_context import resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError, PermissionDeniedError
 from app.core.permissions import can_write, require_permission, require_roles
-from app.models.returns import ReturnIntakeRow
+from app.models.returns import ReturnIntakeRow, ReturnProcessingAttachment
 from app.repositories import master_repository
 from app.repositories import return_intake_repository as repo
 from app.schemas.auth import AuthContext
@@ -22,6 +24,8 @@ from app.schemas.returns import (
     ReturnIntakePrepareProcessingResponse,
     ReturnIntakeRowResponse,
     ReturnIntakeRowsResponse,
+    ReturnProcessingAttachmentListResponse,
+    ReturnProcessingAttachmentResponse,
     ReturnProcessingJudgeRequest,
     ReturnProcessingJudgeResponse,
     ReturnProcessingTaskListResponse,
@@ -70,6 +74,13 @@ LABEL_REQUIRED_JUDGEMENT_STATUSES = {
 }
 LABEL_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
 LABEL_STATUS_LOCAL_AGENT_NOT_CONNECTED = "LOCAL_AGENT_NOT_CONNECTED"
+
+ATTACHMENT_TYPE_PHOTO = "PHOTO"
+ALLOWED_ATTACHMENT_TYPES = {ATTACHMENT_TYPE_PHOTO, "EVIDENCE"}
+ALLOWED_ATTACHMENT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+ALLOWED_ATTACHMENT_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+RETURN_PROCESSING_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "return-processing"
 
 ALLOWED_SOURCE_TYPES = {"PASTE", "MANUAL"}
 
@@ -237,6 +248,26 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         label_printed_at=row.label_printed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    ).model_dump()
+
+
+def _attachment_response(attachment: ReturnProcessingAttachment) -> dict:
+    return ReturnProcessingAttachmentResponse(
+        attachment_id=attachment.id,
+        task_id=attachment.return_intake_row_id,
+        row_id=attachment.return_intake_row_id,
+        batch_id=attachment.batch_id,
+        client_id=attachment.client_id,
+        attachment_type=attachment.attachment_type,
+        original_filename=attachment.original_filename,
+        content_type=attachment.content_type,
+        file_size=attachment.file_size,
+        note=attachment.note,
+        uploaded_by=attachment.uploaded_by,
+        uploaded_at=attachment.uploaded_at,
+        active_yn=attachment.active_yn,
+        preview_url=None,
+        download_url=None,
     ).model_dump()
 
 
@@ -607,8 +638,171 @@ def judge_return_processing_task(
         raise
 
 
+def upload_return_processing_attachment(
+    db: Session,
+    auth: AuthContext,
+    task_id: int,
+    *,
+    filename: str,
+    content_type: str | None,
+    file_bytes: bytes,
+    attachment_type: str | None = None,
+    note: str | None = None,
+) -> dict:
+    _require_return_prepare(auth)
+    row, _client = _get_processing_task_for_attachment(db, auth, task_id)
+    _ensure_attachment_task_allowed(row)
+    safe_filename = _ensure_attachment_filename(filename)
+    safe_content_type = _ensure_attachment_content_type(content_type)
+    _ensure_attachment_size(file_bytes)
+    safe_attachment_type = _ensure_attachment_type(attachment_type)
+    extension = Path(safe_filename).suffix.lower()
+    stored_filename = f"{uuid4().hex}{extension}"
+    relative_path = Path("uploads") / "return-processing" / str(row.client_id) / str(row.id) / stored_filename
+    storage_path = RETURN_PROCESSING_UPLOAD_ROOT / str(row.client_id) / str(row.id) / stored_filename
+
+    attachment = ReturnProcessingAttachment(
+        return_intake_row_id=row.id,
+        client_id=row.client_id,
+        batch_id=row.batch_id,
+        attachment_type=safe_attachment_type,
+        original_filename=safe_filename,
+        stored_filename=stored_filename,
+        content_type=safe_content_type,
+        file_size=len(file_bytes),
+        storage_path=relative_path.as_posix(),
+        note=_safe_text(note),
+        uploaded_by=auth.user_id,
+        active_yn=True,
+    )
+
+    try:
+        storage_path.parent.mkdir(parents=True, exist_ok=True)
+        storage_path.write_bytes(file_bytes)
+        repo.create_processing_attachment(db, attachment)
+        db.commit()
+        db.refresh(attachment)
+        return _attachment_response(attachment)
+    except Exception:
+        db.rollback()
+        if storage_path.exists():
+            storage_path.unlink()
+        raise
+
+
+def list_return_processing_attachments(
+    db: Session,
+    auth: AuthContext,
+    task_id: int,
+    *,
+    include_inactive: bool = False,
+) -> dict:
+    _require_return_view(auth)
+    row, _client = _get_processing_task_for_attachment(db, auth, task_id)
+    attachments = repo.list_processing_attachments(db, task_id=row.id, include_inactive=include_inactive)
+    return ReturnProcessingAttachmentListResponse(
+        items=[ReturnProcessingAttachmentResponse(**_attachment_response(attachment)) for attachment in attachments],
+    ).model_dump()
+
+
+def disable_return_processing_attachment(
+    db: Session,
+    auth: AuthContext,
+    task_id: int,
+    attachment_id: int,
+) -> dict:
+    _require_return_prepare(auth)
+    row, _client = _get_processing_task_for_attachment(db, auth, task_id)
+    attachment = repo.get_processing_attachment(db, task_id=row.id, attachment_id=attachment_id)
+    if attachment is None:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_NOT_FOUND",
+            "반품처리 증빙 파일을 찾을 수 없습니다.",
+            404,
+        )
+    try:
+        attachment.active_yn = False
+        db.commit()
+        db.refresh(attachment)
+        return _attachment_response(attachment)
+    except Exception:
+        db.rollback()
+        raise
+
+
 def _is_label_print_required(judgement_status: str, print_label: bool | None) -> bool:
     return judgement_status in LABEL_REQUIRED_JUDGEMENT_STATUSES or bool(print_label)
+
+
+def _get_processing_task_for_attachment(db: Session, auth: AuthContext, task_id: int):
+    task_row = repo.get_processing_task_with_client(db, task_id)
+    if task_row is None:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_TASK_NOT_FOUND",
+            "반품처리 작업 대상을 찾을 수 없습니다.",
+            404,
+        )
+    row, client = task_row
+    resolve_effective_client_id(auth, row.client_id)
+    return row, client
+
+
+def _ensure_attachment_task_allowed(row: ReturnIntakeRow) -> None:
+    if row.validation_status == ROW_VALIDATION_INVALID:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_TASK_INVALID_VALIDATION",
+            "오류 row에는 증빙 파일을 첨부할 수 없습니다.",
+        )
+    if row.validation_status not in {ROW_VALIDATION_VALID, ROW_VALIDATION_WARNING}:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_TASK_INVALID_VALIDATION",
+            "검증 완료된 정상/경고 row에만 증빙 파일을 첨부할 수 있습니다.",
+        )
+    if row.status not in {ROW_STATUS_READY_FOR_PROCESSING, ROW_STATUS_PROCESSING, ROW_STATUS_COMPLETED, ROW_STATUS_HOLD}:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_TASK_INVALID_STATUS",
+            "반품처리 대기, 처리 중, 보류, 처리 완료 상태에서만 증빙 파일을 첨부할 수 있습니다.",
+        )
+
+
+def _ensure_attachment_type(value: str | None) -> str:
+    normalized = (value or ATTACHMENT_TYPE_PHOTO).strip().upper()
+    if normalized not in ALLOWED_ATTACHMENT_TYPES:
+        raise _business_error("RETURN_PROCESSING_ATTACHMENT_TYPE_INVALID", "지원하지 않는 증빙 유형입니다.")
+    return normalized
+
+
+def _ensure_attachment_filename(filename: str) -> str:
+    safe_filename = Path(filename or "").name.strip()
+    if not safe_filename:
+        raise _business_error("RETURN_PROCESSING_ATTACHMENT_FILE_REQUIRED", "업로드할 파일이 필요합니다.")
+    extension = Path(safe_filename).suffix.lower()
+    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_EXTENSION_INVALID",
+            "jpg, jpeg, png, webp 이미지 파일만 첨부할 수 있습니다.",
+        )
+    return safe_filename
+
+
+def _ensure_attachment_content_type(content_type: str | None) -> str:
+    safe_content_type = (content_type or "").strip().lower()
+    if safe_content_type not in ALLOWED_ATTACHMENT_CONTENT_TYPES:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_CONTENT_TYPE_INVALID",
+            "허용되지 않는 이미지 형식입니다.",
+        )
+    return safe_content_type
+
+
+def _ensure_attachment_size(file_bytes: bytes) -> None:
+    if not file_bytes:
+        raise _business_error("RETURN_PROCESSING_ATTACHMENT_FILE_REQUIRED", "업로드할 파일이 필요합니다.")
+    if len(file_bytes) > MAX_ATTACHMENT_BYTES:
+        raise _business_error(
+            "RETURN_PROCESSING_ATTACHMENT_TOO_LARGE",
+            "첨부 파일은 10MB 이하만 업로드할 수 있습니다.",
+        )
 
 
 def _generate_return_label_no(row: ReturnIntakeRow) -> str:

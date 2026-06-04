@@ -79,3 +79,26 @@ class ReturnIntakeRow(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class ReturnProcessingAttachment(Base):
+    __tablename__ = "return_processing_attachments"
+    __table_args__ = (
+        Index("ix_return_processing_attachments_row_active", "return_intake_row_id", "active_yn"),
+        Index("ix_return_processing_attachments_client_uploaded", "client_id", "uploaded_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    return_intake_row_id: Mapped[int] = mapped_column(ForeignKey("return_intake_rows.id"), nullable=False)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("return_intake_batches.id"), nullable=False)
+    attachment_type: Mapped[str] = mapped_column(String(50), nullable=False, default="PHOTO", server_default="PHOTO")
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models.master import Client
-from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow
+from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow, ReturnProcessingAttachment
 
 
 def create_batch(
@@ -183,5 +183,42 @@ def get_processing_task_with_client(db: Session, task_id: int) -> tuple[ReturnIn
         db.query(ReturnIntakeRow, Client)
         .join(Client, Client.id == ReturnIntakeRow.client_id)
         .filter(ReturnIntakeRow.id == task_id)
+        .one_or_none()
+    )
+
+
+def create_processing_attachment(
+    db: Session,
+    attachment: ReturnProcessingAttachment,
+) -> ReturnProcessingAttachment:
+    db.add(attachment)
+    db.flush()
+    return attachment
+
+
+def list_processing_attachments(
+    db: Session,
+    *,
+    task_id: int,
+    include_inactive: bool = False,
+) -> list[ReturnProcessingAttachment]:
+    query = db.query(ReturnProcessingAttachment).filter(ReturnProcessingAttachment.return_intake_row_id == task_id)
+    if not include_inactive:
+        query = query.filter(ReturnProcessingAttachment.active_yn.is_(True))
+    return query.order_by(ReturnProcessingAttachment.uploaded_at.desc(), ReturnProcessingAttachment.id.desc()).all()
+
+
+def get_processing_attachment(
+    db: Session,
+    *,
+    task_id: int,
+    attachment_id: int,
+) -> ReturnProcessingAttachment | None:
+    return (
+        db.query(ReturnProcessingAttachment)
+        .filter(
+            ReturnProcessingAttachment.id == attachment_id,
+            ReturnProcessingAttachment.return_intake_row_id == task_id,
+        )
         .one_or_none()
     )

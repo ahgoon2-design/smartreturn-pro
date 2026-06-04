@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_auth_context, get_db
@@ -171,4 +171,66 @@ def judge_return_processing_task_api(
         result_code="RETURN_PROCESSING_TASK_JUDGED",
         message="반품처리 판정을 저장했습니다.",
         data=return_intake_service.judge_return_processing_task(db, auth, task_id, request),
+    )
+
+
+@router.post("/processing/tasks/{task_id}/attachments", response_model=ApiResult)
+async def upload_return_processing_attachment_api(
+    task_id: int,
+    file: UploadFile = File(...),
+    attachment_type: str | None = Form(None),
+    note: str | None = Form(None),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    file_bytes = await file.read()
+    return api_success(
+        result_code="RETURN_PROCESSING_ATTACHMENT_UPLOADED",
+        message="반품처리 증빙 파일을 업로드했습니다.",
+        data=return_intake_service.upload_return_processing_attachment(
+            db,
+            auth,
+            task_id,
+            filename=file.filename or "",
+            content_type=file.content_type,
+            file_bytes=file_bytes,
+            attachment_type=attachment_type,
+            note=note,
+        ),
+    )
+
+
+@router.get("/processing/tasks/{task_id}/attachments", response_model=ApiResult)
+def list_return_processing_attachments_api(
+    task_id: int,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_PROCESSING_ATTACHMENTS_FOUND",
+        message="반품처리 증빙 파일 목록을 조회했습니다.",
+        data=return_intake_service.list_return_processing_attachments(
+            db,
+            auth,
+            task_id,
+            include_inactive=include_inactive,
+        ),
+    )
+
+
+@router.post("/processing/tasks/{task_id}/attachments/{attachment_id}/disable", response_model=ApiResult)
+def disable_return_processing_attachment_api(
+    task_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_PROCESSING_ATTACHMENT_DISABLED",
+        message="반품처리 증빙 파일을 비활성화했습니다.",
+        data=return_intake_service.disable_return_processing_attachment(db, auth, task_id, attachment_id),
     )

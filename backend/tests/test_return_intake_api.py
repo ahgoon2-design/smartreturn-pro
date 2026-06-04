@@ -1,4 +1,7 @@
 from collections.abc import Generator
+from pathlib import Path
+from shutil import rmtree
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +16,8 @@ from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.master import Client, Product, ProductBarcode, Warehouse
-from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow
+from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow, ReturnProcessingAttachment
+from app.services import return_intake_service
 
 
 TEST_PASSWORD = "DummyPass123!"
@@ -38,6 +42,7 @@ def db_session() -> Generator[Session, None, None]:
         ProductBarcode.__table__,
         ReturnIntakeBatch.__table__,
         ReturnIntakeRow.__table__,
+        ReturnProcessingAttachment.__table__,
         Role.__table__,
         Permission.__table__,
         User.__table__,
@@ -65,6 +70,17 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def upload_root(monkeypatch: pytest.MonkeyPatch) -> Generator[Path, None, None]:
+    root = Path(__file__).resolve().parents[1] / "tmp" / f"return-attachments-{uuid4().hex}"
+    root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(return_intake_service, "RETURN_PROCESSING_UPLOAD_ROOT", root)
+    try:
+        yield root
+    finally:
+        rmtree(root, ignore_errors=True)
 
 
 def _create_client(db: Session, code: str = "CLIENT_A", active_yn: bool = True) -> Client:
@@ -189,6 +205,29 @@ def _rows_payload(**overrides) -> dict:
     }
     payload.update(overrides)
     return payload
+
+
+def _prepare_processing_task(
+    client: TestClient,
+    db: Session,
+    *,
+    login_id: str,
+    client_id: int,
+    rows_payload: dict | None = None,
+) -> tuple[dict[str, str], int, int]:
+    headers = _login(client, login_id)
+    batch_id = _create_batch(client, db, login_id, client_id)
+    client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json=rows_payload or _rows_payload(),
+        headers=headers,
+    )
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+    tasks_response = client.get(f"/api/returns/processing/tasks?batch_id={batch_id}", headers=headers)
+    assert tasks_response.status_code == 200
+    task_id = tasks_response.json()["data"]["items"][0]["task_id"]
+    return headers, batch_id, task_id
 
 
 def _assert_no_sensitive_values(data: dict) -> None:
@@ -523,6 +562,188 @@ def test_judge_refurb_generates_label_number_and_keeps_save_when_agent_missing(
     assert data["return_label_no"].startswith("RTN-")
     assert data["return_management_no"] == data["return_label_no"]
     _assert_no_sensitive_values(response.json())
+
+
+def test_upload_return_processing_attachment_and_list(
+    client: TestClient,
+    db_session: Session,
+    upload_root: Path,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_attachment_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_attachment_admin",
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/attachments",
+        data={"attachment_type": "PHOTO", "note": "front photo"},
+        files={"file": ("evidence.jpg", b"\xff\xd8\xff\xe0test-image", "image/jpeg")},
+        headers=headers,
+    )
+    list_response = client.get(f"/api/returns/processing/tasks/{task_id}/attachments", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["task_id"] == task_id
+    assert data["original_filename"] == "evidence.jpg"
+    assert data["content_type"] == "image/jpeg"
+    assert data["file_size"] > 0
+    assert data["active_yn"] is True
+    assert "storage_path" not in data
+    assert list_response.status_code == 200
+    items = list_response.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["attachment_id"] == data["attachment_id"]
+    assert list(upload_root.rglob("*.jpg"))
+    _assert_no_sensitive_values(response.json())
+
+
+def test_disable_return_processing_attachment_hides_from_default_list(
+    client: TestClient,
+    db_session: Session,
+    upload_root: Path,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_attachment_disable_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_attachment_disable_admin",
+        client_id=client_row.id,
+    )
+    upload_response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/attachments",
+        files={"file": ("evidence.png", b"\x89PNG\r\n\x1a\nimage", "image/png")},
+        headers=headers,
+    )
+    attachment_id = upload_response.json()["data"]["attachment_id"]
+
+    disable_response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/attachments/{attachment_id}/disable",
+        headers=headers,
+    )
+    default_list_response = client.get(f"/api/returns/processing/tasks/{task_id}/attachments", headers=headers)
+    inactive_list_response = client.get(
+        f"/api/returns/processing/tasks/{task_id}/attachments?include_inactive=true",
+        headers=headers,
+    )
+
+    assert disable_response.status_code == 200
+    assert disable_response.json()["data"]["active_yn"] is False
+    assert default_list_response.json()["data"]["items"] == []
+    assert inactive_list_response.json()["data"]["items"][0]["active_yn"] is False
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type", "expected_code"),
+    [
+        ("evidence.exe", "image/jpeg", "RETURN_PROCESSING_ATTACHMENT_EXTENSION_INVALID"),
+        ("evidence.jpg", "application/octet-stream", "RETURN_PROCESSING_ATTACHMENT_CONTENT_TYPE_INVALID"),
+    ],
+)
+def test_upload_return_processing_attachment_blocks_unsafe_files(
+    client: TestClient,
+    db_session: Session,
+    upload_root: Path,
+    filename: str,
+    content_type: str,
+    expected_code: str,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id=f"return_attachment_block_{expected_code}",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id=f"return_attachment_block_{expected_code}",
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/attachments",
+        files={"file": (filename, b"unsafe-file", content_type)},
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == expected_code
+    assert not list(upload_root.rglob("*.*"))
+
+
+def test_upload_return_processing_attachment_blocks_missing_task(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_user(
+        db_session,
+        login_id="return_attachment_missing_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_attachment_missing_admin")
+
+    response = client.post(
+        "/api/returns/processing/tasks/999/attachments",
+        files={"file": ("evidence.jpg", b"\xff\xd8\xff\xe0test-image", "image/jpeg")},
+        headers=headers,
+    )
+
+    assert client_row.id
+    assert response.status_code == 404
+    assert response.json()["result_code"] == "RETURN_PROCESSING_ATTACHMENT_TASK_NOT_FOUND"
+
+
+def test_upload_return_processing_attachment_blocks_invalid_validation_row(
+    client: TestClient,
+    db_session: Session,
+    upload_root: Path,
+):
+    client_row = _create_client(db_session)
+    _create_user(
+        db_session,
+        login_id="return_attachment_invalid_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_attachment_invalid_admin")
+    batch_id = _create_batch(client, db_session, "return_attachment_invalid_admin", client_row.id)
+    client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json={"rows": [{"row_no": 1, "order_no": "ORDER-BAD", "product_code": "P001", "qty": 0}]},
+        headers=headers,
+    )
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    rows_response = client.get(f"/api/returns/intake/batches/{batch_id}/rows", headers=headers)
+    row_id = rows_response.json()["data"]["items"][0]["row_id"]
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{row_id}/attachments",
+        files={"file": ("evidence.jpg", b"\xff\xd8\xff\xe0test-image", "image/jpeg")},
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "RETURN_PROCESSING_ATTACHMENT_TASK_INVALID_VALIDATION"
+    assert not list(upload_root.rglob("*.*"))
 
 
 def test_judge_blocks_invalid_validation_row(client: TestClient, db_session: Session):

@@ -269,3 +269,22 @@ body {
 .return-processing-placeholder {
   margin-top: 2px;
 }
+
+.return-processing-attachments-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.return-processing-attachment-upload {
+  display: grid;
+  gap: 8px;
+}
+
+.return-processing-attachment-upload input[type="file"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #ffffff;
+}

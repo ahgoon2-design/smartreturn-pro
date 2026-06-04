@@ -1,17 +1,23 @@
-import { ClearOutlined, ScanOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Descriptions, Input, Space, Typography } from "antd";
+import { ClearOutlined, DeleteOutlined, PaperClipOutlined, ScanOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
+import { Alert, Button, Descriptions, Input, List, Space, Typography } from "antd";
 import type { InputRef } from "antd";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClientError } from "../../api/client";
-import { judgeReturnProcessingTask, listReturnProcessingTasks } from "../../api/returnIntake";
+import {
+  disableReturnProcessingAttachment,
+  judgeReturnProcessingTask,
+  listReturnProcessingAttachments,
+  listReturnProcessingTasks,
+  uploadReturnProcessingAttachment,
+} from "../../api/returnIntake";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.types";
-import type { ReturnJudgementStatus, ReturnProcessingTask } from "../../types/returns";
+import type { ReturnJudgementStatus, ReturnProcessingAttachment, ReturnProcessingTask } from "../../types/returns";
 
 type ScanFeedback = {
   type: "info" | "success" | "warning" | "error";
@@ -58,6 +64,7 @@ const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
 export function ReturnProcessingWorkspacePage() {
   const scanInputRef = useRef<InputRef>(null);
   const productScanInputRef = useRef<InputRef>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [trackingNo, setTrackingNo] = useState("");
   const [productScanValue, setProductScanValue] = useState("");
   const [tasks, setTasks] = useState<ReturnProcessingTask[]>([]);
@@ -70,6 +77,12 @@ export function ReturnProcessingWorkspacePage() {
   const [judgementMemo, setJudgementMemo] = useState("");
   const [judging, setJudging] = useState(false);
   const [judgementFeedback, setJudgementFeedback] = useState<ScanFeedback | null>(null);
+  const [attachments, setAttachments] = useState<ReturnProcessingAttachment[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentNote, setAttachmentNote] = useState("");
+  const [attachmentFeedback, setAttachmentFeedback] = useState<ScanFeedback | null>(null);
 
   useEffect(() => {
     focusScanInput(scanInputRef);
@@ -200,6 +213,23 @@ export function ReturnProcessingWorkspacePage() {
     }
   }
 
+  async function loadTaskAttachments(taskId: number) {
+    setAttachmentsLoading(true);
+    setAttachmentFeedback(null);
+    try {
+      const response = await listReturnProcessingAttachments(taskId);
+      setAttachments(response.items || []);
+    } catch (error) {
+      setAttachments([]);
+      setAttachmentFeedback({
+        type: "error",
+        message: toUserMessage(error, "사진/증빙 목록을 불러오지 못했습니다."),
+      });
+    } finally {
+      setAttachmentsLoading(false);
+    }
+  }
+
   function handleScanEnter() {
     void loadTasks(trackingNo);
   }
@@ -217,7 +247,17 @@ export function ReturnProcessingWorkspacePage() {
     setSelectedJudgement(toJudgementStatus(task?.judgement_status));
     setJudgementMemo(task?.judgement_memo || "");
     setJudgementFeedback(null);
+    setAttachmentFile(null);
+    setAttachmentNote("");
+    setAttachmentFeedback(null);
+    setAttachments([]);
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
     setProductCheckFeedback(task ? buildPendingProductFeedback(task) : NO_TARGET_PRODUCT_FEEDBACK);
+    if (task) {
+      void loadTaskAttachments(task.task_id);
+    }
     if (options.focusProduct && task && task.status !== "COMPLETED") {
       focusScanInput(productScanInputRef, { select: true });
     }
@@ -336,6 +376,84 @@ export function ReturnProcessingWorkspacePage() {
       });
     } finally {
       setJudging(false);
+    }
+  }
+
+  async function handleAttachmentUpload() {
+    if (!selectedTask) {
+      setAttachmentFeedback({
+        type: "warning",
+        message: "먼저 반품처리 대상을 선택하세요.",
+      });
+      return;
+    }
+    if (!attachmentFile) {
+      setAttachmentFeedback({
+        type: "warning",
+        message: "첨부할 이미지 파일을 선택하세요.",
+      });
+      return;
+    }
+    if (!isAllowedAttachmentFile(attachmentFile)) {
+      setAttachmentFeedback({
+        type: "error",
+        message: "jpg, jpeg, png, webp 이미지 파일만 첨부할 수 있습니다.",
+        description: "파일 크기는 10MB 이하만 지원합니다.",
+      });
+      return;
+    }
+    if (attachmentFile.size > 10 * 1024 * 1024) {
+      setAttachmentFeedback({
+        type: "error",
+        message: "첨부 파일은 10MB 이하만 업로드할 수 있습니다.",
+      });
+      return;
+    }
+
+    setAttachmentUploading(true);
+    setAttachmentFeedback(null);
+    try {
+      const uploaded = await uploadReturnProcessingAttachment(selectedTask.task_id, attachmentFile, {
+        attachment_type: "PHOTO",
+        note: attachmentNote,
+      });
+      setAttachments((previous) => [uploaded, ...previous]);
+      setAttachmentFile(null);
+      setAttachmentNote("");
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
+      setAttachmentFeedback({
+        type: "success",
+        message: "사진/증빙을 업로드했습니다.",
+      });
+    } catch (error) {
+      setAttachmentFeedback({
+        type: "error",
+        message: toUserMessage(error, "사진/증빙을 업로드하지 못했습니다."),
+      });
+    } finally {
+      setAttachmentUploading(false);
+    }
+  }
+
+  async function handleAttachmentDisable(attachment: ReturnProcessingAttachment) {
+    if (!selectedTask) {
+      return;
+    }
+    setAttachmentFeedback(null);
+    try {
+      await disableReturnProcessingAttachment(selectedTask.task_id, attachment.attachment_id);
+      setAttachments((previous) => previous.filter((item) => item.attachment_id !== attachment.attachment_id));
+      setAttachmentFeedback({
+        type: "success",
+        message: "사진/증빙을 목록에서 제거했습니다.",
+      });
+    } catch (error) {
+      setAttachmentFeedback({
+        type: "error",
+        message: toUserMessage(error, "사진/증빙을 제거하지 못했습니다."),
+      });
     }
   }
 
@@ -521,6 +639,80 @@ export function ReturnProcessingWorkspacePage() {
                   판정 저장
                 </Button>
               </section>
+              <section className="return-processing-attachments-panel" aria-label="사진/증빙">
+                <Space align="center" wrap>
+                  <PaperClipOutlined />
+                  <Typography.Text strong>사진/증빙</Typography.Text>
+                  <SmartStatusBadge status="WAITING" label="선택 사항" />
+                </Space>
+                <Typography.Text type="secondary">
+                  필요한 경우 사진을 첨부하세요. 사진이 없어도 판정 저장은 가능합니다.
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  리퍼, 제조사반품, 보류, 폐기 등은 사진 첨부를 권장합니다.
+                </Typography.Text>
+                <div className="return-processing-attachment-upload">
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    disabled={!selectedTask || attachmentUploading}
+                    onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
+                  />
+                  <Input.TextArea
+                    rows={2}
+                    value={attachmentNote}
+                    disabled={!selectedTask || attachmentUploading}
+                    placeholder="첨부 메모를 입력하세요."
+                    onChange={(event) => setAttachmentNote(event.target.value)}
+                  />
+                  <Button
+                    icon={<UploadOutlined />}
+                    onClick={() => void handleAttachmentUpload()}
+                    loading={attachmentUploading}
+                    disabled={!selectedTask || !attachmentFile}
+                  >
+                    업로드
+                  </Button>
+                </div>
+                {attachmentFeedback ? (
+                  <Alert
+                    className="return-processing-placeholder"
+                    type={attachmentFeedback.type}
+                    showIcon
+                    message={attachmentFeedback.message}
+                    description={attachmentFeedback.description}
+                  />
+                ) : null}
+                <List
+                  size="small"
+                  loading={attachmentsLoading}
+                  dataSource={attachments}
+                  locale={{ emptyText: "첨부된 사진/증빙이 없습니다." }}
+                  renderItem={(attachment) => (
+                    <List.Item
+                      actions={[
+                        <Button
+                          key="disable"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => void handleAttachmentDisable(attachment)}
+                        >
+                          제거
+                        </Button>,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={attachment.original_filename}
+                        description={`${toFileSizeLabel(attachment.file_size)} · ${attachment.content_type}${
+                          attachment.note ? ` · ${attachment.note}` : ""
+                        }`}
+                      />
+                    </List.Item>
+                  )}
+                />
+              </section>
               <Alert
                 className="return-processing-placeholder"
                 type="info"
@@ -614,6 +806,24 @@ function toLabelStatusLabel(task: ReturnProcessingTask) {
     LOCAL_AGENT_NOT_CONNECTED: "Local Agent 미연결",
   };
   return labels[status] || "라벨 출력 필요";
+}
+
+function isAllowedAttachmentFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return (
+    Boolean(extension && ["jpg", "jpeg", "png", "webp"].includes(extension)) &&
+    ["image/jpeg", "image/png", "image/webp"].includes(file.type)
+  );
+}
+
+function toFileSizeLabel(size: number) {
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(1)}MB`;
+  }
+  if (size >= 1024) {
+    return `${Math.ceil(size / 1024)}KB`;
+  }
+  return `${size}B`;
 }
 
 function buildLabelPolicyDescription(judgementStatus: ReturnJudgementStatus) {

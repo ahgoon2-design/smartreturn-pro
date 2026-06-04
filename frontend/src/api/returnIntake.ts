@@ -10,7 +10,10 @@ import type {
   ReturnIntakePrepareProcessingResponse,
   ReturnIntakeRowsResponse,
   ReturnIntakeValidateResponse,
+  ReturnProcessingAttachmentListResponse,
   ReturnProcessingTaskListResponse,
+  UploadReturnProcessingAttachmentPayload,
+  UploadReturnProcessingAttachmentResponse,
 } from "../types/returns";
 
 export interface ReturnIntakeListOptions {
@@ -102,4 +105,43 @@ export async function judgeReturnProcessingTask(taskId: number, payload: JudgeRe
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function uploadReturnProcessingAttachment(
+  taskId: number,
+  file: File,
+  payload: UploadReturnProcessingAttachmentPayload = {},
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (payload.attachment_type) {
+    formData.append("attachment_type", payload.attachment_type);
+  }
+  if (payload.note) {
+    formData.append("note", payload.note);
+  }
+  return apiRequest<UploadReturnProcessingAttachmentResponse>(`/api/returns/processing/tasks/${taskId}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function listReturnProcessingAttachments(taskId: number, options: { includeInactive?: boolean } = {}) {
+  const params = new URLSearchParams();
+  if (options.includeInactive) {
+    params.set("include_inactive", "true");
+  }
+  const query = params.toString();
+  return apiRequest<ReturnProcessingAttachmentListResponse>(
+    `/api/returns/processing/tasks/${taskId}/attachments${query ? `?${query}` : ""}`,
+  );
+}
+
+export async function disableReturnProcessingAttachment(taskId: number, attachmentId: number) {
+  return apiRequest<UploadReturnProcessingAttachmentResponse>(
+    `/api/returns/processing/tasks/${taskId}/attachments/${attachmentId}/disable`,
+    {
+      method: "POST",
+    },
+  );
 }

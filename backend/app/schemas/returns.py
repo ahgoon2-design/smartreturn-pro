@@ -233,3 +233,25 @@ class ReturnProcessingJudgeRequest(BaseModel):
 
 class ReturnProcessingJudgeResponse(ReturnProcessingTaskResponse):
     message: str
+
+
+class ReturnProcessingAttachmentResponse(BaseModel):
+    attachment_id: int
+    task_id: int
+    row_id: int
+    batch_id: int
+    client_id: int
+    attachment_type: str
+    original_filename: str
+    content_type: str
+    file_size: int
+    note: str | None = None
+    uploaded_by: int
+    uploaded_at: datetime
+    active_yn: bool
+    preview_url: str | None = None
+    download_url: str | None = None
+
+
+class ReturnProcessingAttachmentListResponse(BaseModel):
+    items: list[ReturnProcessingAttachmentResponse]

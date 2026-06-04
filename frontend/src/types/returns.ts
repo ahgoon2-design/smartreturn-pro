@@ -163,3 +163,32 @@ export interface JudgeReturnProcessingTaskPayload {
 export interface JudgeReturnProcessingTaskResponse extends ReturnProcessingTask {
   message: string;
 }
+
+export interface ReturnProcessingAttachment {
+  attachment_id: number;
+  task_id: number;
+  row_id: number;
+  batch_id: number;
+  client_id: number;
+  attachment_type: string;
+  original_filename: string;
+  content_type: string;
+  file_size: number;
+  note?: string | null;
+  uploaded_by: number;
+  uploaded_at: string;
+  active_yn: boolean;
+  preview_url?: string | null;
+  download_url?: string | null;
+}
+
+export interface ReturnProcessingAttachmentListResponse {
+  items: ReturnProcessingAttachment[];
+}
+
+export interface UploadReturnProcessingAttachmentPayload {
+  attachment_type?: string;
+  note?: string | null;
+}
+
+export type UploadReturnProcessingAttachmentResponse = ReturnProcessingAttachment;
