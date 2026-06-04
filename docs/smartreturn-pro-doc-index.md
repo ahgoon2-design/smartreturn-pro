@@ -70,3 +70,4 @@
 | `docs/client-seller-screen-api-gap-analysis-2026-05-29.md` | 고객사/셀러 목록·상세·창고 설정 화면 구현 전 기존 backend/frontend API 부족분을 분석한다. | 고객사/셀러 목록 skeleton 구현 또는 client_warehouse_settings API 보강 전 | 필수 |
 
 | `docs/return-processing-worker-screen-ux-plan-2026-05-29.md` | 반품처리 작업 화면 구현 전 작업자 UX, 스캔 흐름, SmartDataGrid 가로 스크롤 기준, 1차 skeleton 범위를 정리한다. | 반품처리 작업 화면 skeleton 구현 전 | 필수 |
+| `docs/local-agent-label-print-integration-plan-2026-05-29.md` | 기존 SmartReturn Local Agent 확인 결과와 SmartReturn Pro 라벨 출력 연동 기준을 정리한다. | Local Agent 연결 상태/라벨 출력/재출력 UI 구현 전 | 필수 |
