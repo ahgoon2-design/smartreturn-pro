@@ -33,6 +33,11 @@ from app.schemas.returns import (
     ReturnClosingConfirmRequest,
     ReturnClosingConfirmResponse,
     ReturnClosingRowResult,
+    ReturnExternalOutboundCandidateListResponse,
+    ReturnExternalOutboundCandidateResponse,
+    ReturnExternalOutboundConfirmRequest,
+    ReturnExternalOutboundConfirmResponse,
+    ReturnExternalOutboundRowResult,
     ReturnProcessingJudgeRequest,
     ReturnProcessingJudgeResponse,
     ReturnProcessingTaskListResponse,
@@ -88,6 +93,15 @@ RETURN_CLOSING_STOCK_STATUS_GOOD = "GOOD"
 RETURN_GOOD_WAREHOUSE_USAGE_PRIORITY = ("RETURN_GOOD", "INBOUND")
 RETURN_CLOSING_ACTION_INVENTORY_TARGET = "INVENTORY_REFLECT_TARGET"
 RETURN_CLOSING_ACTION_FOLLOWUP_TARGET = "FOLLOWUP_TARGET"
+
+EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES = {
+    JUDGEMENT_REFURB,
+    JUDGEMENT_SAMPLE,
+    JUDGEMENT_MANUFACTURER_RETURN,
+}
+EXTERNAL_OUTBOUND_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
+EXTERNAL_OUTBOUND_STATUS_READY = "READY"
+EXTERNAL_OUTBOUND_STATUS_CONFIRMED = "CONFIRMED"
 
 ATTACHMENT_TYPE_PHOTO = "PHOTO"
 ALLOWED_ATTACHMENT_TYPES = {ATTACHMENT_TYPE_PHOTO, "EVIDENCE"}
@@ -229,6 +243,10 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         inventory_reflected_yn=row.inventory_reflected_yn,
         inventory_reflected_at=row.inventory_reflected_at,
         inventory_event_id=row.inventory_event_id,
+        external_outbound_required=row.external_outbound_required,
+        external_outbound_status=row.external_outbound_status,
+        external_outbound_at=row.external_outbound_at,
+        external_outbound_confirmed_by=row.external_outbound_confirmed_by,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -266,6 +284,10 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         inventory_reflected_yn=row.inventory_reflected_yn,
         inventory_reflected_at=row.inventory_reflected_at,
         inventory_event_id=row.inventory_event_id,
+        external_outbound_required=row.external_outbound_required,
+        external_outbound_status=row.external_outbound_status,
+        external_outbound_at=row.external_outbound_at,
+        external_outbound_confirmed_by=row.external_outbound_confirmed_by,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -301,6 +323,35 @@ def _closing_candidate_response(row: ReturnIntakeRow, client) -> dict:
             RETURN_CLOSING_ACTION_INVENTORY_TARGET if is_good else RETURN_CLOSING_ACTION_FOLLOWUP_TARGET
         ),
         message=("GOOD/양품 정상재고 반영 대상입니다." if is_good else "정상재고 반영 없이 후속 처리 대상으로 남깁니다."),
+    ).model_dump()
+
+
+def _external_outbound_candidate_response(row: ReturnIntakeRow, client) -> dict:
+    return ReturnExternalOutboundCandidateResponse(
+        row_id=row.id,
+        task_id=row.id,
+        batch_id=row.batch_id,
+        client_id=row.client_id,
+        client_code=client.client_code,
+        client_name=client.client_name,
+        row_no=row.row_no,
+        order_no=row.order_no,
+        return_tracking_no=row.return_tracking_no,
+        product_code=row.product_code,
+        barcode=row.barcode,
+        product_name=row.product_name,
+        option_name=row.option_name,
+        qty=row.qty,
+        judgement_status=row.judgement_status or "",
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
+        external_outbound_required=row.external_outbound_required,
+        external_outbound_status=row.external_outbound_status,
+        external_outbound_at=row.external_outbound_at,
+        external_outbound_confirmed_by=row.external_outbound_confirmed_by,
+        judged_at=row.judged_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     ).model_dump()
 
 
@@ -678,6 +729,14 @@ def judge_return_processing_task(
     row.judged_at = now
     row.judged_by = auth.user_id
     row.status = ROW_STATUS_COMPLETED
+    if judgement_status in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
+        row.external_outbound_required = True
+        if row.external_outbound_status != EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
+            row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_READY
+    else:
+        row.external_outbound_required = False
+        if row.external_outbound_status != EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
+            row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_NOT_REQUIRED
 
     try:
         db.commit()
@@ -1007,6 +1066,195 @@ def confirm_return_closing(
         message="반품 일마감 처리를 완료했습니다.",
         row_results=row_results,
     ).model_dump()
+
+
+def list_return_external_outbound_candidates(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    judgement_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    return_management_no: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_judgement_status = _safe_text(judgement_status)
+    if safe_judgement_status:
+        safe_judgement_status = safe_judgement_status.upper()
+        if safe_judgement_status not in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
+            raise _business_error(
+                "RETURN_EXTERNAL_OUTBOUND_JUDGEMENT_INVALID",
+                "외부반출 대상 판정이 아닙니다.",
+            )
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    rows, total_count = repo.list_external_outbound_candidates(
+        db,
+        outbound_judgement_statuses=EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES,
+        confirmed_status=EXTERNAL_OUTBOUND_STATUS_CONFIRMED,
+        client_id=effective_client_id,
+        judgement_status=safe_judgement_status,
+        date_from=date_from,
+        date_to=date_to,
+        return_management_no=_safe_text(return_management_no),
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnExternalOutboundCandidateListResponse(
+        items=[
+            ReturnExternalOutboundCandidateResponse(**_external_outbound_candidate_response(row, client))
+            for row, client in rows
+        ],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
+
+
+def confirm_return_external_outbound(
+    db: Session,
+    auth: AuthContext,
+    request: ReturnExternalOutboundConfirmRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    effective_client_id = resolve_effective_client_id(auth, request.client_id, allow_all_clients=True)
+    requested_row_ids = list(dict.fromkeys(request.row_ids))
+    scanned_numbers: set[str] = set()
+    for value in request.scanned_numbers or []:
+        normalized_value = _normalize_scan_number(value)
+        if normalized_value:
+            scanned_numbers.add(normalized_value)
+    rows_with_clients = repo.list_external_outbound_rows_by_ids(
+        db,
+        row_ids=requested_row_ids,
+        client_id=effective_client_id,
+    )
+    found_ids = {row.id for row, _client in rows_with_clients}
+
+    row_results: list[ReturnExternalOutboundRowResult] = []
+    confirmed_rows = 0
+    skipped_rows = 0
+    failed_rows = 0
+
+    for row_id in requested_row_ids:
+        if row_id not in found_ids:
+            failed_rows += 1
+            row_results.append(
+                ReturnExternalOutboundRowResult(
+                    row_id=row_id,
+                    result="FAILED",
+                    message="외부반출 대상 row를 찾을 수 없습니다.",
+                )
+            )
+
+    try:
+        for row, _client in rows_with_clients:
+            resolve_effective_client_id(auth, row.client_id)
+            if row.external_outbound_status == EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
+                skipped_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="SKIPPED",
+                        message="이미 외부반출 확정된 row입니다.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+            if row.status != ROW_STATUS_COMPLETED:
+                failed_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="판정 완료된 row만 외부반출 확정할 수 있습니다.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+            if row.judgement_status not in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
+                failed_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="외부반출 대상 판정이 아닙니다.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+            identifier = _external_outbound_identifier(row)
+            if identifier is None:
+                failed_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="반품관리번호 또는 라벨번호가 없어 외부반출 확정할 수 없습니다.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+            if scanned_numbers and _normalize_scan_number(identifier) not in scanned_numbers:
+                failed_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="스캔 검수된 번호와 일치하지 않습니다.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+
+            row.external_outbound_required = True
+            row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_CONFIRMED
+            row.external_outbound_at = datetime.now(timezone.utc)
+            row.external_outbound_confirmed_by = auth.user_id
+            confirmed_rows += 1
+            row_results.append(
+                ReturnExternalOutboundRowResult(
+                    row_id=row.id,
+                    judgement_status=row.judgement_status,
+                    result="CONFIRMED",
+                    message="외부반출을 확정했습니다. 현재고는 변경하지 않았습니다.",
+                    external_outbound_status=row.external_outbound_status,
+                )
+            )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return ReturnExternalOutboundConfirmResponse(
+        total_rows=len(requested_row_ids),
+        confirmed_rows=confirmed_rows,
+        skipped_rows=skipped_rows,
+        failed_rows=failed_rows,
+        message="반품 외부반출 확정 처리를 완료했습니다.",
+        row_results=row_results,
+    ).model_dump()
+
+
+def _external_outbound_identifier(row: ReturnIntakeRow) -> str | None:
+    return _safe_text(row.return_management_no) or _safe_text(row.return_label_no)
+
+
+def _normalize_scan_number(value: str | None) -> str | None:
+    text = _safe_text(value)
+    if text is None:
+        return None
+    return "".join(text.split()).upper()
 
 
 def _resolve_return_product(db: Session, row: ReturnIntakeRow):

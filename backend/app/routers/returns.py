@@ -11,6 +11,7 @@ from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.returns import (
     ReturnClosingConfirmRequest,
+    ReturnExternalOutboundConfirmRequest,
     ReturnIntakeBatchCreateRequest,
     ReturnIntakePasteRowsRequest,
     ReturnProcessingJudgeRequest,
@@ -278,4 +279,48 @@ def confirm_return_closing_api(
         result_code="RETURN_CLOSING_CONFIRMED",
         message="반품 일마감을 확정했습니다.",
         data=return_intake_service.confirm_return_closing(db, auth, request),
+    )
+
+
+@router.get("/external-outbound/candidates", response_model=ApiResult)
+def list_return_external_outbound_candidates_api(
+    client_id: int | None = None,
+    judgement_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    return_management_no: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_EXTERNAL_OUTBOUND_CANDIDATES_FOUND",
+        message="반품 외부반출 후보를 조회했습니다.",
+        data=return_intake_service.list_return_external_outbound_candidates(
+            db,
+            auth,
+            client_id=client_id,
+            judgement_status=judgement_status,
+            date_from=date_from,
+            date_to=date_to,
+            return_management_no=return_management_no,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
+@router.post("/external-outbound/confirm", response_model=ApiResult)
+def confirm_return_external_outbound_api(
+    request: ReturnExternalOutboundConfirmRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_EXTERNAL_OUTBOUND_CONFIRMED",
+        message="반품 외부반출을 확정했습니다.",
+        data=return_intake_service.confirm_return_external_outbound(db, auth, request),
     )

@@ -5,6 +5,9 @@ import type {
   ReturnClosingCandidateListResponse,
   ReturnClosingConfirmPayload,
   ReturnClosingConfirmResponse,
+  ReturnExternalOutboundCandidateListResponse,
+  ReturnExternalOutboundConfirmPayload,
+  ReturnExternalOutboundConfirmResponse,
   ReturnIntakeBatchCreatePayload,
   ReturnIntakeBatchListResponse,
   ReturnIntakeBatchSummary,
@@ -179,6 +182,49 @@ export async function listReturnClosingCandidates(options: ReturnClosingCandidat
 
 export async function confirmReturnClosing(payload: ReturnClosingConfirmPayload) {
   return apiRequest<ReturnClosingConfirmResponse>("/api/returns/closing/confirm", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface ReturnExternalOutboundCandidateListOptions {
+  clientId?: number;
+  judgementStatus?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  returnManagementNo?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnExternalOutboundCandidates(
+  options: ReturnExternalOutboundCandidateListOptions = {},
+) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.judgementStatus) {
+    params.set("judgement_status", options.judgementStatus);
+  }
+  if (options.dateFrom) {
+    params.set("date_from", options.dateFrom);
+  }
+  if (options.dateTo) {
+    params.set("date_to", options.dateTo);
+  }
+  if (options.returnManagementNo) {
+    params.set("return_management_no", options.returnManagementNo);
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnExternalOutboundCandidateListResponse>(
+    `/api/returns/external-outbound/candidates?${params.toString()}`,
+  );
+}
+
+export async function confirmReturnExternalOutbound(payload: ReturnExternalOutboundConfirmPayload) {
+  return apiRequest<ReturnExternalOutboundConfirmResponse>("/api/returns/external-outbound/confirm", {
     method: "POST",
     body: JSON.stringify(payload),
   });

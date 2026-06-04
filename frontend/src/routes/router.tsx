@@ -11,6 +11,7 @@ import { ProductDetailPage } from "../features/master/ProductDetailPage";
 import { ProductListPage } from "../features/master/ProductListPage";
 import { ReturnIntakeHubPage } from "../features/returns/ReturnIntakeHubPage";
 import { ReturnClosingPage } from "../features/returns/ReturnClosingPage";
+import { ReturnExternalOutboundPage } from "../features/returns/ReturnExternalOutboundPage";
 import { ReturnProcessingWorkspacePage } from "../features/returns/ReturnProcessingWorkspacePage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import { NotFoundPage } from "../pages/not-found/NotFoundPage";
@@ -96,6 +97,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
             <ReturnClosingPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "returns/external-outbound",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ReturnExternalOutboundPage />
           </ProtectedRoute>
         ),
       },

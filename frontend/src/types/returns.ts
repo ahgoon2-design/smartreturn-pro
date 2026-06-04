@@ -9,6 +9,7 @@ export type ReturnLabelPrintStatus =
   | "PRINTED"
   | "PRINT_FAILED"
   | "LOCAL_AGENT_NOT_CONNECTED";
+export type ReturnExternalOutboundStatus = "NOT_REQUIRED" | "READY" | "SCANNED" | "CONFIRMED";
 
 export interface ReturnIntakeBatchSummary {
   batch_id: number;
@@ -97,6 +98,10 @@ export interface ReturnIntakeRow {
   inventory_reflected_yn?: boolean;
   inventory_reflected_at?: string | null;
   inventory_event_id?: number | null;
+  external_outbound_required?: boolean;
+  external_outbound_status?: ReturnExternalOutboundStatus | string;
+  external_outbound_at?: string | null;
+  external_outbound_confirmed_by?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -154,6 +159,10 @@ export interface ReturnProcessingTask {
   inventory_reflected_yn?: boolean;
   inventory_reflected_at?: string | null;
   inventory_event_id?: number | null;
+  external_outbound_required?: boolean;
+  external_outbound_status?: ReturnExternalOutboundStatus | string;
+  external_outbound_at?: string | null;
+  external_outbound_confirmed_by?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -254,4 +263,56 @@ export interface ReturnClosingConfirmResponse {
   event_count: number;
   message: string;
   row_results: ReturnClosingRowResult[];
+}
+
+export interface ReturnExternalOutboundCandidate {
+  row_id: number;
+  task_id: number;
+  batch_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  row_no: number;
+  order_no?: string | null;
+  return_tracking_no?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_name?: string | null;
+  option_name?: string | null;
+  qty?: number | null;
+  judgement_status: ReturnJudgementStatus | string;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  external_outbound_required: boolean;
+  external_outbound_status: ReturnExternalOutboundStatus | string;
+  external_outbound_at?: string | null;
+  external_outbound_confirmed_by?: number | null;
+  judged_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReturnExternalOutboundCandidateListResponse = PageResponse<ReturnExternalOutboundCandidate>;
+
+export interface ReturnExternalOutboundConfirmPayload {
+  row_ids: number[];
+  scanned_numbers?: string[];
+  client_id?: number;
+}
+
+export interface ReturnExternalOutboundRowResult {
+  row_id: number;
+  judgement_status?: ReturnJudgementStatus | string | null;
+  result: string;
+  message: string;
+  external_outbound_status?: ReturnExternalOutboundStatus | string | null;
+}
+
+export interface ReturnExternalOutboundConfirmResponse {
+  total_rows: number;
+  confirmed_rows: number;
+  skipped_rows: number;
+  failed_rows: number;
+  message: string;
+  row_results: ReturnExternalOutboundRowResult[];
 }

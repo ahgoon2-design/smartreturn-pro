@@ -3,6 +3,7 @@ import {
   CheckCircleOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
+  ExportOutlined,
   InboxOutlined,
   LogoutOutlined,
   RollbackOutlined,
@@ -28,7 +29,9 @@ export function MainLayout() {
     : location.pathname.startsWith(ROUTE_PATHS.masterProducts)
       ? ROUTE_PATHS.masterProducts
       : location.pathname.startsWith(ROUTE_PATHS.masterCommonCodes)
-        ? ROUTE_PATHS.masterCommonCodes
+      ? ROUTE_PATHS.masterCommonCodes
+      : location.pathname.startsWith(ROUTE_PATHS.returnExternalOutbound)
+        ? ROUTE_PATHS.returnExternalOutbound
       : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
         ? ROUTE_PATHS.returnClosing
       : location.pathname.startsWith(ROUTE_PATHS.returnProcessing)
@@ -78,6 +81,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.returnClosing,
       icon: <CheckCircleOutlined />,
       label: "반품 일마감",
+      disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnExternalOutbound,
+      icon: <ExportOutlined />,
+      label: "반품 외부반출",
       disabled: !hasPermission("RETURN_VIEW"),
     },
     {

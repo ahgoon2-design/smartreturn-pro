@@ -132,6 +132,10 @@ class ReturnIntakeRowResponse(BaseModel):
     inventory_reflected_yn: bool = False
     inventory_reflected_at: datetime | None = None
     inventory_event_id: int | None = None
+    external_outbound_required: bool = False
+    external_outbound_status: str = "NOT_REQUIRED"
+    external_outbound_at: datetime | None = None
+    external_outbound_confirmed_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -204,6 +208,10 @@ class ReturnProcessingTaskResponse(BaseModel):
     inventory_reflected_yn: bool = False
     inventory_reflected_at: datetime | None = None
     inventory_event_id: int | None = None
+    external_outbound_required: bool = False
+    external_outbound_status: str = "NOT_REQUIRED"
+    external_outbound_at: datetime | None = None
+    external_outbound_confirmed_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -321,3 +329,60 @@ class ReturnClosingConfirmResponse(BaseModel):
     event_count: int
     message: str
     row_results: list[ReturnClosingRowResult]
+
+
+class ReturnExternalOutboundCandidateResponse(BaseModel):
+    row_id: int
+    task_id: int
+    batch_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    row_no: int
+    order_no: str | None = None
+    return_tracking_no: str | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    product_name: str | None = None
+    option_name: str | None = None
+    qty: int | None = None
+    judgement_status: str
+    return_management_no: str | None = None
+    return_label_no: str | None = None
+    external_outbound_required: bool = False
+    external_outbound_status: str
+    external_outbound_at: datetime | None = None
+    external_outbound_confirmed_by: int | None = None
+    judged_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReturnExternalOutboundCandidateListResponse(BaseModel):
+    items: list[ReturnExternalOutboundCandidateResponse]
+    page: int
+    page_size: int
+    total_count: int
+
+
+class ReturnExternalOutboundConfirmRequest(BaseModel):
+    row_ids: list[int] = Field(min_length=1)
+    scanned_numbers: list[str] | None = None
+    client_id: int | None = None
+
+
+class ReturnExternalOutboundRowResult(BaseModel):
+    row_id: int
+    judgement_status: str | None = None
+    result: str
+    message: str
+    external_outbound_status: str | None = None
+
+
+class ReturnExternalOutboundConfirmResponse(BaseModel):
+    total_rows: int
+    confirmed_rows: int
+    skipped_rows: int
+    failed_rows: int
+    message: str
+    row_results: list[ReturnExternalOutboundRowResult]

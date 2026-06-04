@@ -50,6 +50,12 @@ class ReturnIntakeRow(Base):
             "inventory_reflected_yn",
         ),
         Index("ix_return_intake_rows_inventory_event_id", "inventory_event_id"),
+        Index(
+            "ix_return_intake_rows_external_outbound",
+            "client_id",
+            "external_outbound_status",
+            "judgement_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -88,6 +94,20 @@ class ReturnIntakeRow(Base):
     )
     inventory_reflected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     inventory_event_id: Mapped[int | None] = mapped_column(ForeignKey("inventory_events.id"))
+    external_outbound_required: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    external_outbound_status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="NOT_REQUIRED",
+        server_default="NOT_REQUIRED",
+    )
+    external_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    external_outbound_confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

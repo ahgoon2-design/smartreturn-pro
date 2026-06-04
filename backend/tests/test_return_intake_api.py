@@ -977,6 +977,181 @@ def test_return_closing_confirm_followup_judgement_does_not_increase_inventory(
     assert db_session.query(CurrentInventory).count() == 0
 
 
+@pytest.mark.parametrize("judgement_status", ["REFURB", "SAMPLE", "MANUFACTURER_RETURN"])
+def test_return_external_outbound_candidates_include_tracked_non_good_judgements(
+    client: TestClient,
+    db_session: Session,
+    judgement_status: str,
+):
+    client_row = _create_client(db_session, code=f"CLIENT_{judgement_status}")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id=f"return_outbound_candidate_{judgement_status}",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id=f"return_outbound_candidate_{judgement_status}",
+        client_id=client_row.id,
+    )
+    judged = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status=judgement_status)
+
+    response = client.get("/api/returns/external-outbound/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 1
+    item = data["items"][0]
+    assert item["row_id"] == task_id
+    assert item["judgement_status"] == judgement_status
+    assert item["return_management_no"] == judged["return_management_no"]
+    assert item["external_outbound_required"] is True
+    assert item["external_outbound_status"] == "READY"
+    _assert_no_sensitive_values(response.json())
+
+
+@pytest.mark.parametrize("judgement_status", ["GOOD", "HOLD", "DISPOSAL"])
+def test_return_external_outbound_candidates_exclude_good_hold_and_disposal(
+    client: TestClient,
+    db_session: Session,
+    judgement_status: str,
+):
+    client_row = _create_client(db_session, code=f"CLIENT_EXCLUDE_{judgement_status}")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id=f"return_outbound_exclude_{judgement_status}",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id=f"return_outbound_exclude_{judgement_status}",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status=judgement_status)
+
+    response = client.get("/api/returns/external-outbound/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 0
+
+
+def test_return_external_outbound_confirm_marks_confirmed_without_inventory_change(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_outbound_confirm_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_outbound_confirm_admin",
+        client_id=client_row.id,
+    )
+    judged = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="MANUFACTURER_RETURN")
+
+    response = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [task_id], "scanned_numbers": [judged["return_management_no"]]},
+        headers=headers,
+    )
+    retry_response = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [task_id], "scanned_numbers": [judged["return_management_no"]]},
+        headers=headers,
+    )
+    row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["confirmed_rows"] == 1
+    assert data["failed_rows"] == 0
+    assert row.external_outbound_required is True
+    assert row.external_outbound_status == "CONFIRMED"
+    assert row.external_outbound_at is not None
+    assert row.external_outbound_confirmed_by is not None
+    assert db_session.query(InventoryEvent).count() == 0
+    assert db_session.query(CurrentInventory).count() == 0
+    assert retry_response.status_code == 200
+    retry_data = retry_response.json()["data"]
+    assert retry_data["confirmed_rows"] == 0
+    assert retry_data["skipped_rows"] == 1
+
+
+def test_return_external_outbound_confirm_fails_for_untracked_or_wrong_judgement_rows(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_outbound_fail_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_outbound_fail_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB")
+    row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
+    row.return_management_no = None
+    row.return_label_no = None
+    db_session.commit()
+
+    no_number_response = client.get("/api/returns/external-outbound/candidates", headers=headers)
+    failed_confirm_response = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [task_id]},
+        headers=headers,
+    )
+
+    headers_good, _batch_id_good, good_task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_outbound_fail_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=good_task_id, headers=headers_good, judgement_status="GOOD")
+    wrong_judgement_response = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [good_task_id]},
+        headers=headers_good,
+    )
+
+    missing_response = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [999999]},
+        headers=headers,
+    )
+
+    assert no_number_response.status_code == 200
+    assert no_number_response.json()["data"]["total_count"] == 0
+    assert failed_confirm_response.status_code == 200
+    assert failed_confirm_response.json()["data"]["failed_rows"] == 1
+    assert "반품관리번호" in failed_confirm_response.json()["data"]["row_results"][0]["message"]
+    assert wrong_judgement_response.status_code == 200
+    assert wrong_judgement_response.json()["data"]["failed_rows"] == 1
+    assert "외부반출 대상 판정" in wrong_judgement_response.json()["data"]["row_results"][0]["message"]
+    assert missing_response.status_code == 200
+    assert missing_response.json()["data"]["failed_rows"] == 1
+
+
 def test_return_closing_confirm_good_fails_without_warehouse_setting(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
     _create_product(db_session, client_row.id)
