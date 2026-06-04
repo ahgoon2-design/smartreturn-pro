@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from app.core.permissions import require_password_change_completed
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.returns import (
+    ReturnClosingConfirmRequest,
     ReturnIntakeBatchCreateRequest,
     ReturnIntakePasteRowsRequest,
     ReturnProcessingJudgeRequest,
@@ -233,4 +236,46 @@ def disable_return_processing_attachment_api(
         result_code="RETURN_PROCESSING_ATTACHMENT_DISABLED",
         message="반품처리 증빙 파일을 비활성화했습니다.",
         data=return_intake_service.disable_return_processing_attachment(db, auth, task_id, attachment_id),
+    )
+
+
+@router.get("/closing/candidates", response_model=ApiResult)
+def list_return_closing_candidates_api(
+    client_id: int | None = None,
+    judgement_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_CLOSING_CANDIDATES_FOUND",
+        message="반품 일마감 후보를 조회했습니다.",
+        data=return_intake_service.list_return_closing_candidates(
+            db,
+            auth,
+            client_id=client_id,
+            judgement_status=judgement_status,
+            date_from=date_from,
+            date_to=date_to,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
+@router.post("/closing/confirm", response_model=ApiResult)
+def confirm_return_closing_api(
+    request: ReturnClosingConfirmRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_CLOSING_CONFIRMED",
+        message="반품 일마감을 확정했습니다.",
+        data=return_intake_service.confirm_return_closing(db, auth, request),
     )

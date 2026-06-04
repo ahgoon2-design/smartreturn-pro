@@ -15,7 +15,8 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.master import Client, Product, ProductBarcode, Warehouse
+from app.models.inventory import CurrentInventory, InventoryEvent
+from app.models.master import Client, ClientWarehouseSetting, Product, ProductBarcode, Warehouse
 from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow, ReturnProcessingAttachment
 from app.services import return_intake_service
 
@@ -40,14 +41,17 @@ def db_session() -> Generator[Session, None, None]:
         Warehouse.__table__,
         Product.__table__,
         ProductBarcode.__table__,
-        ReturnIntakeBatch.__table__,
-        ReturnIntakeRow.__table__,
-        ReturnProcessingAttachment.__table__,
         Role.__table__,
         Permission.__table__,
         User.__table__,
         UserRole.__table__,
         RolePermission.__table__,
+        ClientWarehouseSetting.__table__,
+        InventoryEvent.__table__,
+        CurrentInventory.__table__,
+        ReturnIntakeBatch.__table__,
+        ReturnIntakeRow.__table__,
+        ReturnProcessingAttachment.__table__,
     ):
         table.create(bind=engine)
 
@@ -169,6 +173,33 @@ def _create_product(db: Session, client_id: int, code: str = "P001", barcode: st
     return product
 
 
+def _create_warehouse_setting(
+    db: Session,
+    *,
+    client_id: int,
+    usage_type: str = "RETURN_GOOD",
+) -> Warehouse:
+    warehouse = Warehouse(
+        warehouse_code=f"WH-{usage_type}",
+        warehouse_name=f"{usage_type} Warehouse",
+        warehouse_type="RETURN",
+        active_yn=True,
+    )
+    db.add(warehouse)
+    db.flush()
+    db.add(
+        ClientWarehouseSetting(
+            client_id=client_id,
+            warehouse_id=warehouse.id,
+            usage_type=usage_type,
+            is_default=True,
+            active_yn=True,
+        )
+    )
+    db.commit()
+    return warehouse
+
+
 def _create_batch(client: TestClient, db: Session, login_id: str, client_id: int) -> int:
     response = client.post(
         "/api/returns/intake/batches",
@@ -228,6 +259,22 @@ def _prepare_processing_task(
     assert tasks_response.status_code == 200
     task_id = tasks_response.json()["data"]["items"][0]["task_id"]
     return headers, batch_id, task_id
+
+
+def _judge_processing_task(
+    client: TestClient,
+    *,
+    task_id: int,
+    headers: dict[str, str],
+    judgement_status: str = "GOOD",
+) -> dict:
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": judgement_status},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    return response.json()["data"]
 
 
 def _assert_no_sensitive_values(data: dict) -> None:
@@ -815,6 +862,176 @@ def test_judge_blocks_completed_task_and_invalid_judgement(client: TestClient, d
 
     assert completed_response.status_code == 400
     assert completed_response.json()["result_code"] == "RETURN_PROCESSING_TASK_ALREADY_COMPLETED"
+
+
+def test_return_closing_candidates_show_completed_unreflected_rows(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_closing_candidates_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_closing_candidates_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+
+    response = client.get("/api/returns/closing/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 1
+    item = data["items"][0]
+    assert item["row_id"] == task_id
+    assert item["judgement_status"] == "GOOD"
+    assert item["inventory_reflected_yn"] is False
+    assert item["closing_action"] == "INVENTORY_REFLECT_TARGET"
+    _assert_no_sensitive_values(response.json())
+
+
+def test_return_closing_confirm_good_creates_event_and_current_inventory(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    product = _create_product(db_session, client_row.id)
+    warehouse = _create_warehouse_setting(db_session, client_id=client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_closing_good_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_closing_good_admin",
+        client_id=client_row.id,
+        rows_payload={"rows": [{"row_no": 1, "order_no": "ORDER-GOOD", "return_tracking_no": "RTN-GOOD", "product_code": "P001", "barcode": "880001", "qty": 2}]},
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+
+    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    retry_response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
+    event = db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).one()
+    current = (
+        db_session.query(CurrentInventory)
+        .filter(
+            CurrentInventory.client_id == client_row.id,
+            CurrentInventory.warehouse_id == warehouse.id,
+            CurrentInventory.product_id == product.id,
+            CurrentInventory.stock_status == "GOOD",
+        )
+        .one()
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reflected_rows"] == 1
+    assert data["event_count"] == 1
+    assert row.inventory_reflected_yn is True
+    assert row.inventory_event_id == event.id
+    assert event.event_type == "RETURN_GOOD_IN"
+    assert event.qty_delta == 2
+    assert current.qty_on_hand == 2
+    assert retry_response.status_code == 200
+    retry_data = retry_response.json()["data"]
+    assert retry_data["reflected_rows"] == 0
+    assert retry_data["skipped_rows"] == 1
+    assert db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).count() == 1
+
+
+def test_return_closing_confirm_followup_judgement_does_not_increase_inventory(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_warehouse_setting(db_session, client_id=client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_closing_followup_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_closing_followup_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB")
+
+    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["followup_rows"] == 1
+    assert data["reflected_rows"] == 0
+    assert row.inventory_reflected_yn is False
+    assert db_session.query(InventoryEvent).count() == 0
+    assert db_session.query(CurrentInventory).count() == 0
+
+
+def test_return_closing_confirm_good_fails_without_warehouse_setting(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_closing_no_warehouse_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_closing_no_warehouse_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+
+    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["failed_rows"] == 1
+    assert "창고" in data["row_results"][0]["message"]
+    assert row.inventory_reflected_yn is False
+    assert db_session.query(InventoryEvent).count() == 0
+
+
+def test_return_closing_confirm_good_fails_without_product(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_warehouse_setting(db_session, client_id=client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_closing_no_product_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_closing_no_product_admin",
+        client_id=client_row.id,
+        rows_payload={"rows": [{"row_no": 1, "order_no": "ORDER-NO-PRODUCT", "return_tracking_no": "RTN-NO-PRODUCT", "product_code": "UNKNOWN", "qty": 1}]},
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+
+    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["failed_rows"] == 1
+    assert "상품" in data["row_results"][0]["message"]
+    assert row.inventory_reflected_yn is False
+    assert db_session.query(InventoryEvent).count() == 0
 
 
 @pytest.mark.parametrize(

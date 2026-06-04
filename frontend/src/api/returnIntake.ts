@@ -2,6 +2,9 @@ import { apiRequest } from "./client";
 import type {
   JudgeReturnProcessingTaskPayload,
   JudgeReturnProcessingTaskResponse,
+  ReturnClosingCandidateListResponse,
+  ReturnClosingConfirmPayload,
+  ReturnClosingConfirmResponse,
   ReturnIntakeBatchCreatePayload,
   ReturnIntakeBatchListResponse,
   ReturnIntakeBatchSummary,
@@ -144,4 +147,39 @@ export async function disableReturnProcessingAttachment(taskId: number, attachme
       method: "POST",
     },
   );
+}
+
+export interface ReturnClosingCandidateListOptions {
+  clientId?: number;
+  judgementStatus?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnClosingCandidates(options: ReturnClosingCandidateListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.judgementStatus) {
+    params.set("judgement_status", options.judgementStatus);
+  }
+  if (options.dateFrom) {
+    params.set("date_from", options.dateFrom);
+  }
+  if (options.dateTo) {
+    params.set("date_to", options.dateTo);
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnClosingCandidateListResponse>(`/api/returns/closing/candidates?${params.toString()}`);
+}
+
+export async function confirmReturnClosing(payload: ReturnClosingConfirmPayload) {
+  return apiRequest<ReturnClosingConfirmResponse>("/api/returns/closing/confirm", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

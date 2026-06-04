@@ -94,6 +94,9 @@ export interface ReturnIntakeRow {
   label_print_required?: boolean;
   label_print_status?: ReturnLabelPrintStatus | string | null;
   label_printed_at?: string | null;
+  inventory_reflected_yn?: boolean;
+  inventory_reflected_at?: string | null;
+  inventory_event_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -148,6 +151,9 @@ export interface ReturnProcessingTask {
   label_print_required?: boolean;
   label_print_status?: ReturnLabelPrintStatus | string | null;
   label_printed_at?: string | null;
+  inventory_reflected_yn?: boolean;
+  inventory_reflected_at?: string | null;
+  inventory_event_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -192,3 +198,60 @@ export interface UploadReturnProcessingAttachmentPayload {
 }
 
 export type UploadReturnProcessingAttachmentResponse = ReturnProcessingAttachment;
+
+export type ReturnClosingAction = "INVENTORY_REFLECT_TARGET" | "FOLLOWUP_TARGET" | string;
+
+export interface ReturnClosingCandidate {
+  row_id: number;
+  task_id: number;
+  batch_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  row_no: number;
+  order_no?: string | null;
+  return_tracking_no?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_name?: string | null;
+  qty?: number | null;
+  judgement_status: ReturnJudgementStatus | string;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  status: string;
+  inventory_reflected_yn: boolean;
+  inventory_reflected_at?: string | null;
+  inventory_event_id?: number | null;
+  judged_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  closing_action: ReturnClosingAction;
+  message?: string | null;
+}
+
+export type ReturnClosingCandidateListResponse = PageResponse<ReturnClosingCandidate>;
+
+export interface ReturnClosingConfirmPayload {
+  row_ids: number[];
+  client_id?: number;
+  confirm_good_only?: boolean;
+}
+
+export interface ReturnClosingRowResult {
+  row_id: number;
+  judgement_status?: ReturnJudgementStatus | string | null;
+  result: string;
+  message: string;
+  inventory_event_id?: number | null;
+}
+
+export interface ReturnClosingConfirmResponse {
+  total_rows: number;
+  reflected_rows: number;
+  skipped_rows: number;
+  failed_rows: number;
+  followup_rows: number;
+  event_count: number;
+  message: string;
+  row_results: ReturnClosingRowResult[];
+}

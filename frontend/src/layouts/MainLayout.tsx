@@ -1,5 +1,6 @@
 import {
   AppstoreOutlined,
+  CheckCircleOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
   InboxOutlined,
@@ -28,6 +29,8 @@ export function MainLayout() {
       ? ROUTE_PATHS.masterProducts
       : location.pathname.startsWith(ROUTE_PATHS.masterCommonCodes)
         ? ROUTE_PATHS.masterCommonCodes
+      : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
+        ? ROUTE_PATHS.returnClosing
       : location.pathname.startsWith(ROUTE_PATHS.returnProcessing)
         ? ROUTE_PATHS.returnProcessing
         : location.pathname.startsWith(ROUTE_PATHS.returnIntake)
@@ -69,6 +72,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.returnProcessing,
       icon: <ScanOutlined />,
       label: "반품처리 작업",
+      disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnClosing,
+      icon: <CheckCircleOutlined />,
+      label: "반품 일마감",
       disabled: !hasPermission("RETURN_VIEW"),
     },
     {

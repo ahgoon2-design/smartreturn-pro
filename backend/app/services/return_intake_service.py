@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from app.core.auth_context import resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError, PermissionDeniedError
 from app.core.permissions import can_write, require_permission, require_roles
+from app.models.inventory import InventoryEvent
 from app.models.returns import ReturnIntakeRow, ReturnProcessingAttachment
+from app.repositories import inventory_repository
 from app.repositories import master_repository
 from app.repositories import return_intake_repository as repo
 from app.schemas.auth import AuthContext
@@ -26,6 +28,11 @@ from app.schemas.returns import (
     ReturnIntakeRowsResponse,
     ReturnProcessingAttachmentListResponse,
     ReturnProcessingAttachmentResponse,
+    ReturnClosingCandidateListResponse,
+    ReturnClosingCandidateResponse,
+    ReturnClosingConfirmRequest,
+    ReturnClosingConfirmResponse,
+    ReturnClosingRowResult,
     ReturnProcessingJudgeRequest,
     ReturnProcessingJudgeResponse,
     ReturnProcessingTaskListResponse,
@@ -74,6 +81,13 @@ LABEL_REQUIRED_JUDGEMENT_STATUSES = {
 }
 LABEL_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
 LABEL_STATUS_LOCAL_AGENT_NOT_CONNECTED = "LOCAL_AGENT_NOT_CONNECTED"
+
+RETURN_CLOSING_EVENT_TYPE_GOOD_IN = "RETURN_GOOD_IN"
+RETURN_CLOSING_SOURCE_TYPE = "RETURN_CLOSING"
+RETURN_CLOSING_STOCK_STATUS_GOOD = "GOOD"
+RETURN_GOOD_WAREHOUSE_USAGE_PRIORITY = ("RETURN_GOOD", "INBOUND")
+RETURN_CLOSING_ACTION_INVENTORY_TARGET = "INVENTORY_REFLECT_TARGET"
+RETURN_CLOSING_ACTION_FOLLOWUP_TARGET = "FOLLOWUP_TARGET"
 
 ATTACHMENT_TYPE_PHOTO = "PHOTO"
 ALLOWED_ATTACHMENT_TYPES = {ATTACHMENT_TYPE_PHOTO, "EVIDENCE"}
@@ -212,6 +226,9 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         label_print_required=row.label_print_required,
         label_print_status=row.label_print_status,
         label_printed_at=row.label_printed_at,
+        inventory_reflected_yn=row.inventory_reflected_yn,
+        inventory_reflected_at=row.inventory_reflected_at,
+        inventory_event_id=row.inventory_event_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -246,8 +263,44 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         label_print_required=row.label_print_required,
         label_print_status=row.label_print_status,
         label_printed_at=row.label_printed_at,
+        inventory_reflected_yn=row.inventory_reflected_yn,
+        inventory_reflected_at=row.inventory_reflected_at,
+        inventory_event_id=row.inventory_event_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    ).model_dump()
+
+
+def _closing_candidate_response(row: ReturnIntakeRow, client) -> dict:
+    is_good = row.judgement_status == JUDGEMENT_GOOD
+    return ReturnClosingCandidateResponse(
+        row_id=row.id,
+        task_id=row.id,
+        batch_id=row.batch_id,
+        client_id=row.client_id,
+        client_code=client.client_code,
+        client_name=client.client_name,
+        row_no=row.row_no,
+        order_no=row.order_no,
+        return_tracking_no=row.return_tracking_no,
+        product_code=row.product_code,
+        barcode=row.barcode,
+        product_name=row.product_name,
+        qty=row.qty,
+        judgement_status=row.judgement_status or "",
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
+        status=row.status,
+        inventory_reflected_yn=row.inventory_reflected_yn,
+        inventory_reflected_at=row.inventory_reflected_at,
+        inventory_event_id=row.inventory_event_id,
+        judged_at=row.judged_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        closing_action=(
+            RETURN_CLOSING_ACTION_INVENTORY_TARGET if is_good else RETURN_CLOSING_ACTION_FOLLOWUP_TARGET
+        ),
+        message=("GOOD/양품 정상재고 반영 대상입니다." if is_good else "정상재고 반영 없이 후속 처리 대상으로 남깁니다."),
     ).model_dump()
 
 
@@ -728,6 +781,266 @@ def disable_return_processing_attachment(
     except Exception:
         db.rollback()
         raise
+
+
+def list_return_closing_candidates(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    judgement_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_judgement_status = _safe_text(judgement_status)
+    if safe_judgement_status:
+        safe_judgement_status = safe_judgement_status.upper()
+        if safe_judgement_status not in ALLOWED_JUDGEMENT_STATUSES:
+            raise _business_error("RETURN_CLOSING_JUDGEMENT_INVALID", "지원하지 않는 판정 상태입니다.")
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    rows, total_count = repo.list_closing_candidates(
+        db,
+        client_id=effective_client_id,
+        judgement_status=safe_judgement_status,
+        date_from=date_from,
+        date_to=date_to,
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnClosingCandidateListResponse(
+        items=[ReturnClosingCandidateResponse(**_closing_candidate_response(row, client)) for row, client in rows],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
+
+
+def confirm_return_closing(
+    db: Session,
+    auth: AuthContext,
+    request: ReturnClosingConfirmRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    effective_client_id = resolve_effective_client_id(auth, request.client_id, allow_all_clients=True)
+    requested_row_ids = list(dict.fromkeys(request.row_ids))
+    rows_with_clients = repo.list_closing_rows_by_ids(db, row_ids=requested_row_ids, client_id=effective_client_id)
+    found_ids = {row.id for row, _client in rows_with_clients}
+
+    row_results: list[ReturnClosingRowResult] = []
+    reflected_rows = 0
+    skipped_rows = 0
+    failed_rows = 0
+    followup_rows = 0
+    event_count = 0
+
+    for row_id in requested_row_ids:
+        if row_id not in found_ids:
+            failed_rows += 1
+            row_results.append(
+                ReturnClosingRowResult(
+                    row_id=row_id,
+                    result="FAILED",
+                    message="마감 대상 row를 찾을 수 없습니다.",
+                )
+            )
+
+    try:
+        for row, _client in rows_with_clients:
+            resolve_effective_client_id(auth, row.client_id)
+            if row.inventory_reflected_yn:
+                skipped_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="SKIPPED",
+                        message="이미 재고반영된 row입니다.",
+                        inventory_event_id=row.inventory_event_id,
+                    )
+                )
+                continue
+            if row.status != ROW_STATUS_COMPLETED or not row.judgement_status:
+                failed_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="판정 완료 상태의 row만 마감 확정할 수 있습니다.",
+                    )
+                )
+                continue
+            if row.judgement_status != JUDGEMENT_GOOD:
+                followup_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FOLLOWUP",
+                        message="정상재고 반영 대상이 아니므로 후속 처리 대상으로 남깁니다.",
+                    )
+                )
+                continue
+            if row.qty is None or row.qty < 1:
+                failed_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="수량이 없어 재고반영할 수 없습니다.",
+                    )
+                )
+                continue
+
+            product = _resolve_return_product(db, row)
+            if product is None:
+                failed_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="상품 마스터를 찾을 수 없어 재고반영할 수 없습니다.",
+                    )
+                )
+                continue
+
+            warehouse = _resolve_return_good_warehouse(db, row.client_id)
+            if warehouse is None:
+                failed_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FAILED",
+                        message="고객사 기본 반품/입고 창고 설정이 없어 재고반영할 수 없습니다.",
+                    )
+                )
+                continue
+
+            idempotency_key = f"return-closing:{row.id}:good"
+            existing_event = inventory_repository.find_event_by_idempotency_key(db, idempotency_key)
+            if existing_event is not None:
+                row.inventory_reflected_yn = True
+                row.inventory_reflected_at = row.inventory_reflected_at or existing_event.created_at
+                row.inventory_event_id = existing_event.id
+                skipped_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="SKIPPED",
+                        message="이미 생성된 재고 이벤트가 있어 중복 반영하지 않았습니다.",
+                        inventory_event_id=existing_event.id,
+                    )
+                )
+                continue
+
+            event = InventoryEvent(
+                event_no=f"RTN-CLOSE-{row.id}",
+                client_id=row.client_id,
+                warehouse_id=warehouse.id,
+                location_id=None,
+                product_id=product.id,
+                product_code=product.product_code,
+                stock_status=RETURN_CLOSING_STOCK_STATUS_GOOD,
+                event_type=RETURN_CLOSING_EVENT_TYPE_GOOD_IN,
+                qty_delta=row.qty,
+                source_type=RETURN_CLOSING_SOURCE_TYPE,
+                source_id=row.id,
+                source_line_id=row.id,
+                idempotency_key=idempotency_key,
+                event_reason="반품 양품 일마감 정상재고 반영",
+                memo=None,
+                created_by=auth.user_id,
+                raw_json={
+                    "return_intake_row_id": row.id,
+                    "batch_id": row.batch_id,
+                    "judgement_status": row.judgement_status,
+                    "return_management_no": row.return_management_no,
+                    "return_label_no": row.return_label_no,
+                },
+            )
+            inventory_repository.create_inventory_event(db, event)
+            inventory_repository.increase_current_inventory(
+                db,
+                client_id=row.client_id,
+                warehouse_id=warehouse.id,
+                location_id=None,
+                product_id=product.id,
+                stock_status=RETURN_CLOSING_STOCK_STATUS_GOOD,
+                qty_delta=row.qty,
+            )
+            row.inventory_reflected_yn = True
+            row.inventory_reflected_at = datetime.now(timezone.utc)
+            row.inventory_event_id = event.id
+            reflected_rows += 1
+            event_count += 1
+            row_results.append(
+                ReturnClosingRowResult(
+                    row_id=row.id,
+                    judgement_status=row.judgement_status,
+                    result="REFLECTED",
+                    message="정상재고에 반영했습니다.",
+                    inventory_event_id=event.id,
+                )
+            )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return ReturnClosingConfirmResponse(
+        total_rows=len(requested_row_ids),
+        reflected_rows=reflected_rows,
+        skipped_rows=skipped_rows,
+        failed_rows=failed_rows,
+        followup_rows=followup_rows,
+        event_count=event_count,
+        message="반품 일마감 처리를 완료했습니다.",
+        row_results=row_results,
+    ).model_dump()
+
+
+def _resolve_return_product(db: Session, row: ReturnIntakeRow):
+    if row.product_code:
+        product = master_repository.find_product_by_code(db, row.client_id, row.product_code)
+        if product is not None and product.active_yn:
+            return product
+
+    barcode_norm = _normalize_barcode(row.barcode)
+    if barcode_norm:
+        product = master_repository.find_product_by_barcode(db, row.client_id, barcode_norm)
+        if product is not None and product.active_yn:
+            return product
+        product_barcode = master_repository.find_product_barcode_by_norm(db, row.client_id, barcode_norm)
+        if product_barcode is not None and product_barcode.active_yn:
+            product = master_repository.get_product_by_id(db, product_barcode.product_id)
+            if product is not None and product.active_yn:
+                return product
+    return None
+
+
+def _resolve_return_good_warehouse(db: Session, client_id: int):
+    for usage_type in RETURN_GOOD_WAREHOUSE_USAGE_PRIORITY:
+        setting = master_repository.find_default_client_warehouse_setting(
+            db,
+            client_id=client_id,
+            usage_type=usage_type,
+        )
+        if setting is None:
+            continue
+        warehouse = master_repository.get_warehouse_by_id(db, setting.warehouse_id)
+        if warehouse is not None and warehouse.active_yn:
+            return warehouse
+    return None
 
 
 def _is_label_print_required(judgement_status: str, print_label: bool | None) -> bool:

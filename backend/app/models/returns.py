@@ -42,6 +42,14 @@ class ReturnIntakeRow(Base):
         Index("ix_return_intake_rows_batch_validation", "batch_id", "validation_status"),
         Index("ix_return_intake_rows_client_status", "client_id", "status"),
         Index("ix_return_intake_rows_client_judgement", "client_id", "judgement_status"),
+        Index(
+            "ix_return_intake_rows_closing_candidates",
+            "client_id",
+            "status",
+            "judgement_status",
+            "inventory_reflected_yn",
+        ),
+        Index("ix_return_intake_rows_inventory_event_id", "inventory_event_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -72,6 +80,14 @@ class ReturnIntakeRow(Base):
     label_print_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     label_print_status: Mapped[str | None] = mapped_column(String(50))
     label_printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    inventory_reflected_yn: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    inventory_reflected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    inventory_event_id: Mapped[int | None] = mapped_column(ForeignKey("inventory_events.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

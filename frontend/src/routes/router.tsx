@@ -10,6 +10,7 @@ import { CommonCodeManagementPage } from "../features/master/CommonCodeManagemen
 import { ProductDetailPage } from "../features/master/ProductDetailPage";
 import { ProductListPage } from "../features/master/ProductListPage";
 import { ReturnIntakeHubPage } from "../features/returns/ReturnIntakeHubPage";
+import { ReturnClosingPage } from "../features/returns/ReturnClosingPage";
 import { ReturnProcessingWorkspacePage } from "../features/returns/ReturnProcessingWorkspacePage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import { NotFoundPage } from "../pages/not-found/NotFoundPage";
@@ -87,6 +88,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
             <ReturnProcessingWorkspacePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "returns/closing",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ReturnClosingPage />
           </ProtectedRoute>
         ),
       },

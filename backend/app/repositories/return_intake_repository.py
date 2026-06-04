@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app.models.master import Client
@@ -185,6 +187,55 @@ def get_processing_task_with_client(db: Session, task_id: int) -> tuple[ReturnIn
         .filter(ReturnIntakeRow.id == task_id)
         .one_or_none()
     )
+
+
+def list_closing_candidates(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    judgement_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[ReturnIntakeRow, Client]], int]:
+    query = db.query(ReturnIntakeRow, Client).join(Client, Client.id == ReturnIntakeRow.client_id)
+    query = query.filter(
+        ReturnIntakeRow.status == "COMPLETED",
+        ReturnIntakeRow.judgement_status.isnot(None),
+        ReturnIntakeRow.inventory_reflected_yn.is_(False),
+    )
+    if client_id is not None:
+        query = query.filter(ReturnIntakeRow.client_id == client_id)
+    if judgement_status:
+        query = query.filter(ReturnIntakeRow.judgement_status == judgement_status)
+    if date_from is not None:
+        query = query.filter(ReturnIntakeRow.judged_at >= date_from)
+    if date_to is not None:
+        query = query.filter(ReturnIntakeRow.judged_at <= date_to)
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnIntakeRow.judged_at.desc(), ReturnIntakeRow.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count
+
+
+def list_closing_rows_by_ids(
+    db: Session,
+    *,
+    row_ids: list[int],
+    client_id: int | None = None,
+) -> list[tuple[ReturnIntakeRow, Client]]:
+    if not row_ids:
+        return []
+    query = db.query(ReturnIntakeRow, Client).join(Client, Client.id == ReturnIntakeRow.client_id)
+    query = query.filter(ReturnIntakeRow.id.in_(row_ids))
+    if client_id is not None:
+        query = query.filter(ReturnIntakeRow.client_id == client_id)
+    return query.order_by(ReturnIntakeRow.id).all()
 
 
 def create_processing_attachment(
