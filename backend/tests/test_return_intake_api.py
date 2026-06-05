@@ -1043,6 +1043,179 @@ def test_current_inventory_lists_good_closing_result_with_filters(client: TestCl
     _assert_no_sensitive_values(response.json())
 
 
+def test_return_history_requires_auth(client: TestClient):
+    response = client.get("/api/returns/history")
+
+    assert response.status_code == 401
+    assert response.json()["result_code"] == "NOT_AUTHENTICATED"
+
+
+def test_return_history_lists_good_reflected_row_without_customer_private_fields(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_warehouse_setting(db_session, client_id=client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_history_good_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_history_good_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-HISTORY-GOOD",
+                    "return_tracking_no": "RTN-HISTORY-GOOD",
+                    "product_code": "P001",
+                    "barcode": "880001",
+                    "qty": 1,
+                    "customer_name": "민감고객",
+                    "customer_phone": "010-1111-2222",
+                }
+            ]
+        },
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+    close_response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+
+    response = client.get(
+        (
+            "/api/returns/history"
+            f"?client_id={client_row.id}"
+            "&keyword=RTN-HISTORY-GOOD"
+            "&judgement_status=GOOD"
+            "&followup_status=INVENTORY_REFLECTED"
+        ),
+        headers=headers,
+    )
+
+    assert close_response.status_code == 200
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 1
+    item = data["items"][0]
+    assert item["row_id"] == task_id
+    assert item["client_name"] == client_row.client_name
+    assert item["judgement_status"] == "GOOD"
+    assert item["inventory_reflected_yn"] is True
+    assert item["followup_status"] == "INVENTORY_REFLECTED"
+    assert item["followup_status_label"] == "정상재고반영"
+    assert "customer_name" not in item
+    assert "customer_phone_masked" not in item
+    assert "raw_data" not in item
+    _assert_no_sensitive_values(response.json())
+
+
+def test_return_history_summarizes_outbound_hold_and_disposal_followup_statuses(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_history_followup_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+
+    outbound_headers, _outbound_batch_id, outbound_task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_history_followup_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-HISTORY-OUT",
+                    "return_tracking_no": "RTN-HISTORY-OUT",
+                    "product_code": "P001",
+                    "barcode": "880001",
+                    "qty": 1,
+                }
+            ]
+        },
+    )
+    outbound_judged = _judge_processing_task(
+        client,
+        task_id=outbound_task_id,
+        headers=outbound_headers,
+        judgement_status="MANUFACTURER_RETURN",
+    )
+    outbound_confirm = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [outbound_task_id], "scanned_numbers": [outbound_judged["return_management_no"]]},
+        headers=outbound_headers,
+    )
+
+    hold_headers, _hold_batch_id, hold_task_id = _prepare_hold_ready_to_rejudge_task(
+        client,
+        db_session,
+        login_id="return_history_followup_admin",
+        client_id=client_row.id,
+    )
+
+    disposal_headers, _disposal_batch_id, disposal_task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_history_followup_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-HISTORY-DISPOSAL",
+                    "return_tracking_no": "RTN-HISTORY-DISPOSAL",
+                    "product_code": "P001",
+                    "barcode": "880001",
+                    "qty": 1,
+                }
+            ]
+        },
+    )
+    _judge_processing_task(client, task_id=disposal_task_id, headers=disposal_headers, judgement_status="DISPOSAL")
+    disposal_confirm = client.post(
+        f"/api/returns/disposal/tasks/{disposal_task_id}/confirm",
+        json={"disposal_reason": "테스트 폐기"},
+        headers=disposal_headers,
+    )
+
+    response = client.get(f"/api/returns/history?client_id={client_row.id}&page_size=20", headers=outbound_headers)
+    outbound_filter = client.get(
+        "/api/returns/history?followup_status=EXTERNAL_OUTBOUND_CONFIRMED",
+        headers=outbound_headers,
+    )
+    hold_filter = client.get("/api/returns/history?followup_status=READY_TO_REJUDGE", headers=hold_headers)
+    disposal_filter = client.get(
+        "/api/returns/history?followup_status=DISPOSAL_CONFIRMED",
+        headers=disposal_headers,
+    )
+
+    assert outbound_confirm.status_code == 200
+    assert disposal_confirm.status_code == 200
+    assert response.status_code == 200
+    items = {item["row_id"]: item for item in response.json()["data"]["items"]}
+    assert items[outbound_task_id]["followup_status"] == "EXTERNAL_OUTBOUND_CONFIRMED"
+    assert items[outbound_task_id]["external_outbound_status"] == "CONFIRMED"
+    assert items[hold_task_id]["followup_status"] == "READY_TO_REJUDGE"
+    assert items[hold_task_id]["hold_status"] == "READY_TO_REJUDGE"
+    assert items[disposal_task_id]["followup_status"] == "DISPOSAL_CONFIRMED"
+    assert items[disposal_task_id]["disposal_status"] == "DISPOSAL_CONFIRMED"
+    assert outbound_filter.json()["data"]["total_count"] >= 1
+    assert hold_filter.json()["data"]["total_count"] >= 1
+    assert disposal_filter.json()["data"]["total_count"] >= 1
+    _assert_no_sensitive_values(response.json())
+
+
 def test_return_closing_confirm_followup_judgement_does_not_increase_inventory(
     client: TestClient,
     db_session: Session,

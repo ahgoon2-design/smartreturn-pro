@@ -48,6 +48,8 @@ from app.schemas.returns import (
     ReturnHoldRejudgeResponse,
     ReturnHoldUpdateRequest,
     ReturnHoldUpdateResponse,
+    ReturnHistoryItemResponse,
+    ReturnHistoryListResponse,
     ReturnProcessingJudgeRequest,
     ReturnProcessingJudgeResponse,
     ReturnProcessingTaskListResponse,
@@ -460,6 +462,80 @@ def _disposal_candidate_response(row: ReturnIntakeRow, client) -> dict:
         judged_at=row.judged_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    ).model_dump()
+
+
+def _return_history_followup_status(row: ReturnIntakeRow) -> tuple[str, str]:
+    if row.inventory_reflected_yn:
+        return "INVENTORY_REFLECTED", "정상재고반영"
+    if row.external_outbound_status == EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
+        return "EXTERNAL_OUTBOUND_CONFIRMED", "외부반출완료"
+    if row.disposal_status == DISPOSAL_STATUS_CONFIRMED:
+        return "DISPOSAL_CONFIRMED", "폐기확정"
+    if row.hold_status == HOLD_STATUS_READY_TO_REJUDGE:
+        return "READY_TO_REJUDGE", "재판정준비"
+    if row.judgement_status == JUDGEMENT_HOLD and row.hold_status != HOLD_STATUS_RESOLVED:
+        return "HOLD_PENDING", "보류중"
+    if row.judgement_status == JUDGEMENT_DISPOSAL:
+        return "DISPOSAL_TARGET", "폐기대상"
+    if row.judgement_status in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
+        return "EXTERNAL_OUTBOUND_TARGET", "외부반출대상"
+    if row.status == ROW_STATUS_COMPLETED and row.judgement_status:
+        return "JUDGED", "판정완료"
+    if row.status == ROW_STATUS_READY_FOR_PROCESSING:
+        return "PROCESSING_READY", "처리대기"
+    if row.status == ROW_STATUS_PROCESSING:
+        return "PROCESSING", "처리중"
+    return "RECEIVED", "접수"
+
+
+def _return_history_response(row: ReturnIntakeRow, client, attachment_count: int = 0) -> dict:
+    followup_status, followup_status_label = _return_history_followup_status(row)
+    return ReturnHistoryItemResponse(
+        row_id=row.id,
+        task_id=row.id,
+        batch_id=row.batch_id,
+        client_id=row.client_id,
+        client_code=client.client_code,
+        client_name=client.client_name,
+        row_no=row.row_no,
+        order_no=row.order_no,
+        return_tracking_no=row.return_tracking_no,
+        original_tracking_no=row.original_tracking_no,
+        product_code=row.product_code,
+        barcode=row.barcode,
+        product_name=row.product_name,
+        option_name=row.option_name,
+        qty=row.qty,
+        return_reason=row.return_reason,
+        validation_status=row.validation_status,
+        status=row.status,
+        judgement_status=row.judgement_status,
+        judgement_memo=row.judgement_memo,
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
+        label_print_required=row.label_print_required,
+        label_print_status=row.label_print_status,
+        label_printed_at=row.label_printed_at,
+        inventory_reflected_yn=row.inventory_reflected_yn,
+        inventory_reflected_at=row.inventory_reflected_at,
+        inventory_event_id=row.inventory_event_id,
+        external_outbound_status=row.external_outbound_status,
+        external_outbound_at=row.external_outbound_at,
+        hold_status=row.hold_status,
+        hold_reason=row.hold_reason,
+        hold_response_memo=row.hold_response_memo,
+        hold_resolved_at=row.hold_resolved_at,
+        disposal_status=row.disposal_status,
+        disposal_reason=row.disposal_reason,
+        disposal_memo=row.disposal_memo,
+        disposal_confirmed_at=row.disposal_confirmed_at,
+        attachment_count=int(attachment_count or 0),
+        followup_status=followup_status,
+        followup_status_label=followup_status_label,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        judged_at=row.judged_at,
     ).model_dump()
 
 
@@ -932,6 +1008,62 @@ def disable_return_processing_attachment(
     except Exception:
         db.rollback()
         raise
+
+
+def list_return_history(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    tracking_no: str | None = None,
+    return_management_no: str | None = None,
+    judgement_status: str | None = None,
+    status: str | None = None,
+    followup_status: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_judgement_status = _safe_text(judgement_status)
+    if safe_judgement_status:
+        safe_judgement_status = safe_judgement_status.upper()
+        if safe_judgement_status not in ALLOWED_JUDGEMENT_STATUSES:
+            raise _business_error("RETURN_HISTORY_JUDGEMENT_INVALID", "지원하지 않는 판정상태입니다.")
+    safe_status = _safe_text(status)
+    if safe_status:
+        safe_status = safe_status.upper()
+    safe_followup_status = _safe_text(followup_status)
+    if safe_followup_status:
+        safe_followup_status = safe_followup_status.upper()
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    rows, total_count = repo.list_return_history(
+        db,
+        client_id=effective_client_id,
+        date_from=date_from,
+        date_to=date_to,
+        keyword=_safe_text(keyword),
+        tracking_no=_safe_text(tracking_no),
+        return_management_no=_safe_text(return_management_no),
+        judgement_status=safe_judgement_status,
+        status=safe_status,
+        followup_status=safe_followup_status,
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnHistoryListResponse(
+        items=[
+            ReturnHistoryItemResponse(**_return_history_response(row, client, attachment_count))
+            for row, client, attachment_count in rows
+        ],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
 
 
 def list_return_closing_candidates(

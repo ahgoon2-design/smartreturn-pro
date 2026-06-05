@@ -431,3 +431,65 @@ export interface ConfirmReturnDisposalTaskPayload {
 export interface ConfirmReturnDisposalTaskResponse extends ReturnDisposalCandidate {
   message: string;
 }
+
+export type ReturnHistoryFollowupStatus =
+  | "RECEIVED"
+  | "PROCESSING_READY"
+  | "PROCESSING"
+  | "JUDGED"
+  | "INVENTORY_REFLECTED"
+  | "EXTERNAL_OUTBOUND_TARGET"
+  | "EXTERNAL_OUTBOUND_CONFIRMED"
+  | "HOLD_PENDING"
+  | "READY_TO_REJUDGE"
+  | "DISPOSAL_TARGET"
+  | "DISPOSAL_CONFIRMED";
+
+export interface ReturnHistoryItem {
+  row_id: number;
+  task_id: number;
+  batch_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  row_no: number;
+  order_no?: string | null;
+  return_tracking_no?: string | null;
+  original_tracking_no?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_name?: string | null;
+  option_name?: string | null;
+  qty?: number | null;
+  return_reason?: string | null;
+  validation_status: ReturnIntakeRowValidationStatus | string;
+  status: string;
+  judgement_status?: ReturnJudgementStatus | string | null;
+  judgement_memo?: string | null;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  label_print_required?: boolean;
+  label_print_status?: ReturnLabelPrintStatus | string | null;
+  label_printed_at?: string | null;
+  inventory_reflected_yn?: boolean;
+  inventory_reflected_at?: string | null;
+  inventory_event_id?: number | null;
+  external_outbound_status?: ReturnExternalOutboundStatus | string | null;
+  external_outbound_at?: string | null;
+  hold_status?: ReturnHoldStatus | string | null;
+  hold_reason?: string | null;
+  hold_response_memo?: string | null;
+  hold_resolved_at?: string | null;
+  disposal_status?: ReturnDisposalStatus | string | null;
+  disposal_reason?: string | null;
+  disposal_memo?: string | null;
+  disposal_confirmed_at?: string | null;
+  attachment_count: number;
+  followup_status: ReturnHistoryFollowupStatus | string;
+  followup_status_label: string;
+  created_at: string;
+  updated_at: string;
+  judged_at?: string | null;
+}
+
+export type ReturnHistoryListResponse = PageResponse<ReturnHistoryItem>;

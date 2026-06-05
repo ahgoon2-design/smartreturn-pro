@@ -243,6 +243,44 @@ def disable_return_processing_attachment_api(
     )
 
 
+@router.get("/history", response_model=ApiResult)
+def list_return_history_api(
+    client_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    tracking_no: str | None = None,
+    return_management_no: str | None = None,
+    judgement_status: str | None = None,
+    status: str | None = None,
+    followup_status: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_HISTORY_FOUND",
+        message="반품 이력을 조회했습니다.",
+        data=return_intake_service.list_return_history(
+            db,
+            auth,
+            client_id=client_id,
+            date_from=date_from,
+            date_to=date_to,
+            keyword=keyword,
+            tracking_no=tracking_no,
+            return_management_no=return_management_no,
+            judgement_status=judgement_status,
+            status=status,
+            followup_status=followup_status,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
 @router.get("/closing/candidates", response_model=ApiResult)
 def list_return_closing_candidates_api(
     client_id: int | None = None,

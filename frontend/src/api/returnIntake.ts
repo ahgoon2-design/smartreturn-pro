@@ -13,6 +13,7 @@ import type {
   ReturnExternalOutboundCandidateListResponse,
   ReturnExternalOutboundConfirmPayload,
   ReturnExternalOutboundConfirmResponse,
+  ReturnHistoryListResponse,
   ReturnHoldCandidateListResponse,
   ReturnIntakeBatchCreatePayload,
   ReturnIntakeBatchListResponse,
@@ -329,4 +330,52 @@ export async function confirmReturnDisposalTask(taskId: number, payload: Confirm
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export interface ReturnHistoryListOptions {
+  clientId?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  keyword?: string;
+  trackingNo?: string;
+  returnManagementNo?: string;
+  judgementStatus?: string;
+  status?: string;
+  followupStatus?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnHistory(options: ReturnHistoryListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.dateFrom) {
+    params.set("date_from", options.dateFrom);
+  }
+  if (options.dateTo) {
+    params.set("date_to", options.dateTo);
+  }
+  if (options.keyword) {
+    params.set("keyword", options.keyword);
+  }
+  if (options.trackingNo) {
+    params.set("tracking_no", options.trackingNo);
+  }
+  if (options.returnManagementNo) {
+    params.set("return_management_no", options.returnManagementNo);
+  }
+  if (options.judgementStatus) {
+    params.set("judgement_status", options.judgementStatus);
+  }
+  if (options.status) {
+    params.set("status", options.status);
+  }
+  if (options.followupStatus) {
+    params.set("followup_status", options.followupStatus);
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnHistoryListResponse>(`/api/returns/history?${params.toString()}`);
 }

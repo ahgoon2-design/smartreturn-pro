@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.master import Client
@@ -395,6 +396,129 @@ def list_disposal_candidates(
         .all()
     )
     return items, total_count
+
+
+def list_return_history(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    tracking_no: str | None = None,
+    return_management_no: str | None = None,
+    judgement_status: str | None = None,
+    status: str | None = None,
+    followup_status: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[ReturnIntakeRow, Client, int]], int]:
+    attachment_counts = (
+        db.query(
+            ReturnProcessingAttachment.return_intake_row_id.label("row_id"),
+            func.count(ReturnProcessingAttachment.id).label("attachment_count"),
+        )
+        .filter(ReturnProcessingAttachment.active_yn.is_(True))
+        .group_by(ReturnProcessingAttachment.return_intake_row_id)
+        .subquery()
+    )
+    query = (
+        db.query(
+            ReturnIntakeRow,
+            Client,
+            func.coalesce(attachment_counts.c.attachment_count, 0),
+        )
+        .join(Client, Client.id == ReturnIntakeRow.client_id)
+        .outerjoin(attachment_counts, attachment_counts.c.row_id == ReturnIntakeRow.id)
+    )
+    if client_id is not None:
+        query = query.filter(ReturnIntakeRow.client_id == client_id)
+    if date_from is not None:
+        query = query.filter(ReturnIntakeRow.created_at >= date_from)
+    if date_to is not None:
+        query = query.filter(ReturnIntakeRow.created_at <= date_to)
+    if keyword:
+        pattern = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                ReturnIntakeRow.return_tracking_no.ilike(pattern),
+                ReturnIntakeRow.original_tracking_no.ilike(pattern),
+                ReturnIntakeRow.order_no.ilike(pattern),
+                ReturnIntakeRow.product_code.ilike(pattern),
+                ReturnIntakeRow.barcode.ilike(pattern),
+                ReturnIntakeRow.product_name.ilike(pattern),
+                ReturnIntakeRow.return_management_no.ilike(pattern),
+                ReturnIntakeRow.return_label_no.ilike(pattern),
+            )
+        )
+    if tracking_no:
+        pattern = f"%{tracking_no}%"
+        query = query.filter(
+            or_(
+                ReturnIntakeRow.return_tracking_no.ilike(pattern),
+                ReturnIntakeRow.original_tracking_no.ilike(pattern),
+                ReturnIntakeRow.order_no.ilike(pattern),
+            )
+        )
+    if return_management_no:
+        pattern = f"%{return_management_no}%"
+        query = query.filter(
+            or_(
+                ReturnIntakeRow.return_management_no.ilike(pattern),
+                ReturnIntakeRow.return_label_no.ilike(pattern),
+            )
+        )
+    if judgement_status:
+        query = query.filter(ReturnIntakeRow.judgement_status == judgement_status)
+    if status:
+        query = query.filter(ReturnIntakeRow.status == status)
+    if followup_status:
+        query = _apply_history_followup_filter(query, followup_status)
+
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnIntakeRow.updated_at.desc(), ReturnIntakeRow.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count
+
+
+def _apply_history_followup_filter(query, followup_status: str):
+    if followup_status == "INVENTORY_REFLECTED":
+        return query.filter(ReturnIntakeRow.inventory_reflected_yn.is_(True))
+    if followup_status == "EXTERNAL_OUTBOUND_CONFIRMED":
+        return query.filter(ReturnIntakeRow.external_outbound_status == "CONFIRMED")
+    if followup_status == "EXTERNAL_OUTBOUND_TARGET":
+        return query.filter(
+            ReturnIntakeRow.judgement_status.in_(("REFURB", "SAMPLE", "MANUFACTURER_RETURN")),
+            ReturnIntakeRow.external_outbound_status != "CONFIRMED",
+        )
+    if followup_status == "READY_TO_REJUDGE":
+        return query.filter(ReturnIntakeRow.hold_status == "READY_TO_REJUDGE")
+    if followup_status == "HOLD_PENDING":
+        return query.filter(
+            ReturnIntakeRow.judgement_status == "HOLD",
+            ReturnIntakeRow.hold_status != "RESOLVED",
+        )
+    if followup_status == "DISPOSAL_CONFIRMED":
+        return query.filter(ReturnIntakeRow.disposal_status == "DISPOSAL_CONFIRMED")
+    if followup_status == "DISPOSAL_TARGET":
+        return query.filter(
+            ReturnIntakeRow.judgement_status == "DISPOSAL",
+            ReturnIntakeRow.disposal_status != "DISPOSAL_CONFIRMED",
+        )
+    if followup_status == "JUDGED":
+        return query.filter(
+            ReturnIntakeRow.status == "COMPLETED",
+            ReturnIntakeRow.judgement_status.isnot(None),
+        )
+    if followup_status == "PROCESSING_READY":
+        return query.filter(ReturnIntakeRow.status == "READY_FOR_PROCESSING")
+    if followup_status == "RECEIVED":
+        return query.filter(ReturnIntakeRow.status == "RECEIVED")
+    return query
 
 
 def create_processing_attachment(

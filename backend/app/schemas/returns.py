@@ -549,3 +549,57 @@ class ReturnDisposalConfirmRequest(BaseModel):
 
 class ReturnDisposalConfirmResponse(ReturnDisposalCandidateResponse):
     message: str
+
+
+class ReturnHistoryItemResponse(BaseModel):
+    row_id: int
+    task_id: int
+    batch_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    row_no: int
+    order_no: str | None = None
+    return_tracking_no: str | None = None
+    original_tracking_no: str | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    product_name: str | None = None
+    option_name: str | None = None
+    qty: int | None = None
+    return_reason: str | None = None
+    validation_status: str
+    status: str
+    judgement_status: str | None = None
+    judgement_memo: str | None = None
+    return_management_no: str | None = None
+    return_label_no: str | None = None
+    label_print_required: bool = False
+    label_print_status: str | None = None
+    label_printed_at: datetime | None = None
+    inventory_reflected_yn: bool = False
+    inventory_reflected_at: datetime | None = None
+    inventory_event_id: int | None = None
+    external_outbound_status: str | None = None
+    external_outbound_at: datetime | None = None
+    hold_status: str | None = None
+    hold_reason: str | None = None
+    hold_response_memo: str | None = None
+    hold_resolved_at: datetime | None = None
+    disposal_status: str | None = None
+    disposal_reason: str | None = None
+    disposal_memo: str | None = None
+    disposal_confirmed_at: datetime | None = None
+    attachment_count: int = 0
+    followup_status: str
+    followup_status_label: str
+    created_at: datetime
+    updated_at: datetime
+    judged_at: datetime | None = None
+
+
+class ReturnHistoryListResponse(BaseModel):
+    items: list[ReturnHistoryItemResponse]
+    page: int
+    page_size: int
+    total_count: int

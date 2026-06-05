@@ -5,6 +5,7 @@ import {
   DatabaseOutlined,
   DeleteOutlined,
   ExportOutlined,
+  HistoryOutlined,
   InboxOutlined,
   LogoutOutlined,
   PauseCircleOutlined,
@@ -38,6 +39,8 @@ export function MainLayout() {
         ? ROUTE_PATHS.returnHold
       : location.pathname.startsWith(ROUTE_PATHS.returnDisposal)
         ? ROUTE_PATHS.returnDisposal
+      : location.pathname.startsWith(ROUTE_PATHS.returnHistory)
+        ? ROUTE_PATHS.returnHistory
       : location.pathname.startsWith(ROUTE_PATHS.inventoryCurrent)
         ? ROUTE_PATHS.inventoryCurrent
       : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
@@ -107,6 +110,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.returnDisposal,
       icon: <DeleteOutlined />,
       label: "반품 폐기관리",
+      disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnHistory,
+      icon: <HistoryOutlined />,
+      label: "반품 이력조회",
       disabled: !hasPermission("RETURN_VIEW"),
     },
     {

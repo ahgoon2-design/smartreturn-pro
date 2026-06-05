@@ -14,6 +14,7 @@ import { ReturnIntakeHubPage } from "../features/returns/ReturnIntakeHubPage";
 import { ReturnClosingPage } from "../features/returns/ReturnClosingPage";
 import { ReturnDisposalManagementPage } from "../features/returns/ReturnDisposalManagementPage";
 import { ReturnExternalOutboundPage } from "../features/returns/ReturnExternalOutboundPage";
+import { ReturnHistoryPage } from "../features/returns/ReturnHistoryPage";
 import { ReturnHoldManagementPage } from "../features/returns/ReturnHoldManagementPage";
 import { ReturnProcessingWorkspacePage } from "../features/returns/ReturnProcessingWorkspacePage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
@@ -124,6 +125,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
             <ReturnDisposalManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "returns/history",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ReturnHistoryPage />
           </ProtectedRoute>
         ),
       },
