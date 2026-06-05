@@ -8,6 +8,7 @@ import type {
   ReturnExternalOutboundCandidateListResponse,
   ReturnExternalOutboundConfirmPayload,
   ReturnExternalOutboundConfirmResponse,
+  ReturnHoldCandidateListResponse,
   ReturnIntakeBatchCreatePayload,
   ReturnIntakeBatchListResponse,
   ReturnIntakeBatchSummary,
@@ -18,6 +19,8 @@ import type {
   ReturnIntakeValidateResponse,
   ReturnProcessingAttachmentListResponse,
   ReturnProcessingTaskListResponse,
+  UpdateReturnHoldTaskPayload,
+  UpdateReturnHoldTaskResponse,
   UploadReturnProcessingAttachmentPayload,
   UploadReturnProcessingAttachmentResponse,
 } from "../types/returns";
@@ -226,6 +229,49 @@ export async function listReturnExternalOutboundCandidates(
 export async function confirmReturnExternalOutbound(payload: ReturnExternalOutboundConfirmPayload) {
   return apiRequest<ReturnExternalOutboundConfirmResponse>("/api/returns/external-outbound/confirm", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface ReturnHoldCandidateListOptions {
+  clientId?: number;
+  holdStatus?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  returnManagementNo?: string;
+  trackingNo?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnHoldCandidates(options: ReturnHoldCandidateListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.holdStatus) {
+    params.set("hold_status", options.holdStatus);
+  }
+  if (options.dateFrom) {
+    params.set("date_from", options.dateFrom);
+  }
+  if (options.dateTo) {
+    params.set("date_to", options.dateTo);
+  }
+  if (options.returnManagementNo) {
+    params.set("return_management_no", options.returnManagementNo);
+  }
+  if (options.trackingNo) {
+    params.set("tracking_no", options.trackingNo);
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnHoldCandidateListResponse>(`/api/returns/hold/candidates?${params.toString()}`);
+}
+
+export async function updateReturnHoldTask(taskId: number, payload: UpdateReturnHoldTaskPayload) {
+  return apiRequest<UpdateReturnHoldTaskResponse>(`/api/returns/hold/tasks/${taskId}`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

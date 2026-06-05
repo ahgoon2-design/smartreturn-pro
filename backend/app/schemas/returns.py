@@ -136,6 +136,11 @@ class ReturnIntakeRowResponse(BaseModel):
     external_outbound_status: str = "NOT_REQUIRED"
     external_outbound_at: datetime | None = None
     external_outbound_confirmed_by: int | None = None
+    hold_status: str = "HOLD_PENDING"
+    hold_reason: str | None = None
+    hold_response_memo: str | None = None
+    hold_resolved_at: datetime | None = None
+    hold_resolved_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -212,6 +217,11 @@ class ReturnProcessingTaskResponse(BaseModel):
     external_outbound_status: str = "NOT_REQUIRED"
     external_outbound_at: datetime | None = None
     external_outbound_confirmed_by: int | None = None
+    hold_status: str = "HOLD_PENDING"
+    hold_reason: str | None = None
+    hold_response_memo: str | None = None
+    hold_resolved_at: datetime | None = None
+    hold_resolved_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -386,3 +396,66 @@ class ReturnExternalOutboundConfirmResponse(BaseModel):
     failed_rows: int
     message: str
     row_results: list[ReturnExternalOutboundRowResult]
+
+
+class ReturnHoldCandidateResponse(BaseModel):
+    row_id: int
+    task_id: int
+    batch_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    row_no: int
+    order_no: str | None = None
+    return_tracking_no: str | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    product_name: str | None = None
+    option_name: str | None = None
+    qty: int | None = None
+    return_reason: str | None = None
+    judgement_status: str
+    judgement_memo: str | None = None
+    hold_status: str
+    hold_reason: str | None = None
+    hold_response_memo: str | None = None
+    hold_resolved_at: datetime | None = None
+    hold_resolved_by: int | None = None
+    return_management_no: str | None = None
+    return_label_no: str | None = None
+    judged_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReturnHoldCandidateListResponse(BaseModel):
+    items: list[ReturnHoldCandidateResponse]
+    page: int
+    page_size: int
+    total_count: int
+
+
+class ReturnHoldUpdateRequest(BaseModel):
+    hold_status: str
+    hold_reason: str | None = None
+    hold_response_memo: str | None = None
+
+    @field_validator("hold_status")
+    @classmethod
+    def _required_hold_status(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("hold_reason", "hold_response_memo")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ReturnHoldUpdateResponse(ReturnHoldCandidateResponse):
+    message: str

@@ -38,6 +38,10 @@ from app.schemas.returns import (
     ReturnExternalOutboundConfirmRequest,
     ReturnExternalOutboundConfirmResponse,
     ReturnExternalOutboundRowResult,
+    ReturnHoldCandidateListResponse,
+    ReturnHoldCandidateResponse,
+    ReturnHoldUpdateRequest,
+    ReturnHoldUpdateResponse,
     ReturnProcessingJudgeRequest,
     ReturnProcessingJudgeResponse,
     ReturnProcessingTaskListResponse,
@@ -102,6 +106,17 @@ EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES = {
 EXTERNAL_OUTBOUND_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
 EXTERNAL_OUTBOUND_STATUS_READY = "READY"
 EXTERNAL_OUTBOUND_STATUS_CONFIRMED = "CONFIRMED"
+
+HOLD_STATUS_PENDING = "HOLD_PENDING"
+HOLD_STATUS_CUSTOMER_CHECKING = "CUSTOMER_CHECKING"
+HOLD_STATUS_READY_TO_REJUDGE = "READY_TO_REJUDGE"
+HOLD_STATUS_RESOLVED = "RESOLVED"
+ALLOWED_HOLD_STATUSES = {
+    HOLD_STATUS_PENDING,
+    HOLD_STATUS_CUSTOMER_CHECKING,
+    HOLD_STATUS_READY_TO_REJUDGE,
+    HOLD_STATUS_RESOLVED,
+}
 
 ATTACHMENT_TYPE_PHOTO = "PHOTO"
 ALLOWED_ATTACHMENT_TYPES = {ATTACHMENT_TYPE_PHOTO, "EVIDENCE"}
@@ -247,6 +262,11 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
         external_outbound_confirmed_by=row.external_outbound_confirmed_by,
+        hold_status=row.hold_status,
+        hold_reason=row.hold_reason,
+        hold_response_memo=row.hold_response_memo,
+        hold_resolved_at=row.hold_resolved_at,
+        hold_resolved_by=row.hold_resolved_by,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -288,6 +308,11 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
         external_outbound_confirmed_by=row.external_outbound_confirmed_by,
+        hold_status=row.hold_status,
+        hold_reason=row.hold_reason,
+        hold_response_memo=row.hold_response_memo,
+        hold_resolved_at=row.hold_resolved_at,
+        hold_resolved_by=row.hold_resolved_by,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -349,6 +374,38 @@ def _external_outbound_candidate_response(row: ReturnIntakeRow, client) -> dict:
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
         external_outbound_confirmed_by=row.external_outbound_confirmed_by,
+        judged_at=row.judged_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    ).model_dump()
+
+
+def _hold_candidate_response(row: ReturnIntakeRow, client) -> dict:
+    return ReturnHoldCandidateResponse(
+        row_id=row.id,
+        task_id=row.id,
+        batch_id=row.batch_id,
+        client_id=row.client_id,
+        client_code=client.client_code,
+        client_name=client.client_name,
+        row_no=row.row_no,
+        order_no=row.order_no,
+        return_tracking_no=row.return_tracking_no,
+        product_code=row.product_code,
+        barcode=row.barcode,
+        product_name=row.product_name,
+        option_name=row.option_name,
+        qty=row.qty,
+        return_reason=row.return_reason,
+        judgement_status=row.judgement_status or "",
+        judgement_memo=row.judgement_memo,
+        hold_status=row.hold_status,
+        hold_reason=row.hold_reason,
+        hold_response_memo=row.hold_response_memo,
+        hold_resolved_at=row.hold_resolved_at,
+        hold_resolved_by=row.hold_resolved_by,
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
         judged_at=row.judged_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -737,6 +794,11 @@ def judge_return_processing_task(
         row.external_outbound_required = False
         if row.external_outbound_status != EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
             row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_NOT_REQUIRED
+    if judgement_status == JUDGEMENT_HOLD:
+        row.hold_status = HOLD_STATUS_PENDING
+        row.hold_reason = row.hold_reason or row.judgement_memo
+        row.hold_resolved_at = None
+        row.hold_resolved_by = None
 
     try:
         db.commit()
@@ -1244,6 +1306,92 @@ def confirm_return_external_outbound(
         message="반품 외부반출 확정 처리를 완료했습니다.",
         row_results=row_results,
     ).model_dump()
+
+
+def list_return_hold_candidates(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    hold_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    return_management_no: str | None = None,
+    tracking_no: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_hold_status = _safe_text(hold_status)
+    if safe_hold_status:
+        safe_hold_status = safe_hold_status.upper()
+        if safe_hold_status not in ALLOWED_HOLD_STATUSES:
+            raise _business_error("RETURN_HOLD_STATUS_INVALID", "지원하지 않는 보류 상태입니다.")
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    rows, total_count = repo.list_hold_candidates(
+        db,
+        resolved_status=HOLD_STATUS_RESOLVED,
+        client_id=effective_client_id,
+        hold_status=safe_hold_status,
+        date_from=date_from,
+        date_to=date_to,
+        return_management_no=_safe_text(return_management_no),
+        tracking_no=_safe_text(tracking_no),
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnHoldCandidateListResponse(
+        items=[ReturnHoldCandidateResponse(**_hold_candidate_response(row, client)) for row, client in rows],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
+
+
+def update_return_hold_task(
+    db: Session,
+    auth: AuthContext,
+    task_id: int,
+    request: ReturnHoldUpdateRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    task_row = repo.get_processing_task_with_client(db, task_id)
+    if task_row is None:
+        raise _business_error("RETURN_HOLD_TASK_NOT_FOUND", "반품 보류 대상을 찾을 수 없습니다.", 404)
+    row, client = task_row
+    resolve_effective_client_id(auth, row.client_id)
+
+    if row.judgement_status != JUDGEMENT_HOLD:
+        raise _business_error("RETURN_HOLD_INVALID_JUDGEMENT", "HOLD 판정 row만 보류 처리할 수 있습니다.")
+    if row.status != ROW_STATUS_COMPLETED:
+        raise _business_error("RETURN_HOLD_INVALID_STATUS", "판정 완료된 HOLD row만 보류 처리할 수 있습니다.")
+
+    hold_status = request.hold_status.strip().upper()
+    if hold_status not in ALLOWED_HOLD_STATUSES:
+        raise _business_error("RETURN_HOLD_STATUS_INVALID", "지원하지 않는 보류 상태입니다.")
+
+    row.hold_status = hold_status
+    row.hold_reason = _safe_text(request.hold_reason)
+    row.hold_response_memo = _safe_text(request.hold_response_memo)
+    if hold_status == HOLD_STATUS_RESOLVED:
+        row.hold_resolved_at = datetime.now(timezone.utc)
+        row.hold_resolved_by = auth.user_id
+    else:
+        row.hold_resolved_at = None
+        row.hold_resolved_by = None
+
+    try:
+        db.commit()
+        db.refresh(row)
+        return ReturnHoldUpdateResponse(
+            **_hold_candidate_response(row, client),
+            message="반품 보류 정보를 저장했습니다.",
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def _external_outbound_identifier(row: ReturnIntakeRow) -> str | None:

@@ -10,6 +10,7 @@ export const ROUTE_PATHS = {
   returnProcessing: "/returns/processing",
   returnClosing: "/returns/closing",
   returnExternalOutbound: "/returns/external-outbound",
+  returnHold: "/returns/hold",
   forbidden: "/forbidden",
   notFound: "/not-found",
 } as const;

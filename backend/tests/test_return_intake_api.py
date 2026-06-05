@@ -1152,6 +1152,179 @@ def test_return_external_outbound_confirm_fails_for_untracked_or_wrong_judgement
     assert missing_response.json()["data"]["failed_rows"] == 1
 
 
+def test_return_hold_candidates_include_hold_completed_rows(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_candidates_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_hold_candidates_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="HOLD")
+
+    response = client.get("/api/returns/hold/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 1
+    item = data["items"][0]
+    assert item["row_id"] == task_id
+    assert item["judgement_status"] == "HOLD"
+    assert item["hold_status"] == "HOLD_PENDING"
+    assert item["return_management_no"]
+    _assert_no_sensitive_values(response.json())
+
+
+@pytest.mark.parametrize("judgement_status", ["GOOD", "REFURB", "SAMPLE", "MANUFACTURER_RETURN", "DISPOSAL"])
+def test_return_hold_candidates_exclude_non_hold_judgements(
+    client: TestClient,
+    db_session: Session,
+    judgement_status: str,
+):
+    client_row = _create_client(db_session, code=f"HOLD_EXCLUDE_{judgement_status}")
+    _create_product(db_session, client_row.id)
+    login_id = f"return_hold_exclude_{judgement_status.lower()}"
+    _create_user(
+        db_session,
+        login_id=login_id,
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id=login_id,
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status=judgement_status)
+
+    response = client.get("/api/returns/hold/candidates", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["total_count"] == 0
+
+
+def test_return_hold_update_saves_status_reason_and_response_memo(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_update_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_hold_update_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="HOLD")
+
+    response = client.patch(
+        f"/api/returns/hold/tasks/{task_id}",
+        json={
+            "hold_status": "CUSTOMER_CHECKING",
+            "hold_reason": "상품 상태 확인 필요",
+            "hold_response_memo": "고객사에 확인 요청",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["hold_status"] == "CUSTOMER_CHECKING"
+    assert data["hold_reason"] == "상품 상태 확인 필요"
+    assert data["hold_response_memo"] == "고객사에 확인 요청"
+    row = db_session.get(ReturnIntakeRow, task_id)
+    assert row is not None
+    assert row.hold_status == "CUSTOMER_CHECKING"
+    assert row.hold_reason == "상품 상태 확인 필요"
+    assert row.hold_response_memo == "고객사에 확인 요청"
+
+
+def test_return_hold_update_ready_to_rejudge_and_resolved_excludes_candidate(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_ready_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_hold_ready_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="HOLD")
+
+    ready_response = client.patch(
+        f"/api/returns/hold/tasks/{task_id}",
+        json={"hold_status": "READY_TO_REJUDGE", "hold_reason": "재판정 준비", "hold_response_memo": "회신 완료"},
+        headers=headers,
+    )
+    resolved_response = client.patch(
+        f"/api/returns/hold/tasks/{task_id}",
+        json={"hold_status": "RESOLVED", "hold_reason": "재판정 없이 해결", "hold_response_memo": "처리 종료"},
+        headers=headers,
+    )
+    candidates_response = client.get("/api/returns/hold/candidates", headers=headers)
+
+    assert ready_response.status_code == 200
+    assert ready_response.json()["data"]["hold_status"] == "READY_TO_REJUDGE"
+    assert resolved_response.status_code == 200
+    assert resolved_response.json()["data"]["hold_status"] == "RESOLVED"
+    assert resolved_response.json()["data"]["hold_resolved_at"] is not None
+    assert candidates_response.status_code == 200
+    assert candidates_response.json()["data"]["total_count"] == 0
+
+
+def test_return_hold_update_blocks_non_hold_and_missing_task(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_block_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_hold_block_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+
+    non_hold_response = client.patch(
+        f"/api/returns/hold/tasks/{task_id}",
+        json={"hold_status": "CUSTOMER_CHECKING"},
+        headers=headers,
+    )
+    missing_response = client.patch(
+        "/api/returns/hold/tasks/999999",
+        json={"hold_status": "CUSTOMER_CHECKING"},
+        headers=headers,
+    )
+
+    assert non_hold_response.status_code == 400
+    assert non_hold_response.json()["result_code"] == "RETURN_HOLD_INVALID_JUDGEMENT"
+    assert missing_response.status_code == 404
+    assert missing_response.json()["result_code"] == "RETURN_HOLD_TASK_NOT_FOUND"
+
+
 def test_return_closing_confirm_good_fails_without_warehouse_setting(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
     _create_product(db_session, client_row.id)

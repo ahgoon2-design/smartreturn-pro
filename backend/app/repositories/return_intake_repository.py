@@ -297,6 +297,56 @@ def list_external_outbound_rows_by_ids(
     return query.order_by(ReturnIntakeRow.id).all()
 
 
+def list_hold_candidates(
+    db: Session,
+    *,
+    resolved_status: str,
+    client_id: int | None = None,
+    hold_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    return_management_no: str | None = None,
+    tracking_no: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[ReturnIntakeRow, Client]], int]:
+    query = db.query(ReturnIntakeRow, Client).join(Client, Client.id == ReturnIntakeRow.client_id)
+    query = query.filter(
+        ReturnIntakeRow.status == "COMPLETED",
+        ReturnIntakeRow.judgement_status == "HOLD",
+        ReturnIntakeRow.hold_status != resolved_status,
+    )
+    if client_id is not None:
+        query = query.filter(ReturnIntakeRow.client_id == client_id)
+    if hold_status:
+        query = query.filter(ReturnIntakeRow.hold_status == hold_status)
+    if date_from is not None:
+        query = query.filter(ReturnIntakeRow.judged_at >= date_from)
+    if date_to is not None:
+        query = query.filter(ReturnIntakeRow.judged_at <= date_to)
+    if return_management_no:
+        pattern = f"%{return_management_no}%"
+        query = query.filter(
+            (ReturnIntakeRow.return_management_no.ilike(pattern))
+            | (ReturnIntakeRow.return_label_no.ilike(pattern))
+        )
+    if tracking_no:
+        pattern = f"%{tracking_no}%"
+        query = query.filter(
+            (ReturnIntakeRow.return_tracking_no.ilike(pattern))
+            | (ReturnIntakeRow.original_tracking_no.ilike(pattern))
+            | (ReturnIntakeRow.order_no.ilike(pattern))
+        )
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnIntakeRow.judged_at.desc(), ReturnIntakeRow.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count
+
+
 def create_processing_attachment(
     db: Session,
     attachment: ReturnProcessingAttachment,

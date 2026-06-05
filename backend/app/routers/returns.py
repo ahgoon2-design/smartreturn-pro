@@ -12,6 +12,7 @@ from app.schemas.common import ApiResult, api_success
 from app.schemas.returns import (
     ReturnClosingConfirmRequest,
     ReturnExternalOutboundConfirmRequest,
+    ReturnHoldUpdateRequest,
     ReturnIntakeBatchCreateRequest,
     ReturnIntakePasteRowsRequest,
     ReturnProcessingJudgeRequest,
@@ -323,4 +324,51 @@ def confirm_return_external_outbound_api(
         result_code="RETURN_EXTERNAL_OUTBOUND_CONFIRMED",
         message="반품 외부반출을 확정했습니다.",
         data=return_intake_service.confirm_return_external_outbound(db, auth, request),
+    )
+
+
+@router.get("/hold/candidates", response_model=ApiResult)
+def list_return_hold_candidates_api(
+    client_id: int | None = None,
+    hold_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    return_management_no: str | None = None,
+    tracking_no: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_HOLD_CANDIDATES_FOUND",
+        message="반품 보류 후보를 조회했습니다.",
+        data=return_intake_service.list_return_hold_candidates(
+            db,
+            auth,
+            client_id=client_id,
+            hold_status=hold_status,
+            date_from=date_from,
+            date_to=date_to,
+            return_management_no=return_management_no,
+            tracking_no=tracking_no,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
+@router.patch("/hold/tasks/{task_id}", response_model=ApiResult)
+def update_return_hold_task_api(
+    task_id: int,
+    request: ReturnHoldUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_HOLD_UPDATED",
+        message="반품 보류 정보를 저장했습니다.",
+        data=return_intake_service.update_return_hold_task(db, auth, task_id, request),
     )

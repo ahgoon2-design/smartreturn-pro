@@ -56,6 +56,12 @@ class ReturnIntakeRow(Base):
             "external_outbound_status",
             "judgement_status",
         ),
+        Index(
+            "ix_return_intake_rows_hold",
+            "client_id",
+            "hold_status",
+            "judgement_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -108,6 +114,16 @@ class ReturnIntakeRow(Base):
     )
     external_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     external_outbound_confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    hold_status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="HOLD_PENDING",
+        server_default="HOLD_PENDING",
+    )
+    hold_reason: Mapped[str | None] = mapped_column(Text)
+    hold_response_memo: Mapped[str | None] = mapped_column(Text)
+    hold_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hold_resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

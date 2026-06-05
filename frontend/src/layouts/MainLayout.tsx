@@ -6,6 +6,7 @@ import {
   ExportOutlined,
   InboxOutlined,
   LogoutOutlined,
+  PauseCircleOutlined,
   RollbackOutlined,
   ScanOutlined,
   ShoppingOutlined,
@@ -32,6 +33,8 @@ export function MainLayout() {
       ? ROUTE_PATHS.masterCommonCodes
       : location.pathname.startsWith(ROUTE_PATHS.returnExternalOutbound)
         ? ROUTE_PATHS.returnExternalOutbound
+      : location.pathname.startsWith(ROUTE_PATHS.returnHold)
+        ? ROUTE_PATHS.returnHold
       : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
         ? ROUTE_PATHS.returnClosing
       : location.pathname.startsWith(ROUTE_PATHS.returnProcessing)
@@ -87,6 +90,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.returnExternalOutbound,
       icon: <ExportOutlined />,
       label: "반품 외부반출",
+      disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnHold,
+      icon: <PauseCircleOutlined />,
+      label: "반품 보류관리",
       disabled: !hasPermission("RETURN_VIEW"),
     },
     {

@@ -10,6 +10,7 @@ export type ReturnLabelPrintStatus =
   | "PRINT_FAILED"
   | "LOCAL_AGENT_NOT_CONNECTED";
 export type ReturnExternalOutboundStatus = "NOT_REQUIRED" | "READY" | "SCANNED" | "CONFIRMED";
+export type ReturnHoldStatus = "HOLD_PENDING" | "CUSTOMER_CHECKING" | "READY_TO_REJUDGE" | "RESOLVED";
 
 export interface ReturnIntakeBatchSummary {
   batch_id: number;
@@ -102,6 +103,11 @@ export interface ReturnIntakeRow {
   external_outbound_status?: ReturnExternalOutboundStatus | string;
   external_outbound_at?: string | null;
   external_outbound_confirmed_by?: number | null;
+  hold_status?: ReturnHoldStatus | string;
+  hold_reason?: string | null;
+  hold_response_memo?: string | null;
+  hold_resolved_at?: string | null;
+  hold_resolved_by?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -163,6 +169,11 @@ export interface ReturnProcessingTask {
   external_outbound_status?: ReturnExternalOutboundStatus | string;
   external_outbound_at?: string | null;
   external_outbound_confirmed_by?: number | null;
+  hold_status?: ReturnHoldStatus | string;
+  hold_reason?: string | null;
+  hold_response_memo?: string | null;
+  hold_resolved_at?: string | null;
+  hold_resolved_by?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -315,4 +326,46 @@ export interface ReturnExternalOutboundConfirmResponse {
   failed_rows: number;
   message: string;
   row_results: ReturnExternalOutboundRowResult[];
+}
+
+export interface ReturnHoldCandidate {
+  row_id: number;
+  task_id: number;
+  batch_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  row_no: number;
+  order_no?: string | null;
+  return_tracking_no?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_name?: string | null;
+  option_name?: string | null;
+  qty?: number | null;
+  return_reason?: string | null;
+  judgement_status: ReturnJudgementStatus | string;
+  judgement_memo?: string | null;
+  hold_status: ReturnHoldStatus | string;
+  hold_reason?: string | null;
+  hold_response_memo?: string | null;
+  hold_resolved_at?: string | null;
+  hold_resolved_by?: number | null;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  judged_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReturnHoldCandidateListResponse = PageResponse<ReturnHoldCandidate>;
+
+export interface UpdateReturnHoldTaskPayload {
+  hold_status: ReturnHoldStatus;
+  hold_reason?: string | null;
+  hold_response_memo?: string | null;
+}
+
+export interface UpdateReturnHoldTaskResponse extends ReturnHoldCandidate {
+  message: string;
 }
