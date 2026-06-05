@@ -13,6 +13,7 @@ from app.schemas.returns import (
     ReturnClosingConfirmRequest,
     ReturnDisposalConfirmRequest,
     ReturnExternalOutboundConfirmRequest,
+    ReturnHoldRejudgeRequest,
     ReturnHoldUpdateRequest,
     ReturnIntakeBatchCreateRequest,
     ReturnIntakePasteRowsRequest,
@@ -372,6 +373,21 @@ def update_return_hold_task_api(
         result_code="RETURN_HOLD_UPDATED",
         message="반품 보류 정보를 저장했습니다.",
         data=return_intake_service.update_return_hold_task(db, auth, task_id, request),
+    )
+
+
+@router.post("/hold/tasks/{task_id}/rejudge", response_model=ApiResult)
+def rejudge_return_hold_task_api(
+    task_id: int,
+    request: ReturnHoldRejudgeRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_HOLD_REJUDGED",
+        message="반품 보류 대상을 재판정했습니다.",
+        data=return_intake_service.rejudge_return_hold_task(db, auth, task_id, request),
     )
 
 

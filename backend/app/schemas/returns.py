@@ -471,6 +471,32 @@ class ReturnHoldUpdateResponse(ReturnHoldCandidateResponse):
     message: str
 
 
+class ReturnHoldRejudgeRequest(BaseModel):
+    judgement_status: str
+    judgement_memo: str | None = None
+    hold_response_memo: str | None = None
+
+    @field_validator("judgement_status")
+    @classmethod
+    def _required_judgement_status(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("judgement_memo", "hold_response_memo")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ReturnHoldRejudgeResponse(ReturnProcessingTaskResponse):
+    message: str
+
+
 class ReturnDisposalCandidateResponse(BaseModel):
     row_id: int
     task_id: int

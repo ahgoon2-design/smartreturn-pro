@@ -44,6 +44,8 @@ from app.schemas.returns import (
     ReturnDisposalConfirmResponse,
     ReturnHoldCandidateListResponse,
     ReturnHoldCandidateResponse,
+    ReturnHoldRejudgeRequest,
+    ReturnHoldRejudgeResponse,
     ReturnHoldUpdateRequest,
     ReturnHoldUpdateResponse,
     ReturnProcessingJudgeRequest,
@@ -819,40 +821,14 @@ def judge_return_processing_task(
             "처리 대기 또는 처리 중 상태에서만 판정을 저장할 수 있습니다.",
         )
 
-    label_print_required = _is_label_print_required(judgement_status, request.print_label)
-    if label_print_required:
-        next_label_no = row.return_label_no or _generate_return_label_no(row)
-        row.return_label_no = next_label_no
-        row.return_management_no = row.return_management_no or next_label_no
-        row.label_print_status = LABEL_STATUS_LOCAL_AGENT_NOT_CONNECTED
-    else:
-        row.label_print_status = LABEL_STATUS_NOT_REQUIRED
-
-    now = datetime.now(timezone.utc)
-    row.judgement_status = judgement_status
-    row.judgement_memo = _safe_text(request.judgement_memo)
-    row.label_print_required = label_print_required
-    row.judged_at = now
-    row.judged_by = auth.user_id
-    row.status = ROW_STATUS_COMPLETED
-    if judgement_status in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
-        row.external_outbound_required = True
-        if row.external_outbound_status != EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
-            row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_READY
-    else:
-        row.external_outbound_required = False
-        if row.external_outbound_status != EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
-            row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_NOT_REQUIRED
-    if judgement_status == JUDGEMENT_HOLD:
-        row.hold_status = HOLD_STATUS_PENDING
-        row.hold_reason = row.hold_reason or row.judgement_memo
-        row.hold_resolved_at = None
-        row.hold_resolved_by = None
-    if judgement_status == JUDGEMENT_DISPOSAL:
-        row.disposal_status = DISPOSAL_STATUS_PENDING
-        row.disposal_reason = row.disposal_reason or row.judgement_memo
-        row.disposal_confirmed_at = None
-        row.disposal_confirmed_by = None
+    _apply_return_judgement(
+        row,
+        auth,
+        judgement_status=judgement_status,
+        judgement_memo=request.judgement_memo,
+        print_label=request.print_label,
+        resolve_hold=False,
+    )
 
     try:
         db.commit()
@@ -1448,6 +1424,70 @@ def update_return_hold_task(
         raise
 
 
+def rejudge_return_hold_task(
+    db: Session,
+    auth: AuthContext,
+    task_id: int,
+    request: ReturnHoldRejudgeRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    task_row = repo.get_processing_task_with_client(db, task_id)
+    if task_row is None:
+        raise _business_error("RETURN_HOLD_TASK_NOT_FOUND", "반품 보류 대상을 찾을 수 없습니다.", 404)
+    row, client = task_row
+    resolve_effective_client_id(auth, row.client_id)
+
+    next_judgement_status = request.judgement_status.strip().upper()
+    if next_judgement_status not in ALLOWED_JUDGEMENT_STATUSES:
+        raise _business_error("RETURN_HOLD_REJUDGE_STATUS_INVALID", "지원하지 않는 재판정 값입니다.")
+    if row.judgement_status != JUDGEMENT_HOLD:
+        raise _business_error("RETURN_HOLD_REJUDGE_INVALID_JUDGEMENT", "HOLD 판정 row만 재판정할 수 있습니다.")
+    if row.hold_status != HOLD_STATUS_READY_TO_REJUDGE:
+        raise _business_error(
+            "RETURN_HOLD_REJUDGE_INVALID_HOLD_STATUS",
+            "재판정 준비 상태의 HOLD row만 재판정할 수 있습니다.",
+        )
+    if row.status != ROW_STATUS_COMPLETED:
+        raise _business_error(
+            "RETURN_HOLD_REJUDGE_INVALID_TASK_STATUS",
+            "판정 완료된 HOLD row만 재판정할 수 있습니다.",
+        )
+    if row.validation_status == ROW_VALIDATION_INVALID:
+        raise _business_error(
+            "RETURN_HOLD_REJUDGE_INVALID_VALIDATION",
+            "오류 row는 재판정할 수 없습니다.",
+        )
+    if row.validation_status not in {ROW_VALIDATION_VALID, ROW_VALIDATION_WARNING}:
+        raise _business_error(
+            "RETURN_HOLD_REJUDGE_INVALID_VALIDATION",
+            "검증 완료된 정상/경고 row만 재판정할 수 있습니다.",
+        )
+
+    response_memo = _safe_text(request.hold_response_memo)
+    if response_memo is not None:
+        row.hold_response_memo = response_memo
+
+    _apply_return_judgement(
+        row,
+        auth,
+        judgement_status=next_judgement_status,
+        judgement_memo=request.judgement_memo,
+        print_label=None,
+        resolve_hold=True,
+    )
+
+    try:
+        db.commit()
+        db.refresh(row)
+        return ReturnHoldRejudgeResponse(
+            **_processing_task_response(row, client),
+            message=_rejudge_success_message(next_judgement_status),
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def list_return_disposal_candidates(
     db: Session,
     auth: AuthContext,
@@ -1575,6 +1615,67 @@ def _resolve_return_good_warehouse(db: Session, client_id: int):
 
 def _is_label_print_required(judgement_status: str, print_label: bool | None) -> bool:
     return judgement_status in LABEL_REQUIRED_JUDGEMENT_STATUSES or bool(print_label)
+
+
+def _apply_return_judgement(
+    row: ReturnIntakeRow,
+    auth: AuthContext,
+    *,
+    judgement_status: str,
+    judgement_memo: str | None,
+    print_label: bool | None,
+    resolve_hold: bool,
+) -> None:
+    label_print_required = _is_label_print_required(judgement_status, print_label)
+    if label_print_required:
+        next_label_no = row.return_label_no or _generate_return_label_no(row)
+        row.return_label_no = next_label_no
+        row.return_management_no = row.return_management_no or next_label_no
+        row.label_print_status = LABEL_STATUS_LOCAL_AGENT_NOT_CONNECTED
+    else:
+        row.label_print_status = LABEL_STATUS_NOT_REQUIRED
+
+    now = datetime.now(timezone.utc)
+    row.judgement_status = judgement_status
+    row.judgement_memo = _safe_text(judgement_memo)
+    row.label_print_required = label_print_required
+    row.judged_at = now
+    row.judged_by = auth.user_id
+    row.status = ROW_STATUS_COMPLETED
+    if judgement_status in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
+        row.external_outbound_required = True
+        if row.external_outbound_status != EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
+            row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_READY
+    else:
+        row.external_outbound_required = False
+        if row.external_outbound_status != EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
+            row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_NOT_REQUIRED
+    if judgement_status == JUDGEMENT_HOLD:
+        row.hold_status = HOLD_STATUS_PENDING
+        row.hold_reason = row.hold_reason or row.judgement_memo
+        row.hold_resolved_at = None
+        row.hold_resolved_by = None
+    elif resolve_hold:
+        row.hold_status = HOLD_STATUS_RESOLVED
+        row.hold_resolved_at = now
+        row.hold_resolved_by = auth.user_id
+    if judgement_status == JUDGEMENT_DISPOSAL:
+        row.disposal_status = DISPOSAL_STATUS_PENDING
+        row.disposal_reason = row.disposal_reason or row.judgement_memo
+        row.disposal_confirmed_at = None
+        row.disposal_confirmed_by = None
+
+
+def _rejudge_success_message(judgement_status: str) -> str:
+    if judgement_status == JUDGEMENT_GOOD:
+        return "양품으로 재판정했습니다. 일마감 후보로 이동합니다."
+    if judgement_status in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
+        return "외부반출 대상 판정으로 재판정했습니다. 외부반출 후보로 이동합니다."
+    if judgement_status == JUDGEMENT_DISPOSAL:
+        return "폐기로 재판정했습니다. 폐기 후보로 이동합니다."
+    if judgement_status == JUDGEMENT_HOLD:
+        return "보류 상태를 유지했습니다."
+    return "반품 보류 대상을 재판정했습니다."
 
 
 def _get_processing_task_for_attachment(db: Session, auth: AuthContext, task_id: int):

@@ -381,6 +381,16 @@ export interface UpdateReturnHoldTaskResponse extends ReturnHoldCandidate {
   message: string;
 }
 
+export interface RejudgeReturnHoldTaskPayload {
+  judgement_status: ReturnJudgementStatus;
+  judgement_memo?: string | null;
+  hold_response_memo?: string | null;
+}
+
+export interface RejudgeReturnHoldTaskResponse extends ReturnProcessingTask {
+  message: string;
+}
+
 export interface ReturnDisposalCandidate {
   row_id: number;
   task_id: number;

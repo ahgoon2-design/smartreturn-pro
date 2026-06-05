@@ -4,6 +4,8 @@ import type {
   ConfirmReturnDisposalTaskResponse,
   JudgeReturnProcessingTaskPayload,
   JudgeReturnProcessingTaskResponse,
+  RejudgeReturnHoldTaskPayload,
+  RejudgeReturnHoldTaskResponse,
   ReturnClosingCandidateListResponse,
   ReturnClosingConfirmPayload,
   ReturnClosingConfirmResponse,
@@ -275,6 +277,13 @@ export async function listReturnHoldCandidates(options: ReturnHoldCandidateListO
 export async function updateReturnHoldTask(taskId: number, payload: UpdateReturnHoldTaskPayload) {
   return apiRequest<UpdateReturnHoldTaskResponse>(`/api/returns/hold/tasks/${taskId}`, {
     method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function rejudgeReturnHoldTask(taskId: number, payload: RejudgeReturnHoldTaskPayload) {
+  return apiRequest<RejudgeReturnHoldTaskResponse>(`/api/returns/hold/tasks/${taskId}/rejudge`, {
+    method: "POST",
     body: JSON.stringify(payload),
   });
 }

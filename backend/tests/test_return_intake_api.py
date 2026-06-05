@@ -277,6 +277,33 @@ def _judge_processing_task(
     return response.json()["data"]
 
 
+def _prepare_hold_ready_to_rejudge_task(
+    client: TestClient,
+    db: Session,
+    *,
+    login_id: str,
+    client_id: int,
+) -> tuple[dict[str, str], int, int]:
+    headers, batch_id, task_id = _prepare_processing_task(
+        client,
+        db,
+        login_id=login_id,
+        client_id=client_id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="HOLD")
+    response = client.patch(
+        f"/api/returns/hold/tasks/{task_id}",
+        json={
+            "hold_status": "READY_TO_REJUDGE",
+            "hold_reason": "rejudge ready",
+            "hold_response_memo": "customer checked",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    return headers, batch_id, task_id
+
+
 def _assert_no_sensitive_values(data: dict) -> None:
     text = str(data).lower()
     for value in ("password", "secret", "token", "hash", "010-1111-2222"):
@@ -1321,6 +1348,221 @@ def test_return_hold_update_blocks_non_hold_and_missing_task(client: TestClient,
 
     assert non_hold_response.status_code == 400
     assert non_hold_response.json()["result_code"] == "RETURN_HOLD_INVALID_JUDGEMENT"
+    assert missing_response.status_code == 404
+    assert missing_response.json()["result_code"] == "RETURN_HOLD_TASK_NOT_FOUND"
+
+
+def test_return_hold_rejudge_good_moves_to_closing_candidates(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="HOLD_REJUDGE_GOOD")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_rejudge_good_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_hold_ready_to_rejudge_task(
+        client,
+        db_session,
+        login_id="return_hold_rejudge_good_admin",
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/hold/tasks/{task_id}/rejudge",
+        json={"judgement_status": "GOOD", "judgement_memo": "rejudged as good"},
+        headers=headers,
+    )
+    candidates_response = client.get("/api/returns/closing/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["judgement_status"] == "GOOD"
+    assert data["hold_status"] == "RESOLVED"
+    assert data["label_print_required"] is False
+    assert data["label_print_status"] == "NOT_REQUIRED"
+    assert data["inventory_reflected_yn"] is False
+    assert candidates_response.status_code == 200
+    assert candidates_response.json()["data"]["total_count"] == 1
+    _assert_no_sensitive_values(response.json())
+
+
+@pytest.mark.parametrize("judgement_status", ["REFURB", "SAMPLE", "MANUFACTURER_RETURN"])
+def test_return_hold_rejudge_tracked_status_moves_to_external_outbound_candidates(
+    client: TestClient,
+    db_session: Session,
+    judgement_status: str,
+):
+    client_row = _create_client(db_session, code=f"HOLD_REJUDGE_{judgement_status}")
+    _create_product(db_session, client_row.id)
+    login_id = f"return_hold_rejudge_{judgement_status.lower()}"
+    _create_user(
+        db_session,
+        login_id=login_id,
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_hold_ready_to_rejudge_task(
+        client,
+        db_session,
+        login_id=login_id,
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/hold/tasks/{task_id}/rejudge",
+        json={"judgement_status": judgement_status, "judgement_memo": "tracked followup"},
+        headers=headers,
+    )
+    candidates_response = client.get("/api/returns/external-outbound/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["judgement_status"] == judgement_status
+    assert data["hold_status"] == "RESOLVED"
+    assert data["external_outbound_required"] is True
+    assert data["external_outbound_status"] == "READY"
+    assert data["return_management_no"]
+    assert data["return_label_no"]
+    assert data["label_print_required"] is True
+    assert data["label_print_status"] == "LOCAL_AGENT_NOT_CONNECTED"
+    assert candidates_response.status_code == 200
+    assert candidates_response.json()["data"]["total_count"] == 1
+
+
+def test_return_hold_rejudge_disposal_moves_to_disposal_candidates(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="HOLD_REJUDGE_DISPOSAL")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_rejudge_disposal_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_hold_ready_to_rejudge_task(
+        client,
+        db_session,
+        login_id="return_hold_rejudge_disposal_admin",
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/hold/tasks/{task_id}/rejudge",
+        json={"judgement_status": "DISPOSAL", "judgement_memo": "dispose after check"},
+        headers=headers,
+    )
+    candidates_response = client.get("/api/returns/disposal/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["judgement_status"] == "DISPOSAL"
+    assert data["hold_status"] == "RESOLVED"
+    assert data["disposal_status"] == "DISPOSAL_PENDING"
+    assert data["label_print_required"] is False
+    assert candidates_response.status_code == 200
+    assert candidates_response.json()["data"]["total_count"] == 1
+
+
+def test_return_hold_rejudge_hold_keeps_hold_candidate(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="HOLD_REJUDGE_HOLD")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_rejudge_hold_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_hold_ready_to_rejudge_task(
+        client,
+        db_session,
+        login_id="return_hold_rejudge_hold_admin",
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/hold/tasks/{task_id}/rejudge",
+        json={"judgement_status": "HOLD", "judgement_memo": "keep hold"},
+        headers=headers,
+    )
+    candidates_response = client.get("/api/returns/hold/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["judgement_status"] == "HOLD"
+    assert data["hold_status"] == "HOLD_PENDING"
+    assert candidates_response.status_code == 200
+    assert candidates_response.json()["data"]["total_count"] == 1
+
+
+def test_return_hold_rejudge_blocks_invalid_conditions(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="HOLD_REJUDGE_BLOCK")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_hold_rejudge_block_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, hold_task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_hold_rejudge_block_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=hold_task_id, headers=headers, judgement_status="HOLD")
+    not_ready_response = client.post(
+        f"/api/returns/hold/tasks/{hold_task_id}/rejudge",
+        json={"judgement_status": "GOOD"},
+        headers=headers,
+    )
+    invalid_status_response = client.post(
+        f"/api/returns/hold/tasks/{hold_task_id}/rejudge",
+        json={"judgement_status": "UNKNOWN"},
+        headers=headers,
+    )
+
+    headers_good, _batch_id_good, good_task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_hold_rejudge_block_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=good_task_id, headers=headers_good, judgement_status="GOOD")
+    non_hold_response = client.post(
+        f"/api/returns/hold/tasks/{good_task_id}/rejudge",
+        json={"judgement_status": "GOOD"},
+        headers=headers_good,
+    )
+
+    headers_invalid, _batch_id_invalid, invalid_task_id = _prepare_hold_ready_to_rejudge_task(
+        client,
+        db_session,
+        login_id="return_hold_rejudge_block_admin",
+        client_id=client_row.id,
+    )
+    invalid_row = db_session.get(ReturnIntakeRow, invalid_task_id)
+    assert invalid_row is not None
+    invalid_row.validation_status = "INVALID"
+    db_session.commit()
+    invalid_validation_response = client.post(
+        f"/api/returns/hold/tasks/{invalid_task_id}/rejudge",
+        json={"judgement_status": "GOOD"},
+        headers=headers_invalid,
+    )
+    missing_response = client.post(
+        "/api/returns/hold/tasks/999999/rejudge",
+        json={"judgement_status": "GOOD"},
+        headers=headers,
+    )
+
+    assert not_ready_response.status_code == 400
+    assert not_ready_response.json()["result_code"] == "RETURN_HOLD_REJUDGE_INVALID_HOLD_STATUS"
+    assert invalid_status_response.status_code == 400
+    assert invalid_status_response.json()["result_code"] == "RETURN_HOLD_REJUDGE_STATUS_INVALID"
+    assert non_hold_response.status_code == 400
+    assert non_hold_response.json()["result_code"] == "RETURN_HOLD_REJUDGE_INVALID_JUDGEMENT"
+    assert invalid_validation_response.status_code == 400
+    assert invalid_validation_response.json()["result_code"] == "RETURN_HOLD_REJUDGE_INVALID_VALIDATION"
     assert missing_response.status_code == 404
     assert missing_response.json()["result_code"] == "RETURN_HOLD_TASK_NOT_FOUND"
 
