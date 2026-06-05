@@ -11,6 +11,7 @@ export const ROUTE_PATHS = {
   returnClosing: "/returns/closing",
   returnExternalOutbound: "/returns/external-outbound",
   returnHold: "/returns/hold",
+  returnDisposal: "/returns/disposal",
   forbidden: "/forbidden",
   notFound: "/not-found",
 } as const;

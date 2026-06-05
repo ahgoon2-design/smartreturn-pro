@@ -1,10 +1,13 @@
 import { apiRequest } from "./client";
 import type {
+  ConfirmReturnDisposalTaskPayload,
+  ConfirmReturnDisposalTaskResponse,
   JudgeReturnProcessingTaskPayload,
   JudgeReturnProcessingTaskResponse,
   ReturnClosingCandidateListResponse,
   ReturnClosingConfirmPayload,
   ReturnClosingConfirmResponse,
+  ReturnDisposalCandidateListResponse,
   ReturnExternalOutboundCandidateListResponse,
   ReturnExternalOutboundConfirmPayload,
   ReturnExternalOutboundConfirmResponse,
@@ -272,6 +275,49 @@ export async function listReturnHoldCandidates(options: ReturnHoldCandidateListO
 export async function updateReturnHoldTask(taskId: number, payload: UpdateReturnHoldTaskPayload) {
   return apiRequest<UpdateReturnHoldTaskResponse>(`/api/returns/hold/tasks/${taskId}`, {
     method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface ReturnDisposalCandidateListOptions {
+  clientId?: number;
+  disposalStatus?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  returnManagementNo?: string;
+  trackingNo?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnDisposalCandidates(options: ReturnDisposalCandidateListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.disposalStatus) {
+    params.set("disposal_status", options.disposalStatus);
+  }
+  if (options.dateFrom) {
+    params.set("date_from", options.dateFrom);
+  }
+  if (options.dateTo) {
+    params.set("date_to", options.dateTo);
+  }
+  if (options.returnManagementNo) {
+    params.set("return_management_no", options.returnManagementNo);
+  }
+  if (options.trackingNo) {
+    params.set("tracking_no", options.trackingNo);
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnDisposalCandidateListResponse>(`/api/returns/disposal/candidates?${params.toString()}`);
+}
+
+export async function confirmReturnDisposalTask(taskId: number, payload: ConfirmReturnDisposalTaskPayload) {
+  return apiRequest<ConfirmReturnDisposalTaskResponse>(`/api/returns/disposal/tasks/${taskId}/confirm`, {
+    method: "POST",
     body: JSON.stringify(payload),
   });
 }

@@ -11,6 +11,7 @@ import { ProductDetailPage } from "../features/master/ProductDetailPage";
 import { ProductListPage } from "../features/master/ProductListPage";
 import { ReturnIntakeHubPage } from "../features/returns/ReturnIntakeHubPage";
 import { ReturnClosingPage } from "../features/returns/ReturnClosingPage";
+import { ReturnDisposalManagementPage } from "../features/returns/ReturnDisposalManagementPage";
 import { ReturnExternalOutboundPage } from "../features/returns/ReturnExternalOutboundPage";
 import { ReturnHoldManagementPage } from "../features/returns/ReturnHoldManagementPage";
 import { ReturnProcessingWorkspacePage } from "../features/returns/ReturnProcessingWorkspacePage";
@@ -114,6 +115,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
             <ReturnHoldManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "returns/disposal",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ReturnDisposalManagementPage />
           </ProtectedRoute>
         ),
       },

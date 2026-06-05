@@ -38,6 +38,10 @@ from app.schemas.returns import (
     ReturnExternalOutboundConfirmRequest,
     ReturnExternalOutboundConfirmResponse,
     ReturnExternalOutboundRowResult,
+    ReturnDisposalCandidateListResponse,
+    ReturnDisposalCandidateResponse,
+    ReturnDisposalConfirmRequest,
+    ReturnDisposalConfirmResponse,
     ReturnHoldCandidateListResponse,
     ReturnHoldCandidateResponse,
     ReturnHoldUpdateRequest,
@@ -117,6 +121,9 @@ ALLOWED_HOLD_STATUSES = {
     HOLD_STATUS_READY_TO_REJUDGE,
     HOLD_STATUS_RESOLVED,
 }
+
+DISPOSAL_STATUS_PENDING = "DISPOSAL_PENDING"
+DISPOSAL_STATUS_CONFIRMED = "DISPOSAL_CONFIRMED"
 
 ATTACHMENT_TYPE_PHOTO = "PHOTO"
 ALLOWED_ATTACHMENT_TYPES = {ATTACHMENT_TYPE_PHOTO, "EVIDENCE"}
@@ -267,6 +274,11 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         hold_response_memo=row.hold_response_memo,
         hold_resolved_at=row.hold_resolved_at,
         hold_resolved_by=row.hold_resolved_by,
+        disposal_status=row.disposal_status,
+        disposal_reason=row.disposal_reason,
+        disposal_memo=row.disposal_memo,
+        disposal_confirmed_at=row.disposal_confirmed_at,
+        disposal_confirmed_by=row.disposal_confirmed_by,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -313,6 +325,11 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         hold_response_memo=row.hold_response_memo,
         hold_resolved_at=row.hold_resolved_at,
         hold_resolved_by=row.hold_resolved_by,
+        disposal_status=row.disposal_status,
+        disposal_reason=row.disposal_reason,
+        disposal_memo=row.disposal_memo,
+        disposal_confirmed_at=row.disposal_confirmed_at,
+        disposal_confirmed_by=row.disposal_confirmed_by,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -404,6 +421,38 @@ def _hold_candidate_response(row: ReturnIntakeRow, client) -> dict:
         hold_response_memo=row.hold_response_memo,
         hold_resolved_at=row.hold_resolved_at,
         hold_resolved_by=row.hold_resolved_by,
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
+        judged_at=row.judged_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    ).model_dump()
+
+
+def _disposal_candidate_response(row: ReturnIntakeRow, client) -> dict:
+    return ReturnDisposalCandidateResponse(
+        row_id=row.id,
+        task_id=row.id,
+        batch_id=row.batch_id,
+        client_id=row.client_id,
+        client_code=client.client_code,
+        client_name=client.client_name,
+        row_no=row.row_no,
+        order_no=row.order_no,
+        return_tracking_no=row.return_tracking_no,
+        product_code=row.product_code,
+        barcode=row.barcode,
+        product_name=row.product_name,
+        option_name=row.option_name,
+        qty=row.qty,
+        return_reason=row.return_reason,
+        judgement_status=row.judgement_status or "",
+        judgement_memo=row.judgement_memo,
+        disposal_status=row.disposal_status,
+        disposal_reason=row.disposal_reason,
+        disposal_memo=row.disposal_memo,
+        disposal_confirmed_at=row.disposal_confirmed_at,
+        disposal_confirmed_by=row.disposal_confirmed_by,
         return_management_no=row.return_management_no,
         return_label_no=row.return_label_no,
         judged_at=row.judged_at,
@@ -799,6 +848,11 @@ def judge_return_processing_task(
         row.hold_reason = row.hold_reason or row.judgement_memo
         row.hold_resolved_at = None
         row.hold_resolved_by = None
+    if judgement_status == JUDGEMENT_DISPOSAL:
+        row.disposal_status = DISPOSAL_STATUS_PENDING
+        row.disposal_reason = row.disposal_reason or row.judgement_memo
+        row.disposal_confirmed_at = None
+        row.disposal_confirmed_by = None
 
     try:
         db.commit()
@@ -1388,6 +1442,86 @@ def update_return_hold_task(
         return ReturnHoldUpdateResponse(
             **_hold_candidate_response(row, client),
             message="반품 보류 정보를 저장했습니다.",
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def list_return_disposal_candidates(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    disposal_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    return_management_no: str | None = None,
+    tracking_no: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_disposal_status = _safe_text(disposal_status)
+    if safe_disposal_status:
+        safe_disposal_status = safe_disposal_status.upper()
+        if safe_disposal_status not in {DISPOSAL_STATUS_PENDING, DISPOSAL_STATUS_CONFIRMED}:
+            raise _business_error("RETURN_DISPOSAL_STATUS_INVALID", "지원하지 않는 폐기 상태입니다.")
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    rows, total_count = repo.list_disposal_candidates(
+        db,
+        confirmed_status=DISPOSAL_STATUS_CONFIRMED,
+        client_id=effective_client_id,
+        disposal_status=safe_disposal_status,
+        date_from=date_from,
+        date_to=date_to,
+        return_management_no=_safe_text(return_management_no),
+        tracking_no=_safe_text(tracking_no),
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnDisposalCandidateListResponse(
+        items=[ReturnDisposalCandidateResponse(**_disposal_candidate_response(row, client)) for row, client in rows],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
+
+
+def confirm_return_disposal_task(
+    db: Session,
+    auth: AuthContext,
+    task_id: int,
+    request: ReturnDisposalConfirmRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    task_row = repo.get_processing_task_with_client(db, task_id)
+    if task_row is None:
+        raise _business_error("RETURN_DISPOSAL_TASK_NOT_FOUND", "반품 폐기 대상을 찾을 수 없습니다.", 404)
+    row, client = task_row
+    resolve_effective_client_id(auth, row.client_id)
+
+    if row.judgement_status != JUDGEMENT_DISPOSAL:
+        raise _business_error("RETURN_DISPOSAL_INVALID_JUDGEMENT", "DISPOSAL 판정 row만 폐기 확정할 수 있습니다.")
+    if row.status != ROW_STATUS_COMPLETED:
+        raise _business_error("RETURN_DISPOSAL_INVALID_STATUS", "판정 완료된 DISPOSAL row만 폐기 확정할 수 있습니다.")
+    if row.disposal_status == DISPOSAL_STATUS_CONFIRMED:
+        raise _business_error("RETURN_DISPOSAL_ALREADY_CONFIRMED", "이미 폐기 확정된 항목입니다.")
+
+    row.disposal_status = DISPOSAL_STATUS_CONFIRMED
+    row.disposal_reason = _safe_text(request.disposal_reason)
+    row.disposal_memo = _safe_text(request.disposal_memo)
+    row.disposal_confirmed_at = datetime.now(timezone.utc)
+    row.disposal_confirmed_by = auth.user_id
+
+    try:
+        db.commit()
+        db.refresh(row)
+        return ReturnDisposalConfirmResponse(
+            **_disposal_candidate_response(row, client),
+            message="반품 폐기를 확정했습니다. 정상재고는 변경하지 않았습니다.",
         ).model_dump()
     except Exception:
         db.rollback()

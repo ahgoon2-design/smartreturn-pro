@@ -1325,6 +1325,162 @@ def test_return_hold_update_blocks_non_hold_and_missing_task(client: TestClient,
     assert missing_response.json()["result_code"] == "RETURN_HOLD_TASK_NOT_FOUND"
 
 
+def test_return_disposal_candidates_include_disposal_completed_rows(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_disposal_candidates_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_disposal_candidates_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="DISPOSAL")
+
+    response = client.get("/api/returns/disposal/candidates", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 1
+    item = data["items"][0]
+    assert item["row_id"] == task_id
+    assert item["judgement_status"] == "DISPOSAL"
+    assert item["disposal_status"] == "DISPOSAL_PENDING"
+    _assert_no_sensitive_values(response.json())
+
+
+@pytest.mark.parametrize("judgement_status", ["GOOD", "REFURB", "SAMPLE", "MANUFACTURER_RETURN", "HOLD"])
+def test_return_disposal_candidates_exclude_non_disposal_judgements(
+    client: TestClient,
+    db_session: Session,
+    judgement_status: str,
+):
+    client_row = _create_client(db_session, code=f"DISPOSAL_EXCLUDE_{judgement_status}")
+    _create_product(db_session, client_row.id)
+    login_id = f"return_disposal_exclude_{judgement_status.lower()}"
+    _create_user(
+        db_session,
+        login_id=login_id,
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id=login_id,
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status=judgement_status)
+
+    response = client.get("/api/returns/disposal/candidates", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["total_count"] == 0
+
+
+def test_return_disposal_confirm_saves_reason_memo_without_inventory_change(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_disposal_confirm_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_disposal_confirm_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="DISPOSAL")
+
+    response = client.post(
+        f"/api/returns/disposal/tasks/{task_id}/confirm",
+        json={"disposal_reason": "파손 폐기", "disposal_memo": "작업자 확인 후 폐기"},
+        headers=headers,
+    )
+    candidates_response = client.get("/api/returns/disposal/candidates", headers=headers)
+    row = db_session.get(ReturnIntakeRow, task_id)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["disposal_status"] == "DISPOSAL_CONFIRMED"
+    assert data["disposal_reason"] == "파손 폐기"
+    assert data["disposal_memo"] == "작업자 확인 후 폐기"
+    assert data["disposal_confirmed_at"] is not None
+    assert row is not None
+    assert row.disposal_status == "DISPOSAL_CONFIRMED"
+    assert row.disposal_confirmed_at is not None
+    assert row.disposal_confirmed_by is not None
+    assert db_session.query(CurrentInventory).count() == 0
+    assert db_session.query(InventoryEvent).count() == 0
+    assert candidates_response.status_code == 200
+    assert candidates_response.json()["data"]["total_count"] == 0
+
+
+def test_return_disposal_confirm_blocks_already_confirmed_non_disposal_and_missing_task(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_disposal_block_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_disposal_block_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="DISPOSAL")
+    first_response = client.post(
+        f"/api/returns/disposal/tasks/{task_id}/confirm",
+        json={"disposal_reason": "폐기"},
+        headers=headers,
+    )
+    retry_response = client.post(
+        f"/api/returns/disposal/tasks/{task_id}/confirm",
+        json={"disposal_reason": "재확정"},
+        headers=headers,
+    )
+
+    headers_good, _batch_id_good, good_task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_disposal_block_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=good_task_id, headers=headers_good, judgement_status="GOOD")
+    non_disposal_response = client.post(
+        f"/api/returns/disposal/tasks/{good_task_id}/confirm",
+        json={"disposal_reason": "폐기"},
+        headers=headers_good,
+    )
+    missing_response = client.post(
+        "/api/returns/disposal/tasks/999999/confirm",
+        json={"disposal_reason": "폐기"},
+        headers=headers,
+    )
+
+    assert first_response.status_code == 200
+    assert retry_response.status_code == 400
+    assert retry_response.json()["result_code"] == "RETURN_DISPOSAL_ALREADY_CONFIRMED"
+    assert non_disposal_response.status_code == 400
+    assert non_disposal_response.json()["result_code"] == "RETURN_DISPOSAL_INVALID_JUDGEMENT"
+    assert missing_response.status_code == 404
+    assert missing_response.json()["result_code"] == "RETURN_DISPOSAL_TASK_NOT_FOUND"
+
+
 def test_return_closing_confirm_good_fails_without_warehouse_setting(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
     _create_product(db_session, client_row.id)

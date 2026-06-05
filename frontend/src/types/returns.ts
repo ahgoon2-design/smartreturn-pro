@@ -11,6 +11,7 @@ export type ReturnLabelPrintStatus =
   | "LOCAL_AGENT_NOT_CONNECTED";
 export type ReturnExternalOutboundStatus = "NOT_REQUIRED" | "READY" | "SCANNED" | "CONFIRMED";
 export type ReturnHoldStatus = "HOLD_PENDING" | "CUSTOMER_CHECKING" | "READY_TO_REJUDGE" | "RESOLVED";
+export type ReturnDisposalStatus = "DISPOSAL_PENDING" | "DISPOSAL_CONFIRMED";
 
 export interface ReturnIntakeBatchSummary {
   batch_id: number;
@@ -108,6 +109,11 @@ export interface ReturnIntakeRow {
   hold_response_memo?: string | null;
   hold_resolved_at?: string | null;
   hold_resolved_by?: number | null;
+  disposal_status?: ReturnDisposalStatus | string;
+  disposal_reason?: string | null;
+  disposal_memo?: string | null;
+  disposal_confirmed_at?: string | null;
+  disposal_confirmed_by?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -174,6 +180,11 @@ export interface ReturnProcessingTask {
   hold_response_memo?: string | null;
   hold_resolved_at?: string | null;
   hold_resolved_by?: number | null;
+  disposal_status?: ReturnDisposalStatus | string;
+  disposal_reason?: string | null;
+  disposal_memo?: string | null;
+  disposal_confirmed_at?: string | null;
+  disposal_confirmed_by?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -367,5 +378,46 @@ export interface UpdateReturnHoldTaskPayload {
 }
 
 export interface UpdateReturnHoldTaskResponse extends ReturnHoldCandidate {
+  message: string;
+}
+
+export interface ReturnDisposalCandidate {
+  row_id: number;
+  task_id: number;
+  batch_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  row_no: number;
+  order_no?: string | null;
+  return_tracking_no?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_name?: string | null;
+  option_name?: string | null;
+  qty?: number | null;
+  return_reason?: string | null;
+  judgement_status: ReturnJudgementStatus | string;
+  judgement_memo?: string | null;
+  disposal_status: ReturnDisposalStatus | string;
+  disposal_reason?: string | null;
+  disposal_memo?: string | null;
+  disposal_confirmed_at?: string | null;
+  disposal_confirmed_by?: number | null;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  judged_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReturnDisposalCandidateListResponse = PageResponse<ReturnDisposalCandidate>;
+
+export interface ConfirmReturnDisposalTaskPayload {
+  disposal_reason?: string | null;
+  disposal_memo?: string | null;
+}
+
+export interface ConfirmReturnDisposalTaskResponse extends ReturnDisposalCandidate {
   message: string;
 }

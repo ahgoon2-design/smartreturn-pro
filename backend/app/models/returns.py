@@ -62,6 +62,12 @@ class ReturnIntakeRow(Base):
             "hold_status",
             "judgement_status",
         ),
+        Index(
+            "ix_return_intake_rows_disposal",
+            "client_id",
+            "disposal_status",
+            "judgement_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -124,6 +130,16 @@ class ReturnIntakeRow(Base):
     hold_response_memo: Mapped[str | None] = mapped_column(Text)
     hold_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     hold_resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    disposal_status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="DISPOSAL_PENDING",
+        server_default="DISPOSAL_PENDING",
+    )
+    disposal_reason: Mapped[str | None] = mapped_column(Text)
+    disposal_memo: Mapped[str | None] = mapped_column(Text)
+    disposal_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disposal_confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

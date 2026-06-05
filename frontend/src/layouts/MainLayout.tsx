@@ -3,6 +3,7 @@ import {
   CheckCircleOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
+  DeleteOutlined,
   ExportOutlined,
   InboxOutlined,
   LogoutOutlined,
@@ -35,6 +36,8 @@ export function MainLayout() {
         ? ROUTE_PATHS.returnExternalOutbound
       : location.pathname.startsWith(ROUTE_PATHS.returnHold)
         ? ROUTE_PATHS.returnHold
+      : location.pathname.startsWith(ROUTE_PATHS.returnDisposal)
+        ? ROUTE_PATHS.returnDisposal
       : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
         ? ROUTE_PATHS.returnClosing
       : location.pathname.startsWith(ROUTE_PATHS.returnProcessing)
@@ -96,6 +99,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.returnHold,
       icon: <PauseCircleOutlined />,
       label: "반품 보류관리",
+      disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnDisposal,
+      icon: <DeleteOutlined />,
+      label: "반품 폐기관리",
       disabled: !hasPermission("RETURN_VIEW"),
     },
     {

@@ -141,6 +141,11 @@ class ReturnIntakeRowResponse(BaseModel):
     hold_response_memo: str | None = None
     hold_resolved_at: datetime | None = None
     hold_resolved_by: int | None = None
+    disposal_status: str = "DISPOSAL_PENDING"
+    disposal_reason: str | None = None
+    disposal_memo: str | None = None
+    disposal_confirmed_at: datetime | None = None
+    disposal_confirmed_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -222,6 +227,11 @@ class ReturnProcessingTaskResponse(BaseModel):
     hold_response_memo: str | None = None
     hold_resolved_at: datetime | None = None
     hold_resolved_by: int | None = None
+    disposal_status: str = "DISPOSAL_PENDING"
+    disposal_reason: str | None = None
+    disposal_memo: str | None = None
+    disposal_confirmed_at: datetime | None = None
+    disposal_confirmed_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -458,4 +468,58 @@ class ReturnHoldUpdateRequest(BaseModel):
 
 
 class ReturnHoldUpdateResponse(ReturnHoldCandidateResponse):
+    message: str
+
+
+class ReturnDisposalCandidateResponse(BaseModel):
+    row_id: int
+    task_id: int
+    batch_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    row_no: int
+    order_no: str | None = None
+    return_tracking_no: str | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    product_name: str | None = None
+    option_name: str | None = None
+    qty: int | None = None
+    return_reason: str | None = None
+    judgement_status: str
+    judgement_memo: str | None = None
+    disposal_status: str
+    disposal_reason: str | None = None
+    disposal_memo: str | None = None
+    disposal_confirmed_at: datetime | None = None
+    disposal_confirmed_by: int | None = None
+    return_management_no: str | None = None
+    return_label_no: str | None = None
+    judged_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReturnDisposalCandidateListResponse(BaseModel):
+    items: list[ReturnDisposalCandidateResponse]
+    page: int
+    page_size: int
+    total_count: int
+
+
+class ReturnDisposalConfirmRequest(BaseModel):
+    disposal_reason: str | None = None
+    disposal_memo: str | None = None
+
+    @field_validator("disposal_reason", "disposal_memo")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ReturnDisposalConfirmResponse(ReturnDisposalCandidateResponse):
     message: str

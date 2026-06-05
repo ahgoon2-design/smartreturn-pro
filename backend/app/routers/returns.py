@@ -11,6 +11,7 @@ from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.returns import (
     ReturnClosingConfirmRequest,
+    ReturnDisposalConfirmRequest,
     ReturnExternalOutboundConfirmRequest,
     ReturnHoldUpdateRequest,
     ReturnIntakeBatchCreateRequest,
@@ -371,4 +372,51 @@ def update_return_hold_task_api(
         result_code="RETURN_HOLD_UPDATED",
         message="반품 보류 정보를 저장했습니다.",
         data=return_intake_service.update_return_hold_task(db, auth, task_id, request),
+    )
+
+
+@router.get("/disposal/candidates", response_model=ApiResult)
+def list_return_disposal_candidates_api(
+    client_id: int | None = None,
+    disposal_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    return_management_no: str | None = None,
+    tracking_no: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_DISPOSAL_CANDIDATES_FOUND",
+        message="반품 폐기 후보를 조회했습니다.",
+        data=return_intake_service.list_return_disposal_candidates(
+            db,
+            auth,
+            client_id=client_id,
+            disposal_status=disposal_status,
+            date_from=date_from,
+            date_to=date_to,
+            return_management_no=return_management_no,
+            tracking_no=tracking_no,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
+@router.post("/disposal/tasks/{task_id}/confirm", response_model=ApiResult)
+def confirm_return_disposal_task_api(
+    task_id: int,
+    request: ReturnDisposalConfirmRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_DISPOSAL_CONFIRMED",
+        message="반품 폐기를 확정했습니다.",
+        data=return_intake_service.confirm_return_disposal_task(db, auth, task_id, request),
     )
