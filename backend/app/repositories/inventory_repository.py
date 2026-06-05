@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -134,6 +136,87 @@ def list_current_inventory(
     total_count = query.with_entities(func.count()).scalar() or 0
     rows = (
         query.order_by(Client.client_name, Warehouse.warehouse_name, Product.product_code, CurrentInventory.stock_status)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return rows, total_count
+
+
+def list_inventory_events(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    warehouse_id: int | None = None,
+    product_code: str | None = None,
+    barcode: str | None = None,
+    keyword: str | None = None,
+    event_type: str | None = None,
+    source_type: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[InventoryEvent, Client, Warehouse, Product]], int]:
+    query = (
+        db.query(InventoryEvent, Client, Warehouse, Product)
+        .join(Client, Client.id == InventoryEvent.client_id)
+        .join(Warehouse, Warehouse.id == InventoryEvent.warehouse_id)
+        .join(Product, Product.id == InventoryEvent.product_id)
+    )
+
+    if client_id is not None:
+        query = query.filter(InventoryEvent.client_id == client_id)
+    if warehouse_id is not None:
+        query = query.filter(InventoryEvent.warehouse_id == warehouse_id)
+    if product_code:
+        query = query.filter(Product.product_code.ilike(f"%{product_code}%"))
+    if barcode:
+        barcode_like = f"%{barcode}%"
+        query = query.filter(
+            or_(
+                Product.barcode.ilike(barcode_like),
+                Product.id.in_(
+                    db.query(ProductBarcode.product_id).filter(
+                        ProductBarcode.barcode.ilike(barcode_like),
+                    )
+                ),
+            )
+        )
+    if keyword:
+        keyword_like = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                InventoryEvent.event_no.ilike(keyword_like),
+                InventoryEvent.event_type.ilike(keyword_like),
+                InventoryEvent.source_type.ilike(keyword_like),
+                InventoryEvent.idempotency_key.ilike(keyword_like),
+                Client.client_name.ilike(keyword_like),
+                Client.client_code.ilike(keyword_like),
+                Warehouse.warehouse_name.ilike(keyword_like),
+                Warehouse.warehouse_code.ilike(keyword_like),
+                Product.product_code.ilike(keyword_like),
+                Product.product_name.ilike(keyword_like),
+                Product.barcode.ilike(keyword_like),
+                Product.id.in_(
+                    db.query(ProductBarcode.product_id).filter(
+                        ProductBarcode.barcode.ilike(keyword_like),
+                    )
+                ),
+            )
+        )
+    if event_type:
+        query = query.filter(InventoryEvent.event_type == event_type)
+    if source_type:
+        query = query.filter(InventoryEvent.source_type == source_type)
+    if date_from is not None:
+        query = query.filter(InventoryEvent.created_at >= date_from)
+    if date_to is not None:
+        query = query.filter(InventoryEvent.created_at <= date_to)
+
+    total_count = query.with_entities(func.count()).scalar() or 0
+    rows = (
+        query.order_by(InventoryEvent.created_at.desc(), InventoryEvent.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

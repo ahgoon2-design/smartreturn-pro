@@ -5,6 +5,7 @@ import { PasswordChangeRequiredPage } from "../pages/auth/PasswordChangeRequired
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
 import { CurrentInventoryPage } from "../features/inventory/CurrentInventoryPage";
+import { InventoryEventsPage } from "../features/inventory/InventoryEventsPage";
 import { ClientDetailPage } from "../features/master/ClientDetailPage";
 import { ClientListPage } from "../features/master/ClientListPage";
 import { CommonCodeManagementPage } from "../features/master/CommonCodeManagementPage";
@@ -141,6 +142,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["INVENTORY_VIEW"]}>
             <CurrentInventoryPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "inventory/events",
+        element: (
+          <ProtectedRoute requiredPermissions={["INVENTORY_VIEW"]}>
+            <InventoryEventsPage />
           </ProtectedRoute>
         ),
       },

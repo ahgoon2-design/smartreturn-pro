@@ -41,6 +41,8 @@ export function MainLayout() {
         ? ROUTE_PATHS.returnDisposal
       : location.pathname.startsWith(ROUTE_PATHS.returnHistory)
         ? ROUTE_PATHS.returnHistory
+      : location.pathname.startsWith(ROUTE_PATHS.inventoryEvents)
+        ? ROUTE_PATHS.inventoryEvents
       : location.pathname.startsWith(ROUTE_PATHS.inventoryCurrent)
         ? ROUTE_PATHS.inventoryCurrent
       : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
@@ -122,6 +124,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.inventoryCurrent,
       icon: <DatabaseOutlined />,
       label: "재고현황",
+      disabled: !hasPermission("INVENTORY_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.inventoryEvents,
+      icon: <HistoryOutlined />,
+      label: "재고 이벤트",
       disabled: !hasPermission("INVENTORY_VIEW"),
     },
     {

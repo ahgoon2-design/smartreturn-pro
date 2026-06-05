@@ -1043,6 +1043,88 @@ def test_current_inventory_lists_good_closing_result_with_filters(client: TestCl
     _assert_no_sensitive_values(response.json())
 
 
+def test_inventory_events_requires_auth(client: TestClient):
+    response = client.get("/api/inventory/events")
+
+    assert response.status_code == 401
+    assert response.json()["result_code"] == "NOT_AUTHENTICATED"
+
+
+def test_inventory_events_lists_good_closing_event_with_filters(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    product = _create_product(db_session, client_row.id)
+    warehouse = _create_warehouse_setting(db_session, client_id=client_row.id)
+    _create_user(
+        db_session,
+        login_id="inventory_events_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions() + ["INVENTORY_VIEW"],
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="inventory_events_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-EVENT",
+                    "return_tracking_no": "RTN-EVENT",
+                    "product_code": product.product_code,
+                    "barcode": product.barcode,
+                    "qty": 4,
+                }
+            ]
+        },
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+    close_response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+
+    response = client.get(
+        (
+            "/api/inventory/events"
+            f"?client_id={client_row.id}"
+            f"&warehouse_id={warehouse.id}"
+            "&event_type=RETURN_GOOD_IN"
+            "&source_type=RETURN_CLOSING"
+            "&keyword=P001"
+        ),
+        headers=headers,
+    )
+    product_code_response = client.get("/api/inventory/events?product_code=P001", headers=headers)
+    barcode_response = client.get("/api/inventory/events?barcode=880001", headers=headers)
+    source_response = client.get(f"/api/inventory/events?keyword=return-closing:{task_id}:good", headers=headers)
+
+    assert close_response.status_code == 200
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 1
+    item = data["items"][0]
+    assert item["event_id"] is not None
+    assert item["event_no"] == f"RTN-CLOSE-{task_id}"
+    assert item["client_id"] == client_row.id
+    assert item["client_name"] == client_row.client_name
+    assert item["warehouse_id"] == warehouse.id
+    assert item["warehouse_code"] == warehouse.warehouse_code
+    assert item["product_id"] == product.id
+    assert item["product_code"] == product.product_code
+    assert item["product_name"] == product.product_name
+    assert item["barcode"] == product.barcode
+    assert item["event_type"] == "RETURN_GOOD_IN"
+    assert item["source_type"] == "RETURN_CLOSING"
+    assert item["source_id"] == task_id
+    assert item["source_line_id"] == task_id
+    assert item["stock_status"] == "GOOD"
+    assert item["qty"] == 4
+    assert item["idempotency_key"] == f"return-closing:{task_id}:good"
+    assert item["created_by"] is not None
+    assert product_code_response.json()["data"]["total_count"] == 1
+    assert barcode_response.json()["data"]["total_count"] == 1
+    assert source_response.json()["data"]["total_count"] == 1
+    _assert_no_sensitive_values(response.json())
+
+
 def test_return_history_requires_auth(client: TestClient):
     response = client.get("/api/returns/history")
 
