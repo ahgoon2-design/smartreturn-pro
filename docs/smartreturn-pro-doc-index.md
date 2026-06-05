@@ -73,3 +73,7 @@
 | `docs/local-agent-label-print-integration-plan-2026-05-29.md` | 기존 SmartReturn Local Agent 확인 결과와 SmartReturn Pro 라벨 출력 연동 기준을 정리한다. | Local Agent 연결 상태/라벨 출력/재출력 UI 구현 전 | 필수 |
 | `docs/return-closing-inventory-flow-plan-2026-05-29.md` | 반품 판정 완료 후 일마감 후보, 재고 이벤트, current inventory 반영 기준을 정리한다. | 반품 일마감/재고반영 skeleton 구현 전 | 필수 |
 | `docs/return-non-good-followup-outbound-flow-plan-2026-05-29.md` | GOOD 외 판정의 후속 처리, 외부반출 후보, 반품관리번호 1:1 검수 기준을 정리한다. | 외부반출 후보 조회/검수 skeleton 구현 전 | 필수 |
+
+## 사용자 브라우저 테스트
+
+- [반품 처리 흐름 사용자 테스트 체크리스트](user-test-checklist-return-flow-2026-05-29.md): backend/frontend 실행, 로그인, 기준정보, import, 반품 접수/처리/후속/재고/이력 조회 확인 순서.
