@@ -4,6 +4,7 @@ import { LoginPage } from "../pages/auth/LoginPage";
 import { PasswordChangeRequiredPage } from "../pages/auth/PasswordChangeRequiredPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
+import { CurrentInventoryPage } from "../features/inventory/CurrentInventoryPage";
 import { ClientDetailPage } from "../features/master/ClientDetailPage";
 import { ClientListPage } from "../features/master/ClientListPage";
 import { CommonCodeManagementPage } from "../features/master/CommonCodeManagementPage";
@@ -123,6 +124,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
             <ReturnDisposalManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "inventory/current",
+        element: (
+          <ProtectedRoute requiredPermissions={["INVENTORY_VIEW"]}>
+            <CurrentInventoryPage />
           </ProtectedRoute>
         ),
       },

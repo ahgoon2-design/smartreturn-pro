@@ -38,6 +38,8 @@ export function MainLayout() {
         ? ROUTE_PATHS.returnHold
       : location.pathname.startsWith(ROUTE_PATHS.returnDisposal)
         ? ROUTE_PATHS.returnDisposal
+      : location.pathname.startsWith(ROUTE_PATHS.inventoryCurrent)
+        ? ROUTE_PATHS.inventoryCurrent
       : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
         ? ROUTE_PATHS.returnClosing
       : location.pathname.startsWith(ROUTE_PATHS.returnProcessing)
@@ -106,6 +108,12 @@ export function MainLayout() {
       icon: <DeleteOutlined />,
       label: "반품 폐기관리",
       disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.inventoryCurrent,
+      icon: <DatabaseOutlined />,
+      label: "재고현황",
+      disabled: !hasPermission("INVENTORY_VIEW"),
     },
     {
       key: "master-other-ready",

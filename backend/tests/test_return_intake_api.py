@@ -971,6 +971,78 @@ def test_return_closing_confirm_good_creates_event_and_current_inventory(client:
     assert db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).count() == 1
 
 
+def test_current_inventory_requires_auth(client: TestClient):
+    response = client.get("/api/inventory/current")
+
+    assert response.status_code == 401
+    assert response.json()["result_code"] == "NOT_AUTHENTICATED"
+
+
+def test_current_inventory_lists_good_closing_result_with_filters(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    product = _create_product(db_session, client_row.id)
+    warehouse = _create_warehouse_setting(db_session, client_id=client_row.id)
+    _create_user(
+        db_session,
+        login_id="inventory_current_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions() + ["INVENTORY_VIEW"],
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="inventory_current_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-INVENTORY",
+                    "return_tracking_no": "RTN-INVENTORY",
+                    "product_code": product.product_code,
+                    "barcode": product.barcode,
+                    "qty": 3,
+                }
+            ]
+        },
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+    close_response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+
+    response = client.get(
+        (
+            "/api/inventory/current"
+            f"?client_id={client_row.id}"
+            f"&warehouse_id={warehouse.id}"
+            "&stock_status=GOOD"
+            "&keyword=P001"
+        ),
+        headers=headers,
+    )
+    product_code_response = client.get("/api/inventory/current?product_code=P001", headers=headers)
+    barcode_response = client.get("/api/inventory/current?barcode=880001", headers=headers)
+
+    assert close_response.status_code == 200
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_count"] == 1
+    item = data["items"][0]
+    assert item["inventory_id"] is not None
+    assert item["client_id"] == client_row.id
+    assert item["client_name"] == client_row.client_name
+    assert item["warehouse_id"] == warehouse.id
+    assert item["warehouse_code"] == warehouse.warehouse_code
+    assert item["product_id"] == product.id
+    assert item["product_code"] == product.product_code
+    assert item["product_name"] == product.product_name
+    assert item["barcode"] == product.barcode
+    assert item["stock_status"] == "GOOD"
+    assert item["qty"] == 3
+    assert product_code_response.json()["data"]["total_count"] == 1
+    assert barcode_response.json()["data"]["total_count"] == 1
+    _assert_no_sensitive_values(response.json())
+
+
 def test_return_closing_confirm_followup_judgement_does_not_increase_inventory(
     client: TestClient,
     db_session: Session,

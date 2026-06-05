@@ -17,6 +17,7 @@ import type {
   ProductBarcodeUpdatePayload,
   ProductDetail,
   ProductSummary,
+  WarehouseSummary,
 } from "../types/master";
 import type { PageResponse } from "../types/api";
 
@@ -37,6 +38,10 @@ export async function listClientWarehouseSettings(clientId: number, options: { i
 export async function listClientWarehouseOptions(clientId: number, options: { includeInactive?: boolean } = {}) {
   const query = options.includeInactive ? "?include_inactive=true" : "";
   return apiRequest<ClientWarehouseOption[]>(`/api/master/clients/${clientId}/warehouse-options${query}`);
+}
+
+export async function listWarehouses() {
+  return apiRequest<WarehouseSummary[]>("/api/master/warehouses");
 }
 
 export async function createClientWarehouseSetting(clientId: number, payload: ClientWarehouseSettingCreatePayload) {

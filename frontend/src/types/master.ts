@@ -61,6 +61,14 @@ export interface ClientWarehouseOption {
   default_usage_types?: string[];
 }
 
+export interface WarehouseSummary {
+  warehouse_id: number;
+  warehouse_code: string;
+  warehouse_name: string;
+  warehouse_type?: string | null;
+  active_yn: boolean;
+}
+
 export interface ClientWarehouseSettingCreatePayload {
   warehouse_id: number;
   usage_type: string;

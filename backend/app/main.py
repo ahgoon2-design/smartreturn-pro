@@ -7,6 +7,7 @@ from app.core.logging import configure_logging
 from app.routers.auth import router as auth_router
 from app.routers.health import APP_VERSION, router as health_router
 from app.routers.imports import router as imports_router
+from app.routers.inventory import router as inventory_router
 from app.routers.master import router as master_router
 from app.routers.password import router as password_router
 from app.routers.returns import router as returns_router
@@ -33,6 +34,7 @@ app.include_router(password_router)
 app.include_router(master_router)
 app.include_router(imports_router)
 app.include_router(returns_router)
+app.include_router(inventory_router)
 
 
 @app.get("/")

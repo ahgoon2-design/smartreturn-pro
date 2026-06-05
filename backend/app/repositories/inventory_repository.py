@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.inventory import CurrentInventory, InventoryEvent
+from app.models.master import Client, Product, ProductBarcode, Warehouse
 
 
 def find_event_by_idempotency_key(db: Session, idempotency_key: str) -> InventoryEvent | None:
@@ -69,3 +71,71 @@ def increase_current_inventory(
         current.qty_on_hand += qty_delta
     db.flush()
     return current
+
+
+def list_current_inventory(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    warehouse_id: int | None = None,
+    product_code: str | None = None,
+    barcode: str | None = None,
+    keyword: str | None = None,
+    stock_status: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[CurrentInventory, Client, Warehouse, Product]], int]:
+    query = (
+        db.query(CurrentInventory, Client, Warehouse, Product)
+        .join(Client, Client.id == CurrentInventory.client_id)
+        .join(Warehouse, Warehouse.id == CurrentInventory.warehouse_id)
+        .join(Product, Product.id == CurrentInventory.product_id)
+    )
+
+    if client_id is not None:
+        query = query.filter(CurrentInventory.client_id == client_id)
+    if warehouse_id is not None:
+        query = query.filter(CurrentInventory.warehouse_id == warehouse_id)
+    if product_code:
+        query = query.filter(Product.product_code.ilike(f"%{product_code}%"))
+    if barcode:
+        barcode_like = f"%{barcode}%"
+        query = query.filter(
+            or_(
+                Product.barcode.ilike(barcode_like),
+                Product.id.in_(
+                    db.query(ProductBarcode.product_id).filter(
+                        ProductBarcode.barcode.ilike(barcode_like),
+                    )
+                ),
+            )
+        )
+    if keyword:
+        keyword_like = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                Client.client_name.ilike(keyword_like),
+                Client.client_code.ilike(keyword_like),
+                Warehouse.warehouse_name.ilike(keyword_like),
+                Warehouse.warehouse_code.ilike(keyword_like),
+                Product.product_code.ilike(keyword_like),
+                Product.product_name.ilike(keyword_like),
+                Product.barcode.ilike(keyword_like),
+                Product.id.in_(
+                    db.query(ProductBarcode.product_id).filter(
+                        ProductBarcode.barcode.ilike(keyword_like),
+                    )
+                ),
+            )
+        )
+    if stock_status:
+        query = query.filter(CurrentInventory.stock_status == stock_status)
+
+    total_count = query.with_entities(func.count()).scalar() or 0
+    rows = (
+        query.order_by(Client.client_name, Warehouse.warehouse_name, Product.product_code, CurrentInventory.stock_status)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return rows, total_count
