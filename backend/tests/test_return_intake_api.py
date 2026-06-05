@@ -17,7 +17,12 @@ from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.inventory import CurrentInventory, InventoryEvent
 from app.models.master import Client, ClientWarehouseSetting, Product, ProductBarcode, Warehouse
-from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow, ReturnProcessingAttachment
+from app.models.returns import (
+    ReturnExternalOutboundBatch,
+    ReturnIntakeBatch,
+    ReturnIntakeRow,
+    ReturnProcessingAttachment,
+)
 from app.services import return_intake_service
 
 
@@ -50,6 +55,7 @@ def db_session() -> Generator[Session, None, None]:
         InventoryEvent.__table__,
         CurrentInventory.__table__,
         ReturnIntakeBatch.__table__,
+        ReturnExternalOutboundBatch.__table__,
         ReturnIntakeRow.__table__,
         ReturnProcessingAttachment.__table__,
     ):
@@ -1432,16 +1438,82 @@ def test_return_external_outbound_confirm_marks_confirmed_without_inventory_chan
     data = response.json()["data"]
     assert data["confirmed_rows"] == 1
     assert data["failed_rows"] == 0
+    assert data["batch_id"] is not None
+    assert data["batch_no"].startswith("EXOB-")
+    assert data["row_results"][0]["external_outbound_batch_id"] == data["batch_id"]
     assert row.external_outbound_required is True
     assert row.external_outbound_status == "CONFIRMED"
     assert row.external_outbound_at is not None
     assert row.external_outbound_confirmed_by is not None
+    assert row.external_outbound_batch_id == data["batch_id"]
+    outbound_batch = db_session.query(ReturnExternalOutboundBatch).filter(ReturnExternalOutboundBatch.id == data["batch_id"]).one()
+    assert outbound_batch.batch_no == data["batch_no"]
+    assert outbound_batch.status == "CONFIRMED"
+    assert outbound_batch.target_type == "NON_GOOD_EXTERNAL_OUTBOUND"
+    assert outbound_batch.total_rows == 1
+    assert outbound_batch.confirmed_rows == 1
+    assert outbound_batch.confirmed_by is not None
+    assert outbound_batch.confirmed_at is not None
     assert db_session.query(InventoryEvent).count() == 0
     assert db_session.query(CurrentInventory).count() == 0
     assert retry_response.status_code == 200
     retry_data = retry_response.json()["data"]
+    assert retry_data["batch_id"] is None
     assert retry_data["confirmed_rows"] == 0
     assert retry_data["skipped_rows"] == 1
+
+
+def test_return_external_outbound_batches_list_and_detail(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_outbound_batch_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_outbound_batch_admin",
+        client_id=client_row.id,
+    )
+    judged = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB")
+
+    confirm_response = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [task_id], "scanned_numbers": [judged["return_management_no"]]},
+        headers=headers,
+    )
+    confirm_data = confirm_response.json()["data"]
+    batch_id = confirm_data["batch_id"]
+
+    list_response = client.get(
+        f"/api/returns/external-outbound/batches?client_id={client_row.id}&keyword={confirm_data['batch_no']}",
+        headers=headers,
+    )
+    detail_response = client.get(f"/api/returns/external-outbound/batches/{batch_id}", headers=headers)
+    missing_response = client.get("/api/returns/external-outbound/batches/999999", headers=headers)
+    no_auth_response = client.get("/api/returns/external-outbound/batches")
+
+    assert confirm_response.status_code == 200
+    assert list_response.status_code == 200
+    list_data = list_response.json()["data"]
+    assert list_data["total_count"] == 1
+    assert list_data["items"][0]["batch_id"] == batch_id
+    assert list_data["items"][0]["batch_no"] == confirm_data["batch_no"]
+    assert list_data["items"][0]["confirmed_rows"] == 1
+    assert detail_response.status_code == 200
+    detail_data = detail_response.json()["data"]
+    assert detail_data["batch_id"] == batch_id
+    assert detail_data["batch_no"] == confirm_data["batch_no"]
+    assert detail_data["rows"][0]["row_id"] == task_id
+    assert detail_data["rows"][0]["return_management_no"] == judged["return_management_no"]
+    assert detail_data["rows"][0]["external_outbound_status"] == "CONFIRMED"
+    assert missing_response.status_code == 404
+    assert no_auth_response.status_code == 401
+    _assert_no_sensitive_values(list_response.json())
+    _assert_no_sensitive_values(detail_response.json())
 
 
 def test_return_external_outbound_confirm_fails_for_untracked_or_wrong_judgement_rows(

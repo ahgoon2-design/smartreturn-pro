@@ -14,6 +14,7 @@ import { ProductListPage } from "../features/master/ProductListPage";
 import { ReturnIntakeHubPage } from "../features/returns/ReturnIntakeHubPage";
 import { ReturnClosingPage } from "../features/returns/ReturnClosingPage";
 import { ReturnDisposalManagementPage } from "../features/returns/ReturnDisposalManagementPage";
+import { ReturnExternalOutboundBatchesPage } from "../features/returns/ReturnExternalOutboundBatchesPage";
 import { ReturnExternalOutboundPage } from "../features/returns/ReturnExternalOutboundPage";
 import { ReturnHistoryPage } from "../features/returns/ReturnHistoryPage";
 import { ReturnHoldManagementPage } from "../features/returns/ReturnHoldManagementPage";
@@ -102,6 +103,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
             <ReturnClosingPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "returns/external-outbound/batches",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ReturnExternalOutboundBatchesPage />
           </ProtectedRoute>
         ),
       },

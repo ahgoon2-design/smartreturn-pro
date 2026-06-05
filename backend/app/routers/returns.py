@@ -353,6 +353,50 @@ def list_return_external_outbound_candidates_api(
     )
 
 
+@router.get("/external-outbound/batches", response_model=ApiResult)
+def list_return_external_outbound_batches_api(
+    client_id: int | None = None,
+    status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_EXTERNAL_OUTBOUND_BATCHES_FOUND",
+        message="외부반출 batch 이력을 조회했습니다.",
+        data=return_intake_service.list_return_external_outbound_batches(
+            db,
+            auth,
+            client_id=client_id,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+            keyword=keyword,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
+@router.get("/external-outbound/batches/{batch_id}", response_model=ApiResult)
+def get_return_external_outbound_batch_api(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_EXTERNAL_OUTBOUND_BATCH_FOUND",
+        message="외부반출 batch 상세를 조회했습니다.",
+        data=return_intake_service.get_return_external_outbound_batch_detail(db, auth, batch_id),
+    )
+
+
 @router.post("/external-outbound/confirm", response_model=ApiResult)
 def confirm_return_external_outbound_api(
     request: ReturnExternalOutboundConfirmRequest,

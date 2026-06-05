@@ -10,6 +10,7 @@ export const ROUTE_PATHS = {
   returnProcessing: "/returns/processing",
   returnClosing: "/returns/closing",
   returnExternalOutbound: "/returns/external-outbound",
+  returnExternalOutboundBatches: "/returns/external-outbound/batches",
   returnHold: "/returns/hold",
   returnDisposal: "/returns/disposal",
   returnHistory: "/returns/history",

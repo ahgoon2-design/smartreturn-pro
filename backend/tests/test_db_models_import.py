@@ -22,6 +22,7 @@ P0_TABLES = {
     "roles",
     "return_intake_batches",
     "return_intake_rows",
+    "return_external_outbound_batches",
     "user_roles",
     "users",
     "warehouses",

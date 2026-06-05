@@ -6,7 +6,12 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.master import Client
-from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow, ReturnProcessingAttachment
+from app.models.returns import (
+    ReturnExternalOutboundBatch,
+    ReturnIntakeBatch,
+    ReturnIntakeRow,
+    ReturnProcessingAttachment,
+)
 
 
 def create_batch(
@@ -296,6 +301,108 @@ def list_external_outbound_rows_by_ids(
     if client_id is not None:
         query = query.filter(ReturnIntakeRow.client_id == client_id)
     return query.order_by(ReturnIntakeRow.id).all()
+
+
+def create_external_outbound_batch(
+    db: Session,
+    *,
+    client_id: int | None,
+    batch_no: str,
+    status: str,
+    target_type: str,
+    total_rows: int,
+    confirmed_rows: int,
+    created_by: int,
+    confirmed_by: int | None,
+    confirmed_at: datetime | None,
+    memo: str | None = None,
+) -> ReturnExternalOutboundBatch:
+    batch = ReturnExternalOutboundBatch(
+        client_id=client_id,
+        batch_no=batch_no,
+        status=status,
+        target_type=target_type,
+        total_rows=total_rows,
+        confirmed_rows=confirmed_rows,
+        created_by=created_by,
+        confirmed_by=confirmed_by,
+        confirmed_at=confirmed_at,
+        memo=memo,
+    )
+    db.add(batch)
+    db.flush()
+    return batch
+
+
+def list_external_outbound_batches(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[ReturnExternalOutboundBatch, Client | None]], int]:
+    query = db.query(ReturnExternalOutboundBatch, Client).outerjoin(
+        Client,
+        Client.id == ReturnExternalOutboundBatch.client_id,
+    )
+    if client_id is not None:
+        query = query.filter(ReturnExternalOutboundBatch.client_id == client_id)
+    if status:
+        query = query.filter(ReturnExternalOutboundBatch.status == status)
+    if date_from is not None:
+        query = query.filter(ReturnExternalOutboundBatch.created_at >= date_from)
+    if date_to is not None:
+        query = query.filter(ReturnExternalOutboundBatch.created_at <= date_to)
+    if keyword:
+        pattern = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                ReturnExternalOutboundBatch.batch_no.ilike(pattern),
+                Client.client_code.ilike(pattern),
+                Client.client_name.ilike(pattern),
+            )
+        )
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnExternalOutboundBatch.created_at.desc(), ReturnExternalOutboundBatch.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count
+
+
+def get_external_outbound_batch_with_client(
+    db: Session,
+    batch_id: int,
+    *,
+    client_id: int | None = None,
+) -> tuple[ReturnExternalOutboundBatch, Client | None] | None:
+    query = db.query(ReturnExternalOutboundBatch, Client).outerjoin(
+        Client,
+        Client.id == ReturnExternalOutboundBatch.client_id,
+    )
+    query = query.filter(ReturnExternalOutboundBatch.id == batch_id)
+    if client_id is not None:
+        query = query.filter(ReturnExternalOutboundBatch.client_id == client_id)
+    return query.one_or_none()
+
+
+def list_external_outbound_batch_rows(
+    db: Session,
+    *,
+    batch_id: int,
+    client_id: int | None = None,
+) -> list[tuple[ReturnIntakeRow, Client]]:
+    query = db.query(ReturnIntakeRow, Client).join(Client, Client.id == ReturnIntakeRow.client_id)
+    query = query.filter(ReturnIntakeRow.external_outbound_batch_id == batch_id)
+    if client_id is not None:
+        query = query.filter(ReturnIntakeRow.client_id == client_id)
+    return query.order_by(ReturnIntakeRow.row_no, ReturnIntakeRow.id).all()
 
 
 def list_hold_candidates(

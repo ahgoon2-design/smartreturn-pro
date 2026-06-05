@@ -35,6 +35,10 @@ from app.schemas.returns import (
     ReturnClosingRowResult,
     ReturnExternalOutboundCandidateListResponse,
     ReturnExternalOutboundCandidateResponse,
+    ReturnExternalOutboundBatchDetailResponse,
+    ReturnExternalOutboundBatchListResponse,
+    ReturnExternalOutboundBatchRowResponse,
+    ReturnExternalOutboundBatchSummaryResponse,
     ReturnExternalOutboundConfirmRequest,
     ReturnExternalOutboundConfirmResponse,
     ReturnExternalOutboundRowResult,
@@ -114,6 +118,8 @@ EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES = {
 EXTERNAL_OUTBOUND_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
 EXTERNAL_OUTBOUND_STATUS_READY = "READY"
 EXTERNAL_OUTBOUND_STATUS_CONFIRMED = "CONFIRMED"
+EXTERNAL_OUTBOUND_BATCH_STATUS_CONFIRMED = "CONFIRMED"
+EXTERNAL_OUTBOUND_BATCH_TARGET_TYPE = "NON_GOOD_EXTERNAL_OUTBOUND"
 
 HOLD_STATUS_PENDING = "HOLD_PENDING"
 HOLD_STATUS_CUSTOMER_CHECKING = "CUSTOMER_CHECKING"
@@ -273,6 +279,7 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
         external_outbound_confirmed_by=row.external_outbound_confirmed_by,
+        external_outbound_batch_id=row.external_outbound_batch_id,
         hold_status=row.hold_status,
         hold_reason=row.hold_reason,
         hold_response_memo=row.hold_response_memo,
@@ -324,6 +331,7 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
         external_outbound_confirmed_by=row.external_outbound_confirmed_by,
+        external_outbound_batch_id=row.external_outbound_batch_id,
         hold_status=row.hold_status,
         hold_reason=row.hold_reason,
         hold_response_memo=row.hold_response_memo,
@@ -395,9 +403,54 @@ def _external_outbound_candidate_response(row: ReturnIntakeRow, client) -> dict:
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
         external_outbound_confirmed_by=row.external_outbound_confirmed_by,
+        external_outbound_batch_id=row.external_outbound_batch_id,
         judged_at=row.judged_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    ).model_dump()
+
+
+def _external_outbound_batch_summary_response(batch, client) -> dict:
+    return ReturnExternalOutboundBatchSummaryResponse(
+        batch_id=batch.id,
+        batch_no=batch.batch_no,
+        client_id=batch.client_id,
+        client_code=client.client_code if client else None,
+        client_name=client.client_name if client else None,
+        status=batch.status,
+        target_type=batch.target_type,
+        total_rows=batch.total_rows,
+        confirmed_rows=batch.confirmed_rows,
+        memo=batch.memo,
+        created_by=batch.created_by,
+        created_at=batch.created_at,
+        confirmed_by=batch.confirmed_by,
+        confirmed_at=batch.confirmed_at,
+    ).model_dump()
+
+
+def _external_outbound_batch_row_response(row: ReturnIntakeRow, client) -> dict:
+    return ReturnExternalOutboundBatchRowResponse(
+        row_id=row.id,
+        task_id=row.id,
+        batch_id=row.batch_id,
+        client_id=row.client_id,
+        client_code=client.client_code,
+        client_name=client.client_name,
+        row_no=row.row_no,
+        order_no=row.order_no,
+        return_tracking_no=row.return_tracking_no,
+        product_code=row.product_code,
+        barcode=row.barcode,
+        product_name=row.product_name,
+        option_name=row.option_name,
+        qty=row.qty,
+        judgement_status=row.judgement_status or "",
+        return_management_no=row.return_management_no,
+        return_label_no=row.return_label_no,
+        external_outbound_status=row.external_outbound_status,
+        external_outbound_at=row.external_outbound_at,
+        external_outbound_confirmed_by=row.external_outbound_confirmed_by,
     ).model_dump()
 
 
@@ -522,6 +575,7 @@ def _return_history_response(row: ReturnIntakeRow, client, attachment_count: int
         inventory_event_id=row.inventory_event_id,
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
+        external_outbound_batch_id=row.external_outbound_batch_id,
         hold_status=row.hold_status,
         hold_reason=row.hold_reason,
         hold_response_memo=row.hold_response_memo,
@@ -1363,6 +1417,9 @@ def confirm_return_external_outbound(
     confirmed_rows = 0
     skipped_rows = 0
     failed_rows = 0
+    confirmed_row_refs: list[ReturnIntakeRow] = []
+    outbound_batch_id: int | None = None
+    outbound_batch_no: str | None = None
 
     for row_id in requested_row_ids:
         if row_id not in found_ids:
@@ -1445,6 +1502,7 @@ def confirm_return_external_outbound(
             row.external_outbound_at = datetime.now(timezone.utc)
             row.external_outbound_confirmed_by = auth.user_id
             confirmed_rows += 1
+            confirmed_row_refs.append(row)
             row_results.append(
                 ReturnExternalOutboundRowResult(
                     row_id=row.id,
@@ -1455,18 +1513,119 @@ def confirm_return_external_outbound(
                 )
             )
 
+        if confirmed_row_refs:
+            confirmed_at = datetime.now(timezone.utc)
+            client_ids = {row.client_id for row in confirmed_row_refs}
+            batch_client_id = next(iter(client_ids)) if len(client_ids) == 1 else effective_client_id
+            outbound_batch = repo.create_external_outbound_batch(
+                db,
+                client_id=batch_client_id,
+                batch_no=_generate_external_outbound_batch_no(confirmed_at),
+                status=EXTERNAL_OUTBOUND_BATCH_STATUS_CONFIRMED,
+                target_type=EXTERNAL_OUTBOUND_BATCH_TARGET_TYPE,
+                total_rows=len(confirmed_row_refs),
+                confirmed_rows=len(confirmed_row_refs),
+                created_by=auth.user_id,
+                confirmed_by=auth.user_id,
+                confirmed_at=confirmed_at,
+                memo="외부반출 확정 skeleton batch",
+            )
+            outbound_batch_id = outbound_batch.id
+            outbound_batch_no = outbound_batch.batch_no
+            for row in confirmed_row_refs:
+                row.external_outbound_batch_id = outbound_batch.id
+            for result in row_results:
+                if result.result == "CONFIRMED":
+                    result.external_outbound_batch_id = outbound_batch.id
+
         db.commit()
     except Exception:
         db.rollback()
         raise
 
     return ReturnExternalOutboundConfirmResponse(
+        batch_id=outbound_batch_id,
+        batch_no=outbound_batch_no,
         total_rows=len(requested_row_ids),
         confirmed_rows=confirmed_rows,
         skipped_rows=skipped_rows,
         failed_rows=failed_rows,
         message="반품 외부반출 확정 처리를 완료했습니다.",
         row_results=row_results,
+    ).model_dump()
+
+
+def list_return_external_outbound_batches(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_status = _safe_text(status)
+    if safe_status:
+        safe_status = safe_status.upper()
+        if safe_status not in {"DRAFT", EXTERNAL_OUTBOUND_BATCH_STATUS_CONFIRMED}:
+            raise _business_error(
+                "RETURN_EXTERNAL_OUTBOUND_BATCH_STATUS_INVALID",
+                "지원하지 않는 외부반출 batch 상태입니다.",
+            )
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    batches, total_count = repo.list_external_outbound_batches(
+        db,
+        client_id=effective_client_id,
+        status=safe_status,
+        date_from=date_from,
+        date_to=date_to,
+        keyword=_safe_text(keyword),
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnExternalOutboundBatchListResponse(
+        items=[
+            ReturnExternalOutboundBatchSummaryResponse(**_external_outbound_batch_summary_response(batch, client))
+            for batch, client in batches
+        ],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
+
+
+def get_return_external_outbound_batch_detail(
+    db: Session,
+    auth: AuthContext,
+    batch_id: int,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, None, allow_all_clients=True)
+    batch_with_client = repo.get_external_outbound_batch_with_client(
+        db,
+        batch_id,
+        client_id=effective_client_id,
+    )
+    if batch_with_client is None:
+        raise _business_error(
+            "RETURN_EXTERNAL_OUTBOUND_BATCH_NOT_FOUND",
+            "외부반출 batch를 찾을 수 없습니다.",
+            404,
+        )
+    batch, client = batch_with_client
+    rows = repo.list_external_outbound_batch_rows(db, batch_id=batch.id, client_id=effective_client_id)
+    return ReturnExternalOutboundBatchDetailResponse(
+        **_external_outbound_batch_summary_response(batch, client),
+        rows=[
+            ReturnExternalOutboundBatchRowResponse(**_external_outbound_batch_row_response(row, row_client))
+            for row, row_client in rows
+        ],
     ).model_dump()
 
 
@@ -1709,6 +1868,10 @@ def _normalize_scan_number(value: str | None) -> str | None:
     if text is None:
         return None
     return "".join(text.split()).upper()
+
+
+def _generate_external_outbound_batch_no(now: datetime) -> str:
+    return f"EXOB-{now.strftime('%Y%m%d')}-{uuid4().hex[:8].upper()}"
 
 
 def _resolve_return_product(db: Session, row: ReturnIntakeRow):

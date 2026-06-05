@@ -136,6 +136,7 @@ class ReturnIntakeRowResponse(BaseModel):
     external_outbound_status: str = "NOT_REQUIRED"
     external_outbound_at: datetime | None = None
     external_outbound_confirmed_by: int | None = None
+    external_outbound_batch_id: int | None = None
     hold_status: str = "HOLD_PENDING"
     hold_reason: str | None = None
     hold_response_memo: str | None = None
@@ -222,6 +223,7 @@ class ReturnProcessingTaskResponse(BaseModel):
     external_outbound_status: str = "NOT_REQUIRED"
     external_outbound_at: datetime | None = None
     external_outbound_confirmed_by: int | None = None
+    external_outbound_batch_id: int | None = None
     hold_status: str = "HOLD_PENDING"
     hold_reason: str | None = None
     hold_response_memo: str | None = None
@@ -373,6 +375,7 @@ class ReturnExternalOutboundCandidateResponse(BaseModel):
     external_outbound_status: str
     external_outbound_at: datetime | None = None
     external_outbound_confirmed_by: int | None = None
+    external_outbound_batch_id: int | None = None
     judged_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -397,15 +400,69 @@ class ReturnExternalOutboundRowResult(BaseModel):
     result: str
     message: str
     external_outbound_status: str | None = None
+    external_outbound_batch_id: int | None = None
 
 
 class ReturnExternalOutboundConfirmResponse(BaseModel):
+    batch_id: int | None = None
+    batch_no: str | None = None
     total_rows: int
     confirmed_rows: int
     skipped_rows: int
     failed_rows: int
     message: str
     row_results: list[ReturnExternalOutboundRowResult]
+
+
+class ReturnExternalOutboundBatchSummaryResponse(BaseModel):
+    batch_id: int
+    batch_no: str
+    client_id: int | None = None
+    client_code: str | None = None
+    client_name: str | None = None
+    status: str
+    target_type: str
+    total_rows: int
+    confirmed_rows: int
+    memo: str | None = None
+    created_by: int
+    created_at: datetime
+    confirmed_by: int | None = None
+    confirmed_at: datetime | None = None
+
+
+class ReturnExternalOutboundBatchListResponse(BaseModel):
+    items: list[ReturnExternalOutboundBatchSummaryResponse]
+    page: int
+    page_size: int
+    total_count: int
+
+
+class ReturnExternalOutboundBatchRowResponse(BaseModel):
+    row_id: int
+    task_id: int
+    batch_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    row_no: int
+    order_no: str | None = None
+    return_tracking_no: str | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    product_name: str | None = None
+    option_name: str | None = None
+    qty: int | None = None
+    judgement_status: str
+    return_management_no: str | None = None
+    return_label_no: str | None = None
+    external_outbound_status: str
+    external_outbound_at: datetime | None = None
+    external_outbound_confirmed_by: int | None = None
+
+
+class ReturnExternalOutboundBatchDetailResponse(ReturnExternalOutboundBatchSummaryResponse):
+    rows: list[ReturnExternalOutboundBatchRowResponse]
 
 
 class ReturnHoldCandidateResponse(BaseModel):
@@ -582,6 +639,7 @@ class ReturnHistoryItemResponse(BaseModel):
     inventory_event_id: int | None = None
     external_outbound_status: str | None = None
     external_outbound_at: datetime | None = None
+    external_outbound_batch_id: int | None = None
     hold_status: str | None = None
     hold_reason: str | None = None
     hold_response_memo: str | None = None

@@ -104,6 +104,7 @@ export interface ReturnIntakeRow {
   external_outbound_status?: ReturnExternalOutboundStatus | string;
   external_outbound_at?: string | null;
   external_outbound_confirmed_by?: number | null;
+  external_outbound_batch_id?: number | null;
   hold_status?: ReturnHoldStatus | string;
   hold_reason?: string | null;
   hold_response_memo?: string | null;
@@ -175,6 +176,7 @@ export interface ReturnProcessingTask {
   external_outbound_status?: ReturnExternalOutboundStatus | string;
   external_outbound_at?: string | null;
   external_outbound_confirmed_by?: number | null;
+  external_outbound_batch_id?: number | null;
   hold_status?: ReturnHoldStatus | string;
   hold_reason?: string | null;
   hold_response_memo?: string | null;
@@ -309,6 +311,7 @@ export interface ReturnExternalOutboundCandidate {
   external_outbound_status: ReturnExternalOutboundStatus | string;
   external_outbound_at?: string | null;
   external_outbound_confirmed_by?: number | null;
+  external_outbound_batch_id?: number | null;
   judged_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -328,15 +331,64 @@ export interface ReturnExternalOutboundRowResult {
   result: string;
   message: string;
   external_outbound_status?: ReturnExternalOutboundStatus | string | null;
+  external_outbound_batch_id?: number | null;
 }
 
 export interface ReturnExternalOutboundConfirmResponse {
+  batch_id?: number | null;
+  batch_no?: string | null;
   total_rows: number;
   confirmed_rows: number;
   skipped_rows: number;
   failed_rows: number;
   message: string;
   row_results: ReturnExternalOutboundRowResult[];
+}
+
+export interface ReturnExternalOutboundBatch {
+  batch_id: number;
+  batch_no: string;
+  client_id?: number | null;
+  client_code?: string | null;
+  client_name?: string | null;
+  status: string;
+  target_type: string;
+  total_rows: number;
+  confirmed_rows: number;
+  memo?: string | null;
+  created_by: number;
+  created_at: string;
+  confirmed_by?: number | null;
+  confirmed_at?: string | null;
+}
+
+export type ReturnExternalOutboundBatchListResponse = PageResponse<ReturnExternalOutboundBatch>;
+
+export interface ReturnExternalOutboundBatchRow {
+  row_id: number;
+  task_id: number;
+  batch_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  row_no: number;
+  order_no?: string | null;
+  return_tracking_no?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_name?: string | null;
+  option_name?: string | null;
+  qty?: number | null;
+  judgement_status: ReturnJudgementStatus | string;
+  return_management_no?: string | null;
+  return_label_no?: string | null;
+  external_outbound_status: ReturnExternalOutboundStatus | string;
+  external_outbound_at?: string | null;
+  external_outbound_confirmed_by?: number | null;
+}
+
+export interface ReturnExternalOutboundBatchDetail extends ReturnExternalOutboundBatch {
+  rows: ReturnExternalOutboundBatchRow[];
 }
 
 export interface ReturnHoldCandidate {
@@ -476,6 +528,7 @@ export interface ReturnHistoryItem {
   inventory_event_id?: number | null;
   external_outbound_status?: ReturnExternalOutboundStatus | string | null;
   external_outbound_at?: string | null;
+  external_outbound_batch_id?: number | null;
   hold_status?: ReturnHoldStatus | string | null;
   hold_reason?: string | null;
   hold_response_memo?: string | null;

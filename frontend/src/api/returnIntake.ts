@@ -11,6 +11,8 @@ import type {
   ReturnClosingConfirmResponse,
   ReturnDisposalCandidateListResponse,
   ReturnExternalOutboundCandidateListResponse,
+  ReturnExternalOutboundBatchDetail,
+  ReturnExternalOutboundBatchListResponse,
   ReturnExternalOutboundConfirmPayload,
   ReturnExternalOutboundConfirmResponse,
   ReturnHistoryListResponse,
@@ -237,6 +239,46 @@ export async function confirmReturnExternalOutbound(payload: ReturnExternalOutbo
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export interface ReturnExternalOutboundBatchListOptions {
+  clientId?: number;
+  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnExternalOutboundBatches(
+  options: ReturnExternalOutboundBatchListOptions = {},
+) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.status) {
+    params.set("status", options.status);
+  }
+  if (options.dateFrom) {
+    params.set("date_from", options.dateFrom);
+  }
+  if (options.dateTo) {
+    params.set("date_to", options.dateTo);
+  }
+  if (options.keyword) {
+    params.set("keyword", options.keyword);
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnExternalOutboundBatchListResponse>(
+    `/api/returns/external-outbound/batches?${params.toString()}`,
+  );
+}
+
+export async function getReturnExternalOutboundBatch(batchId: number) {
+  return apiRequest<ReturnExternalOutboundBatchDetail>(`/api/returns/external-outbound/batches/${batchId}`);
 }
 
 export interface ReturnHoldCandidateListOptions {

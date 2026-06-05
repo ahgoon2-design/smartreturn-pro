@@ -56,6 +56,7 @@ class ReturnIntakeRow(Base):
             "external_outbound_status",
             "judgement_status",
         ),
+        Index("ix_return_intake_rows_external_outbound_batch", "external_outbound_batch_id"),
         Index(
             "ix_return_intake_rows_hold",
             "client_id",
@@ -120,6 +121,7 @@ class ReturnIntakeRow(Base):
     )
     external_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     external_outbound_confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    external_outbound_batch_id: Mapped[int | None] = mapped_column(ForeignKey("return_external_outbound_batches.id"))
     hold_status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
@@ -147,6 +149,33 @@ class ReturnIntakeRow(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class ReturnExternalOutboundBatch(Base):
+    __tablename__ = "return_external_outbound_batches"
+    __table_args__ = (
+        UniqueConstraint("batch_no", name="uq_return_external_outbound_batches_batch_no"),
+        Index("ix_return_external_outbound_batches_client_created", "client_id", "created_at"),
+        Index("ix_return_external_outbound_batches_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
+    batch_no: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="CONFIRMED", server_default="CONFIRMED")
+    target_type: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="NON_GOOD_EXTERNAL_OUTBOUND",
+        server_default="NON_GOOD_EXTERNAL_OUTBOUND",
+    )
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    confirmed_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    memo: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReturnProcessingAttachment(Base):

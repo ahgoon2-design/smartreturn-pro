@@ -11,7 +11,7 @@ from app.models.master import (
     ProductBarcode,
     Warehouse,
 )
-from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow
+from app.models.returns import ReturnExternalOutboundBatch, ReturnIntakeBatch, ReturnIntakeRow
 
 __all__ = [
     "AuthLoginLog",
@@ -29,6 +29,7 @@ __all__ = [
     "Permission",
     "Product",
     "ProductBarcode",
+    "ReturnExternalOutboundBatch",
     "ReturnIntakeBatch",
     "ReturnIntakeRow",
     "Role",

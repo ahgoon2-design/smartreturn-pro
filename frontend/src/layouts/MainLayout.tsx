@@ -33,6 +33,8 @@ export function MainLayout() {
       ? ROUTE_PATHS.masterProducts
       : location.pathname.startsWith(ROUTE_PATHS.masterCommonCodes)
       ? ROUTE_PATHS.masterCommonCodes
+      : location.pathname.startsWith(ROUTE_PATHS.returnExternalOutboundBatches)
+        ? ROUTE_PATHS.returnExternalOutboundBatches
       : location.pathname.startsWith(ROUTE_PATHS.returnExternalOutbound)
         ? ROUTE_PATHS.returnExternalOutbound
       : location.pathname.startsWith(ROUTE_PATHS.returnHold)
@@ -100,6 +102,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.returnExternalOutbound,
       icon: <ExportOutlined />,
       label: "반품 외부반출",
+      disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnExternalOutboundBatches,
+      icon: <HistoryOutlined />,
+      label: "외부반출 이력",
       disabled: !hasPermission("RETURN_VIEW"),
     },
     {

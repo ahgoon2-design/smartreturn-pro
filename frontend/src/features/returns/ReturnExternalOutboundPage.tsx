@@ -212,7 +212,9 @@ export function ReturnExternalOutboundPage() {
       setConfirmSummary(result);
       setFeedback({
         type: result.failed_rows > 0 ? "warning" : "success",
-        message: `확정 ${result.confirmed_rows}건 / 건너뜀 ${result.skipped_rows}건 / 실패 ${result.failed_rows}건`,
+        message: result.batch_no
+          ? `외부반출 batch ${result.batch_no} 생성 · 확정 ${result.confirmed_rows}건 / 건너뜀 ${result.skipped_rows}건 / 실패 ${result.failed_rows}건`
+          : `확정 ${result.confirmed_rows}건 / 건너뜀 ${result.skipped_rows}건 / 실패 ${result.failed_rows}건`,
       });
       setSelectedRowKeys([]);
       setScannedRowIds([]);
@@ -319,7 +321,19 @@ export function ReturnExternalOutboundPage() {
           type={confirmSummary.failed_rows > 0 ? "warning" : "success"}
           showIcon
           message="반출 확정 결과"
-          description={`확정 ${confirmSummary.confirmed_rows}건 / 건너뜀 ${confirmSummary.skipped_rows}건 / 실패 ${confirmSummary.failed_rows}건. current_inventory는 변경하지 않았습니다.`}
+          description={
+            <Space direction="vertical" size={2}>
+              <Typography.Text>
+                {confirmSummary.batch_no
+                  ? `외부반출 batch ${confirmSummary.batch_no}가 생성되었습니다.`
+                  : "확정된 신규 row가 없어 외부반출 batch를 생성하지 않았습니다."}
+              </Typography.Text>
+              <Typography.Text>
+                확정 {confirmSummary.confirmed_rows}건 / 건너뜀 {confirmSummary.skipped_rows}건 / 실패{" "}
+                {confirmSummary.failed_rows}건. current_inventory는 변경하지 않았습니다.
+              </Typography.Text>
+            </Space>
+          }
         />
       ) : null}
 
