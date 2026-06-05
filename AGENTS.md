@@ -103,3 +103,5 @@
   - `docs/skills/frontend-app.md`
   - `docs/skills/ui-grid.md`
   - `docs/skills/ui-design-system.md`
+- 반품/재고/창고 설계 또는 기준정보 작업:
+  - `docs/skills/return-client-unit-routing.md`

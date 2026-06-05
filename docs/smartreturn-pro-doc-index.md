@@ -77,3 +77,7 @@
 ## 사용자 브라우저 테스트
 
 - [반품 처리 흐름 사용자 테스트 체크리스트](user-test-checklist-return-flow-2026-05-29.md): backend/frontend 실행, 로그인, 기준정보, import, 반품 접수/처리/후속/재고/이력 조회 확인 순서.
+
+## docs/skills 추가 기준
+
+- [고객사 운영단위/팀 반품·창고·재고 라우팅](skills/return-client-unit-routing.md): client_unit 기준 반품 접수, 판정별 창고 라우팅, 일마감/재고반영 규칙.
