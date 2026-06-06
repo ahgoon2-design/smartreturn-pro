@@ -885,6 +885,10 @@ def assign_return_intake_row_unit(
         raise _business_error("RETURN_INTAKE_ROW_NOT_FOUND", "반품 접수 row를 찾을 수 없습니다.", 404)
     row, client = row_with_client
     resolve_effective_client_id(auth, row.client_id)
+    if row.team_assign_status != TEAM_ASSIGN_PENDING or row.client_unit_id is not None:
+        raise _business_error("RETURN_INTAKE_ROW_UNIT_ALREADY_ASSIGNED", "이미 운영단위/팀이 배정된 반품 row입니다.")
+    if row.status != ROW_STATUS_RECEIVED:
+        raise _business_error("RETURN_INTAKE_ROW_UNIT_ASSIGNMENT_NOT_ALLOWED", "접수 단계의 반품 row만 운영단위/팀을 배정할 수 있습니다.")
     unit = _ensure_client_unit_for_client(db, row.client_id, request.client_unit_id)
     try:
         row.client_unit_id = unit.id

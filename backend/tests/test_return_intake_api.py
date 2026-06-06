@@ -463,6 +463,70 @@ def test_unit_assignment_pending_row_can_be_assigned(client: TestClient, db_sess
     assert len(next_pending.json()["data"]["items"]) == 1
 
 
+def test_unit_assignment_rejects_already_assigned_row(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_client_unit(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_unit_assigned_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_unit_assigned_admin")
+    create_response = client.post(
+        "/api/returns/intake/batches",
+        json={"client_id": client_row.id, "client_unit_id": unit.id, "source_type": "PASTE"},
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    batch_id = create_response.json()["data"]["batch_id"]
+    client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json=_rows_payload(client_unit_id=unit.id),
+        headers=headers,
+    )
+    rows_response = client.get(f"/api/returns/intake/batches/{batch_id}/rows", headers=headers)
+    row_id = rows_response.json()["data"]["items"][0]["row_id"]
+
+    assign_response = client.post(
+        f"/api/returns/intake/rows/{row_id}/assign-unit",
+        json={"client_unit_id": unit.id},
+        headers=headers,
+    )
+
+    assert assign_response.status_code == 400
+    assert assign_response.json()["result_code"] == "RETURN_INTAKE_ROW_UNIT_ALREADY_ASSIGNED"
+
+
+def test_unit_assignment_rejects_prepared_row(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_client_unit(db_session, client_row.id)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_unit_prepared_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_unit_prepared_admin")
+    batch_id = _create_batch(client, db_session, "return_unit_prepared_admin", client_row.id)
+    client.post(f"/api/returns/intake/batches/{batch_id}/rows/paste", json=_rows_payload(), headers=headers)
+    client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    prepare_response = client.post(f"/api/returns/intake/batches/{batch_id}/prepare-processing", headers=headers)
+    assert prepare_response.status_code == 200
+    rows_response = client.get(f"/api/returns/intake/batches/{batch_id}/rows", headers=headers)
+    row_id = rows_response.json()["data"]["items"][0]["row_id"]
+
+    assign_response = client.post(
+        f"/api/returns/intake/rows/{row_id}/assign-unit",
+        json={"client_unit_id": unit.id},
+        headers=headers,
+    )
+
+    assert assign_response.status_code == 400
+    assert assign_response.json()["result_code"] == "RETURN_INTAKE_ROW_UNIT_ASSIGNMENT_NOT_ALLOWED"
+
+
 def test_validate_marks_matching_products_valid(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
     _create_product(db_session, client_row.id)
