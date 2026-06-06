@@ -53,118 +53,152 @@ export function MainLayout() {
         ? ROUTE_PATHS.returnProcessing
       : location.pathname.startsWith(ROUTE_PATHS.returnUnitAssignment)
         ? ROUTE_PATHS.returnUnitAssignment
-        : location.pathname.startsWith(ROUTE_PATHS.returnIntake)
+      : location.pathname.startsWith(ROUTE_PATHS.returnIntake)
           ? ROUTE_PATHS.returnIntake
       : location.pathname;
 
   const menuItems: MenuProps["items"] = [
     {
-      key: ROUTE_PATHS.importPreview,
-      icon: <CloudUploadOutlined />,
-      label: "Import Preview",
-      disabled: !hasPermission("IMPORT_MANAGE"),
-    },
-    {
-      key: ROUTE_PATHS.masterClients,
-      icon: <DatabaseOutlined />,
-      label: "고객사/셀러",
-      disabled: !hasPermission("MASTER_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.masterProducts,
-      icon: <ShoppingOutlined />,
-      label: "상품/바코드",
-      disabled: !hasPermission("MASTER_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.masterCommonCodes,
-      icon: <TeamOutlined />,
-      label: "공통코드",
-      disabled: !hasPermission("MASTER_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnIntake,
-      icon: <RollbackOutlined />,
-      label: "반품 접수 허브",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnUnitAssignment,
-      icon: <TeamOutlined />,
-      label: "반품 팀배정",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnProcessing,
-      icon: <ScanOutlined />,
-      label: "반품처리 작업",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnClosing,
-      icon: <CheckCircleOutlined />,
-      label: "반품 일마감",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnExternalOutbound,
-      icon: <ExportOutlined />,
-      label: "반품 외부반출",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnExternalOutboundBatches,
-      icon: <HistoryOutlined />,
-      label: "외부반출 이력",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnHold,
-      icon: <PauseCircleOutlined />,
-      label: "반품 보류관리",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnDisposal,
-      icon: <DeleteOutlined />,
-      label: "반품 폐기관리",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.returnHistory,
-      icon: <HistoryOutlined />,
-      label: "반품 이력조회",
-      disabled: !hasPermission("RETURN_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.inventoryCurrent,
-      icon: <DatabaseOutlined />,
-      label: "재고현황",
-      disabled: !hasPermission("INVENTORY_VIEW"),
-    },
-    {
-      key: ROUTE_PATHS.inventoryEvents,
-      icon: <HistoryOutlined />,
-      label: "재고 이벤트",
-      disabled: !hasPermission("INVENTORY_VIEW"),
-    },
-    {
-      key: "master-other-ready",
-      icon: <DatabaseOutlined />,
-      label: "기준정보 후속 준비중",
-      disabled: true,
-    },
-    {
-      key: "inbound-ready",
-      icon: <InboxOutlined />,
-      label: "입고 준비중",
-      disabled: true,
-    },
-    {
-      key: "operations-ready",
+      key: ROUTE_PATHS.dashboard,
       icon: <AppstoreOutlined />,
-      label: "출고/반품/재고/정산 준비중",
-      disabled: true,
+      label: "대시보드",
+    },
+    {
+      key: "oms-group",
+      label: "OMS 관리",
+      type: "group",
+      children: [
+        { key: "oms-orders-ready", icon: <ShoppingOutlined />, label: "주문관리 준비중", disabled: true },
+        { key: "oms-outbound-ready", icon: <ExportOutlined />, label: "출고지시 준비중", disabled: true },
+        { key: "oms-picking-ready", icon: <CheckCircleOutlined />, label: "피킹리스트 준비중", disabled: true },
+        { key: "oms-inspection-ready", icon: <ScanOutlined />, label: "출고검수 준비중", disabled: true },
+      ],
+    },
+    {
+      key: "wms-group",
+      label: "WMS 관리",
+      type: "group",
+      children: [
+        { key: "wms-inbound-ready", icon: <InboxOutlined />, label: "입고관리 준비중", disabled: true },
+        {
+          key: ROUTE_PATHS.inventoryCurrent,
+          icon: <DatabaseOutlined />,
+          label: "재고현황",
+          disabled: !hasPermission("INVENTORY_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.inventoryEvents,
+          icon: <HistoryOutlined />,
+          label: "재고 이벤트",
+          disabled: !hasPermission("INVENTORY_VIEW"),
+        },
+        { key: "wms-transfer-ready", icon: <AppstoreOutlined />, label: "재고이동 준비중", disabled: true },
+        { key: "wms-adjust-ready", icon: <CheckCircleOutlined />, label: "재고조정 준비중", disabled: true },
+      ],
+    },
+    {
+      key: "returns-group",
+      label: "반품 관리",
+      type: "group",
+      children: [
+        {
+          key: ROUTE_PATHS.returnIntake,
+          icon: <RollbackOutlined />,
+          label: "반품 접수 허브",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnUnitAssignment,
+          icon: <TeamOutlined />,
+          label: "반품 팀배정",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnProcessing,
+          icon: <ScanOutlined />,
+          label: "반품처리 작업",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnClosing,
+          icon: <CheckCircleOutlined />,
+          label: "반품 일마감",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnExternalOutbound,
+          icon: <ExportOutlined />,
+          label: "반품 외부반출",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnExternalOutboundBatches,
+          icon: <HistoryOutlined />,
+          label: "외부반출 이력",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnHold,
+          icon: <PauseCircleOutlined />,
+          label: "반품 보류관리",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnDisposal,
+          icon: <DeleteOutlined />,
+          label: "반품 폐기관리",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnHistory,
+          icon: <HistoryOutlined />,
+          label: "반품 이력조회",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+      ],
+    },
+    {
+      key: "master-group",
+      label: "기준 정보",
+      type: "group",
+      children: [
+        {
+          key: ROUTE_PATHS.importPreview,
+          icon: <CloudUploadOutlined />,
+          label: "Import Preview",
+          disabled: !hasPermission("IMPORT_MANAGE"),
+        },
+        {
+          key: ROUTE_PATHS.masterClients,
+          icon: <DatabaseOutlined />,
+          label: "고객사/셀러",
+          disabled: !hasPermission("MASTER_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.masterProducts,
+          icon: <ShoppingOutlined />,
+          label: "상품/바코드",
+          disabled: !hasPermission("MASTER_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.masterCommonCodes,
+          icon: <TeamOutlined />,
+          label: "공통코드",
+          disabled: !hasPermission("MASTER_VIEW"),
+        },
+        { key: "master-warehouse-ready", icon: <InboxOutlined />, label: "창고/처리장소 준비중", disabled: true },
+      ],
+    },
+    {
+      key: "system-group",
+      label: "시스템 관리",
+      type: "group",
+      children: [
+        { key: "system-users-ready", icon: <UserOutlined />, label: "사용자 관리 준비중", disabled: true },
+        { key: "system-permissions-ready", icon: <TeamOutlined />, label: "권한 관리 준비중", disabled: true },
+        { key: "system-logs-ready", icon: <HistoryOutlined />, label: "로그 관리 준비중", disabled: true },
+        { key: "system-settings-ready", icon: <AppstoreOutlined />, label: "시스템 설정 준비중", disabled: true },
+      ],
     },
   ];
 
@@ -178,7 +212,7 @@ export function MainLayout() {
       <Header className="smart-app-header">
         <div>
           <Typography.Text className="smart-app-eyebrow">SmartReturn Pro</Typography.Text>
-          <Typography.Title level={4}>프론트 앱</Typography.Title>
+          <Typography.Title level={4}>OMS + WMS + Returns 통합 운영 플랫폼</Typography.Title>
         </div>
         <Space>
           <Tag icon={<UserOutlined />} color={authContext ? "green" : "gold"}>
@@ -196,7 +230,11 @@ export function MainLayout() {
             mode="inline"
             selectedKeys={[selectedMenuKey]}
             items={menuItems}
-            onClick={({ key }) => navigate(key)}
+            onClick={({ key }) => {
+              if (String(key).startsWith("/")) {
+                navigate(key);
+              }
+            }}
           />
         </Sider>
         <Content className="smart-app-content">

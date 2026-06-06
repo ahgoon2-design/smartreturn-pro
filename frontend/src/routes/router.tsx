@@ -34,7 +34,7 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <Navigate to={ROUTE_PATHS.importPreview} replace /> },
+      { index: true, element: <Navigate to={ROUTE_PATHS.dashboard} replace /> },
       {
         path: "imports/preview",
         element: (

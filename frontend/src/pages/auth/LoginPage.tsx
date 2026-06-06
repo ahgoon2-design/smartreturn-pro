@@ -44,7 +44,9 @@ export function LoginPage() {
       <Card className="smart-auth-card">
         <Typography.Text className="smart-app-eyebrow">SmartReturn Pro</Typography.Text>
         <Typography.Title level={3}>로그인</Typography.Title>
-        <Typography.Paragraph type="secondary">발급된 계정으로 로그인하면 권한에 맞는 화면에 접근할 수 있습니다.</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">
+          반품 전문 흐름과 OMS/WMS 운영을 함께 보는 통합 플랫폼입니다.
+        </Typography.Paragraph>
         {errorMessage ? <Alert className="smart-error-notice" type="error" message={errorMessage} showIcon /> : null}
         <Form form={form} layout="vertical" onFinish={handleSubmit} autoComplete="off">
           <Form.Item label="사용자 ID" name="login_id" rules={[{ required: true, message: "사용자 ID를 입력해 주세요." }]}>
@@ -64,7 +66,7 @@ export function LoginPage() {
 
 function resolveRedirectPath(path?: string) {
   if (!path || path === ROUTE_PATHS.login || path === ROUTE_PATHS.passwordChange) {
-    return ROUTE_PATHS.importPreview;
+    return ROUTE_PATHS.dashboard;
   }
   return path;
 }
