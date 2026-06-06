@@ -22,10 +22,12 @@ def create_batch(
     source_name: str | None,
     status: str,
     created_by: int,
+    client_unit_id: int | None = None,
     memo: str | None = None,
 ) -> ReturnIntakeBatch:
     batch = ReturnIntakeBatch(
         client_id=client_id,
+        client_unit_id=client_unit_id,
         source_type=source_type,
         source_name=source_name,
         status=status,
@@ -193,6 +195,43 @@ def get_processing_task_with_client(db: Session, task_id: int) -> tuple[ReturnIn
         .filter(ReturnIntakeRow.id == task_id)
         .one_or_none()
     )
+
+
+def list_unit_assignment_pending_rows(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list[tuple[ReturnIntakeRow, Client]], int]:
+    query = db.query(ReturnIntakeRow, Client).join(Client, Client.id == ReturnIntakeRow.client_id)
+    query = query.filter(
+        ReturnIntakeRow.client_unit_id.is_(None),
+        ReturnIntakeRow.team_assign_status == "TEAM_ASSIGN_PENDING",
+    )
+    if client_id is not None:
+        query = query.filter(ReturnIntakeRow.client_id == client_id)
+    if keyword:
+        pattern = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                ReturnIntakeRow.return_tracking_no.ilike(pattern),
+                ReturnIntakeRow.original_tracking_no.ilike(pattern),
+                ReturnIntakeRow.order_no.ilike(pattern),
+                ReturnIntakeRow.product_code.ilike(pattern),
+                ReturnIntakeRow.barcode.ilike(pattern),
+                ReturnIntakeRow.product_name.ilike(pattern),
+            )
+        )
+    total_count = query.count()
+    items = (
+        query.order_by(ReturnIntakeRow.created_at.desc(), ReturnIntakeRow.row_no, ReturnIntakeRow.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return items, total_count
 
 
 def list_closing_candidates(

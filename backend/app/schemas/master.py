@@ -174,6 +174,78 @@ class ClientWarehouseSettingResponse(ClientWarehouseSummary):
     pass
 
 
+class ClientUnitResponse(BaseModel):
+    unit_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    unit_code: str
+    unit_name: str
+    unit_type: str | None = None
+    default_warehouse_id: int | None = None
+    default_warehouse_name: str | None = None
+    return_warehouse_id: int | None = None
+    return_warehouse_name: str | None = None
+    active_yn: bool
+    sort_order: int
+    memo: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ClientUnitCreateRequest(BaseModel):
+    unit_code: str
+    unit_name: str
+    unit_type: str | None = None
+    default_warehouse_id: int | None = None
+    return_warehouse_id: int | None = None
+    sort_order: int = 0
+    memo: str | None = None
+
+    @field_validator("unit_code", "unit_name")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("unit_type", "memo")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ClientUnitUpdateRequest(BaseModel):
+    unit_name: str | None = None
+    unit_type: str | None = None
+    default_warehouse_id: int | None = None
+    return_warehouse_id: int | None = None
+    sort_order: int | None = None
+    memo: str | None = None
+
+    @field_validator("unit_name")
+    @classmethod
+    def _optional_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("unit_type", "memo")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
 class ClientWarehouseSettingCreateRequest(BaseModel):
     client_id: int
     warehouse_id: int

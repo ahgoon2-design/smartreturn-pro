@@ -25,6 +25,9 @@ import type {
   ReturnIntakePrepareProcessingResponse,
   ReturnIntakeRowsResponse,
   ReturnIntakeValidateResponse,
+  AssignReturnUnitPayload,
+  AssignReturnUnitResponse,
+  ReturnUnitAssignmentPendingListResponse,
   ReturnProcessingAttachmentListResponse,
   ReturnProcessingTaskListResponse,
   UpdateReturnHoldTaskPayload,
@@ -87,6 +90,35 @@ export async function prepareReturnIntakeBatchForProcessing(batchId: number) {
       method: "POST",
     },
   );
+}
+
+export interface ReturnUnitAssignmentPendingListOptions {
+  clientId?: number;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listReturnUnitAssignmentPending(options: ReturnUnitAssignmentPendingListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.keyword?.trim()) {
+    params.set("keyword", options.keyword.trim());
+  }
+  params.set("page", String(options.page || 1));
+  params.set("page_size", String(options.pageSize || 100));
+  return apiRequest<ReturnUnitAssignmentPendingListResponse>(
+    `/api/returns/intake/unit-assignment-pending?${params.toString()}`,
+  );
+}
+
+export async function assignReturnIntakeRowUnit(rowId: number, payload: AssignReturnUnitPayload) {
+  return apiRequest<AssignReturnUnitResponse>(`/api/returns/intake/rows/${rowId}/assign-unit`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export interface ReturnProcessingTaskListOptions {

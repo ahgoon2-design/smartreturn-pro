@@ -12,10 +12,12 @@ class ReturnIntakeBatch(Base):
     __table_args__ = (
         Index("ix_return_intake_batches_client_created", "client_id", "created_at"),
         Index("ix_return_intake_batches_status_created", "status", "created_at"),
+        Index("ix_return_intake_batches_client_unit", "client_id", "client_unit_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
     source_type: Mapped[str] = mapped_column(String(80), nullable=False)
     source_name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -41,6 +43,8 @@ class ReturnIntakeRow(Base):
         Index("ix_return_intake_rows_batch_row_no", "batch_id", "row_no"),
         Index("ix_return_intake_rows_batch_validation", "batch_id", "validation_status"),
         Index("ix_return_intake_rows_client_status", "client_id", "status"),
+        Index("ix_return_intake_rows_client_unit", "client_id", "client_unit_id"),
+        Index("ix_return_intake_rows_team_assignment", "client_id", "team_assign_status"),
         Index("ix_return_intake_rows_client_judgement", "client_id", "judgement_status"),
         Index(
             "ix_return_intake_rows_closing_candidates",
@@ -74,6 +78,15 @@ class ReturnIntakeRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     batch_id: Mapped[int] = mapped_column(ForeignKey("return_intake_batches.id"), nullable=False)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
+    team_assign_status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="NOT_REQUIRED",
+        server_default="NOT_REQUIRED",
+    )
+    client_unit_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    client_unit_assigned_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     row_no: Mapped[int] = mapped_column(Integer, nullable=False)
     order_no: Mapped[str | None] = mapped_column(String(100))
     return_tracking_no: Mapped[str | None] = mapped_column(String(100))

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class ReturnIntakeBatchCreateRequest(BaseModel):
     client_id: int
+    client_unit_id: int | None = None
     source_type: str = "PASTE"
     source_name: str | None = None
     memo: str | None = None
@@ -31,6 +32,7 @@ class ReturnIntakeBatchCreateRequest(BaseModel):
 
 class ReturnIntakePasteRowItem(BaseModel):
     row_no: int | None = None
+    client_unit_id: int | None = None
     order_no: str | None = None
     return_tracking_no: str | None = None
     original_tracking_no: str | None = None
@@ -69,6 +71,7 @@ class ReturnIntakePasteRowItem(BaseModel):
 class ReturnIntakePasteRowsRequest(BaseModel):
     rows: list[ReturnIntakePasteRowItem] = Field(min_length=1)
     replace_existing: bool = False
+    client_unit_id: int | None = None
 
 
 class ReturnIntakeBatchSummaryResponse(BaseModel):
@@ -76,6 +79,8 @@ class ReturnIntakeBatchSummaryResponse(BaseModel):
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
     source_type: str
     source_name: str | None = None
     status: str
@@ -104,6 +109,11 @@ class ReturnIntakeRowResponse(BaseModel):
     row_id: int
     batch_id: int
     client_id: int
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    team_assign_status: str = "NOT_REQUIRED"
+    client_unit_assigned_at: datetime | None = None
+    client_unit_assigned_by: int | None = None
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None
@@ -195,6 +205,9 @@ class ReturnProcessingTaskResponse(BaseModel):
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    team_assign_status: str = "NOT_REQUIRED"
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None
@@ -300,6 +313,9 @@ class ReturnClosingCandidateResponse(BaseModel):
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    team_assign_status: str = "NOT_REQUIRED"
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None
@@ -360,6 +376,9 @@ class ReturnExternalOutboundCandidateResponse(BaseModel):
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    team_assign_status: str | None = None
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None
@@ -472,6 +491,9 @@ class ReturnHoldCandidateResponse(BaseModel):
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    team_assign_status: str | None = None
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None
@@ -561,6 +583,9 @@ class ReturnDisposalCandidateResponse(BaseModel):
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    team_assign_status: str | None = None
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None
@@ -615,6 +640,9 @@ class ReturnHistoryItemResponse(BaseModel):
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    team_assign_status: str = "NOT_REQUIRED"
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None
@@ -661,3 +689,23 @@ class ReturnHistoryListResponse(BaseModel):
     page: int
     page_size: int
     total_count: int
+
+
+class ReturnUnitAssignmentPendingRowResponse(ReturnIntakeRowResponse):
+    client_code: str | None = None
+    client_name: str | None = None
+
+
+class ReturnUnitAssignmentPendingListResponse(BaseModel):
+    items: list[ReturnUnitAssignmentPendingRowResponse]
+    page: int
+    page_size: int
+    total_count: int
+
+
+class ReturnAssignUnitRequest(BaseModel):
+    client_unit_id: int
+
+
+class ReturnAssignUnitResponse(ReturnUnitAssignmentPendingRowResponse):
+    message: str

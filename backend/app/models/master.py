@@ -82,6 +82,34 @@ class ClientWarehouseSetting(Base):
     )
 
 
+class ClientUnit(Base):
+    __tablename__ = "client_units"
+    __table_args__ = (
+        UniqueConstraint("client_id", "unit_code", name="uq_client_units_client_unit_code"),
+        Index("ix_client_units_client_active", "client_id", "active_yn"),
+        Index("ix_client_units_default_warehouse", "default_warehouse_id"),
+        Index("ix_client_units_return_warehouse", "return_warehouse_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    unit_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    unit_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    unit_type: Mapped[str | None] = mapped_column(String(50))
+    default_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
+    return_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
+    active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    memo: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class Location(Base):
     __tablename__ = "locations"
     __table_args__ = (

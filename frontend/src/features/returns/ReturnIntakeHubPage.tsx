@@ -2,7 +2,7 @@ import { CheckCircleOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } fro
 import { Alert, Button, Input, Modal, Select, Space, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
-import { listClients } from "../../api/master";
+import { listClients, listClientUnits } from "../../api/master";
 import {
   createReturnIntakeBatch,
   listReturnIntakeBatches,
@@ -19,7 +19,7 @@ import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid/SmartDataGrid.types";
-import type { ClientSummary } from "../../types/master";
+import type { ClientSummary, ClientUnit } from "../../types/master";
 import type {
   ReturnIntakeBatchSummary,
   ReturnIntakePasteRow,
@@ -35,6 +35,8 @@ const PASTE_SAMPLE = [
 export function ReturnIntakeHubPage() {
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
+  const [clientUnits, setClientUnits] = useState<ClientUnit[]>([]);
+  const [selectedClientUnitId, setSelectedClientUnitId] = useState<number | undefined>();
   const [sourceType, setSourceType] = useState("PASTE");
   const [sourceName, setSourceName] = useState("");
   const [pasteText, setPasteText] = useState(PASTE_SAMPLE);
@@ -63,6 +65,10 @@ export function ReturnIntakeHubPage() {
       setRows([]);
     }
   }, [selectedBatchId]);
+
+  useEffect(() => {
+    void loadClientUnits();
+  }, [selectedClientId]);
 
   useEffect(() => {
     void loadProcessingTasks();
@@ -95,6 +101,7 @@ export function ReturnIntakeHubPage() {
     () => [
       { key: "batch_id", title: "Batch", dataIndex: "batch_id", width: 90, sortable: true, copyable: true },
       { key: "client_name", title: "고객사", dataIndex: "client_name", width: 180, copyable: true },
+      { key: "client_unit_name", title: "팀/운영단위", dataIndex: "client_unit_name", width: 150, render: (value) => toDisplayText(value) },
       { key: "source_type", title: "Source", dataIndex: "source_type", width: 110 },
       { key: "source_name", title: "자료명", dataIndex: "source_name", width: 170, render: (value) => toDisplayText(value) },
       {
@@ -133,6 +140,13 @@ export function ReturnIntakeHubPage() {
         width: 120,
         render: (value) => <SmartStatusBadge status={String(value)} label={toValidationLabel(value)} />,
       },
+      {
+        key: "team_assign_status",
+        title: "팀배정",
+        dataIndex: "team_assign_status",
+        width: 130,
+        render: (value) => <SmartStatusBadge status={String(value || "NOT_REQUIRED")} label={toTeamAssignLabel(value)} />,
+      },
       { key: "order_no", title: "주문번호", dataIndex: "order_no", width: 150, copyable: true },
       { key: "return_tracking_no", title: "반품 운송장", dataIndex: "return_tracking_no", width: 150, copyable: true },
       { key: "product_code", title: "상품코드", dataIndex: "product_code", width: 130, copyable: true },
@@ -150,6 +164,7 @@ export function ReturnIntakeHubPage() {
       { key: "batch_id", title: "Batch", dataIndex: "batch_id", width: 90, sortable: true },
       { key: "row_no", title: "행", dataIndex: "row_no", width: 70, sortable: true },
       { key: "client_name", title: "고객사", dataIndex: "client_name", width: 160, copyable: true },
+      { key: "client_unit_name", title: "팀/운영단위", dataIndex: "client_unit_name", width: 150, render: (value) => toDisplayText(value) },
       { key: "return_tracking_no", title: "반품 운송장", dataIndex: "return_tracking_no", width: 150, copyable: true },
       { key: "order_no", title: "주문번호", dataIndex: "order_no", width: 150, copyable: true },
       { key: "product_code", title: "상품코드", dataIndex: "product_code", width: 130, copyable: true },
@@ -234,6 +249,25 @@ export function ReturnIntakeHubPage() {
     }
   }
 
+  async function loadClientUnits() {
+    if (!selectedClientId) {
+      setClientUnits([]);
+      setSelectedClientUnitId(undefined);
+      return;
+    }
+    try {
+      const units = await listClientUnits(selectedClientId);
+      const activeUnits = units.filter((unit) => unit.active_yn);
+      setClientUnits(activeUnits);
+      setSelectedClientUnitId((current) =>
+        current && activeUnits.some((unit) => unit.unit_id === current) ? current : undefined,
+      );
+    } catch {
+      setClientUnits([]);
+      setSelectedClientUnitId(undefined);
+    }
+  }
+
   async function handleCreateAndSave() {
     if (!selectedClientId) {
       setErrorMessage("고객사를 선택해 주세요.");
@@ -249,10 +283,11 @@ export function ReturnIntakeHubPage() {
     try {
       const batch = await createReturnIntakeBatch({
         client_id: selectedClientId,
+        client_unit_id: selectedClientUnitId,
         source_type: sourceType,
         source_name: sourceName || "반품 접수 붙여넣기",
       });
-      await pasteReturnIntakeRows(batch.batch_id, { rows: parsedRows });
+      await pasteReturnIntakeRows(batch.batch_id, { rows: parsedRows, client_unit_id: selectedClientUnitId });
       message.success("반품 접수 row를 저장했습니다.");
       await loadBatches();
       setSelectedBatchId(batch.batch_id);
@@ -340,7 +375,18 @@ export function ReturnIntakeHubPage() {
           placeholder="고객사 선택"
           value={selectedClientId}
           options={clients.map((client) => ({ value: getClientId(client), label: `${client.client_name} (${client.client_code})` }))}
-          onChange={setSelectedClientId}
+          onChange={(value) => {
+            setSelectedClientId(value);
+            setSelectedClientUnitId(undefined);
+          }}
+        />
+        <Select
+          className="smart-control"
+          allowClear
+          placeholder="운영단위/팀 선택"
+          value={selectedClientUnitId}
+          options={clientUnits.map((unit) => ({ value: unit.unit_id, label: `${unit.unit_name} (${unit.unit_code})` }))}
+          onChange={setSelectedClientUnitId}
         />
         <Select
           className="smart-control"
@@ -543,6 +589,16 @@ function toRowStatusLabel(value: unknown) {
     PROCESSING: "처리 중",
     COMPLETED: "처리 완료",
     HOLD: "보류",
+  };
+  return labels[status] || status;
+}
+
+function toTeamAssignLabel(value: unknown) {
+  const status = String(value || "NOT_REQUIRED");
+  const labels: Record<string, string> = {
+    NOT_REQUIRED: "불필요",
+    TEAM_ASSIGN_PENDING: "팀배정대기",
+    ASSIGNED: "배정완료",
   };
   return labels[status] || status;
 }

@@ -51,6 +51,8 @@ export function MainLayout() {
         ? ROUTE_PATHS.returnClosing
       : location.pathname.startsWith(ROUTE_PATHS.returnProcessing)
         ? ROUTE_PATHS.returnProcessing
+      : location.pathname.startsWith(ROUTE_PATHS.returnUnitAssignment)
+        ? ROUTE_PATHS.returnUnitAssignment
         : location.pathname.startsWith(ROUTE_PATHS.returnIntake)
           ? ROUTE_PATHS.returnIntake
       : location.pathname;
@@ -84,6 +86,12 @@ export function MainLayout() {
       key: ROUTE_PATHS.returnIntake,
       icon: <RollbackOutlined />,
       label: "반품 접수 허브",
+      disabled: !hasPermission("RETURN_VIEW"),
+    },
+    {
+      key: ROUTE_PATHS.returnUnitAssignment,
+      icon: <TeamOutlined />,
+      label: "반품 팀배정",
       disabled: !hasPermission("RETURN_VIEW"),
     },
     {

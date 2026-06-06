@@ -26,6 +26,10 @@ from app.schemas.returns import (
     ReturnIntakePrepareProcessingResponse,
     ReturnIntakeRowResponse,
     ReturnIntakeRowsResponse,
+    ReturnAssignUnitRequest,
+    ReturnAssignUnitResponse,
+    ReturnUnitAssignmentPendingListResponse,
+    ReturnUnitAssignmentPendingRowResponse,
     ReturnProcessingAttachmentListResponse,
     ReturnProcessingAttachmentResponse,
     ReturnClosingCandidateListResponse,
@@ -78,6 +82,10 @@ ROW_STATUS_READY_FOR_PROCESSING = "READY_FOR_PROCESSING"
 ROW_STATUS_PROCESSING = "PROCESSING"
 ROW_STATUS_COMPLETED = "COMPLETED"
 ROW_STATUS_HOLD = "HOLD"
+
+TEAM_ASSIGN_NOT_REQUIRED = "NOT_REQUIRED"
+TEAM_ASSIGN_PENDING = "TEAM_ASSIGN_PENDING"
+TEAM_ASSIGN_ASSIGNED = "ASSIGNED"
 
 JUDGEMENT_GOOD = "GOOD"
 JUDGEMENT_REFURB = "REFURB"
@@ -218,12 +226,44 @@ def _get_batch_for_auth(db: Session, auth: AuthContext, batch_id: int):
     return row
 
 
+def _client_unit_name(db: Session, client_unit_id: int | None) -> str | None:
+    if client_unit_id is None:
+        return None
+    unit = master_repository.get_client_unit_by_id(db, client_unit_id)
+    return unit.unit_name if unit else None
+
+
+def _ensure_client_unit_for_client(db: Session, client_id: int, client_unit_id: int | None):
+    if client_unit_id is None:
+        return None
+    unit = master_repository.get_client_unit_by_id(db, client_unit_id)
+    if unit is None or unit.client_id != client_id:
+        raise _business_error("RETURN_INTAKE_CLIENT_UNIT_INVALID", "고객사 운영단위를 확인할 수 없습니다.", 404)
+    if not unit.active_yn:
+        raise _business_error("RETURN_INTAKE_CLIENT_UNIT_INACTIVE", "사용중지된 운영단위는 배정할 수 없습니다.")
+    return unit
+
+
+def _has_active_client_units(db: Session, client_id: int) -> bool:
+    return bool(master_repository.list_client_units_only(db, client_id=client_id, active_only=True))
+
+
+def _team_assign_status_for(db: Session, client_id: int, client_unit_id: int | None) -> str:
+    if client_unit_id is not None:
+        return TEAM_ASSIGN_ASSIGNED
+    if _has_active_client_units(db, client_id):
+        return TEAM_ASSIGN_PENDING
+    return TEAM_ASSIGN_NOT_REQUIRED
+
+
 def _batch_summary(batch, client) -> dict:
     return ReturnIntakeBatchSummaryResponse(
         batch_id=batch.id,
         client_id=batch.client_id,
         client_code=client.client_code,
         client_name=client.client_name,
+        client_unit_id=batch.client_unit_id,
+        client_unit_name=None,
         source_type=batch.source_type,
         source_name=batch.source_name,
         status=batch.status,
@@ -247,6 +287,11 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         row_id=row.id,
         batch_id=row.batch_id,
         client_id=row.client_id,
+        client_unit_id=row.client_unit_id,
+        client_unit_name=None,
+        team_assign_status=row.team_assign_status,
+        client_unit_assigned_at=row.client_unit_assigned_at,
+        client_unit_assigned_by=row.client_unit_assigned_by,
         row_no=row.row_no,
         order_no=row.order_no,
         return_tracking_no=row.return_tracking_no,
@@ -303,6 +348,9 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         client_id=row.client_id,
         client_code=client.client_code,
         client_name=client.client_name,
+        client_unit_id=row.client_unit_id,
+        client_unit_name=None,
+        team_assign_status=row.team_assign_status,
         row_no=row.row_no,
         order_no=row.order_no,
         return_tracking_no=row.return_tracking_no,
@@ -356,6 +404,9 @@ def _closing_candidate_response(row: ReturnIntakeRow, client) -> dict:
         client_id=row.client_id,
         client_code=client.client_code,
         client_name=client.client_name,
+        client_unit_id=row.client_unit_id,
+        client_unit_name=None,
+        team_assign_status=row.team_assign_status,
         row_no=row.row_no,
         order_no=row.order_no,
         return_tracking_no=row.return_tracking_no,
@@ -388,6 +439,9 @@ def _external_outbound_candidate_response(row: ReturnIntakeRow, client) -> dict:
         client_id=row.client_id,
         client_code=client.client_code,
         client_name=client.client_name,
+        client_unit_id=row.client_unit_id,
+        client_unit_name=None,
+        team_assign_status=row.team_assign_status,
         row_no=row.row_no,
         order_no=row.order_no,
         return_tracking_no=row.return_tracking_no,
@@ -437,6 +491,9 @@ def _external_outbound_batch_row_response(row: ReturnIntakeRow, client) -> dict:
         client_id=row.client_id,
         client_code=client.client_code,
         client_name=client.client_name,
+        client_unit_id=row.client_unit_id,
+        client_unit_name=None,
+        team_assign_status=row.team_assign_status,
         row_no=row.row_no,
         order_no=row.order_no,
         return_tracking_no=row.return_tracking_no,
@@ -462,6 +519,9 @@ def _hold_candidate_response(row: ReturnIntakeRow, client) -> dict:
         client_id=row.client_id,
         client_code=client.client_code,
         client_name=client.client_name,
+        client_unit_id=row.client_unit_id,
+        client_unit_name=None,
+        team_assign_status=row.team_assign_status,
         row_no=row.row_no,
         order_no=row.order_no,
         return_tracking_no=row.return_tracking_no,
@@ -494,6 +554,9 @@ def _disposal_candidate_response(row: ReturnIntakeRow, client) -> dict:
         client_id=row.client_id,
         client_code=client.client_code,
         client_name=client.client_name,
+        client_unit_id=row.client_unit_id,
+        client_unit_name=None,
+        team_assign_status=row.team_assign_status,
         row_no=row.row_no,
         order_no=row.order_no,
         return_tracking_no=row.return_tracking_no,
@@ -620,11 +683,13 @@ def create_return_intake_batch(db: Session, auth: AuthContext, request: ReturnIn
         raise ClientScopeDeniedError("반품 접수 batch에는 client_id가 필요합니다.")
     source_type = _ensure_source_type(request.source_type)
     _ensure_client(db, client_id)
+    client_unit = _ensure_client_unit_for_client(db, client_id, request.client_unit_id)
 
     try:
         batch = repo.create_batch(
             db,
             client_id=client_id,
+            client_unit_id=client_unit.id if client_unit else None,
             source_type=source_type,
             source_name=request.source_name,
             status=BATCH_STATUS_DRAFT,
@@ -680,16 +745,27 @@ def paste_return_intake_rows(
     if existing_count > 0 and not request.replace_existing:
         raise _business_error("RETURN_INTAKE_ROWS_ALREADY_EXISTS", "이미 저장된 반품 접수 row가 있습니다.")
 
+    request_unit = _ensure_client_unit_for_client(db, batch.client_id, request.client_unit_id or batch.client_unit_id)
     rows: list[ReturnIntakeRow] = []
     for index, item in enumerate(request.rows, start=1):
         row_no = item.row_no or index
         customer_phone_masked = item.customer_phone_masked or _mask_phone(item.customer_phone)
         qty = _safe_int(item.qty)
         raw_data = _build_raw_data(item.model_dump(), customer_phone_masked=customer_phone_masked)
+        row_unit = _ensure_client_unit_for_client(
+            db,
+            batch.client_id,
+            item.client_unit_id if item.client_unit_id is not None else (request_unit.id if request_unit else None),
+        )
+        team_assign_status = _team_assign_status_for(db, batch.client_id, row_unit.id if row_unit else None)
         rows.append(
             ReturnIntakeRow(
                 batch_id=batch.id,
                 client_id=batch.client_id,
+                client_unit_id=row_unit.id if row_unit else None,
+                team_assign_status=team_assign_status,
+                client_unit_assigned_at=datetime.now(timezone.utc) if row_unit else None,
+                client_unit_assigned_by=auth.user_id if row_unit else None,
                 row_no=row_no,
                 order_no=_safe_text(item.order_no),
                 return_tracking_no=_safe_text(item.return_tracking_no),
@@ -755,6 +831,75 @@ def list_return_intake_rows(
         page_size=safe_page_size,
         total_count=total_count,
     ).model_dump()
+
+
+def _unit_assignment_pending_response(row: ReturnIntakeRow, client) -> dict:
+    data = _row_response(row)
+    data.update(
+        {
+            "client_code": client.client_code,
+            "client_name": client.client_name,
+            "client_unit_name": None,
+        }
+    )
+    return ReturnUnitAssignmentPendingRowResponse(**data).model_dump()
+
+
+def list_return_unit_assignment_pending(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    _require_return_view(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    safe_page = max(page, 1)
+    safe_page_size = min(max(page_size, 1), 500)
+    rows, total_count = repo.list_unit_assignment_pending_rows(
+        db,
+        client_id=effective_client_id,
+        keyword=keyword,
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    return ReturnUnitAssignmentPendingListResponse(
+        items=[ReturnUnitAssignmentPendingRowResponse(**_unit_assignment_pending_response(row, client)) for row, client in rows],
+        page=safe_page,
+        page_size=safe_page_size,
+        total_count=total_count,
+    ).model_dump()
+
+
+def assign_return_intake_row_unit(
+    db: Session,
+    auth: AuthContext,
+    row_id: int,
+    request: ReturnAssignUnitRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    row_with_client = repo.get_processing_task_with_client(db, row_id)
+    if row_with_client is None:
+        raise _business_error("RETURN_INTAKE_ROW_NOT_FOUND", "반품 접수 row를 찾을 수 없습니다.", 404)
+    row, client = row_with_client
+    resolve_effective_client_id(auth, row.client_id)
+    unit = _ensure_client_unit_for_client(db, row.client_id, request.client_unit_id)
+    try:
+        row.client_unit_id = unit.id
+        row.team_assign_status = TEAM_ASSIGN_ASSIGNED
+        row.client_unit_assigned_at = datetime.now(timezone.utc)
+        row.client_unit_assigned_by = auth.user_id
+        db.commit()
+        db.refresh(row)
+        data = _unit_assignment_pending_response(row, client)
+        data["client_unit_name"] = unit.unit_name
+        data["message"] = "운영단위/팀을 배정했습니다."
+        return ReturnAssignUnitResponse(**data).model_dump()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def validate_return_intake_batch(db: Session, auth: AuthContext, batch_id: int) -> dict:

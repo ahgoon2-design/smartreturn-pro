@@ -12,6 +12,7 @@ import { CommonCodeManagementPage } from "../features/master/CommonCodeManagemen
 import { ProductDetailPage } from "../features/master/ProductDetailPage";
 import { ProductListPage } from "../features/master/ProductListPage";
 import { ReturnIntakeHubPage } from "../features/returns/ReturnIntakeHubPage";
+import { ReturnUnitAssignmentPage } from "../features/returns/ReturnUnitAssignmentPage";
 import { ReturnClosingPage } from "../features/returns/ReturnClosingPage";
 import { ReturnDisposalManagementPage } from "../features/returns/ReturnDisposalManagementPage";
 import { ReturnExternalOutboundBatchesPage } from "../features/returns/ReturnExternalOutboundBatchesPage";
@@ -87,6 +88,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
             <ReturnIntakeHubPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "returns/unit-assignment",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ReturnUnitAssignmentPage />
           </ProtectedRoute>
         ),
       },

@@ -3,6 +3,7 @@ from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, Import
 from app.models.inventory import CurrentInventory, InventoryEvent
 from app.models.master import (
     Client,
+    ClientUnit,
     ClientWarehouseSetting,
     CommonCode,
     CommonCodeGroup,
@@ -16,6 +17,7 @@ from app.models.returns import ReturnExternalOutboundBatch, ReturnIntakeBatch, R
 __all__ = [
     "AuthLoginLog",
     "Client",
+    "ClientUnit",
     "ClientWarehouseSetting",
     "CommonCode",
     "CommonCodeGroup",

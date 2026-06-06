@@ -2,6 +2,9 @@ import { apiRequest } from "./client";
 import type {
   ClientDetail,
   ClientSummary,
+  ClientUnit,
+  ClientUnitCreatePayload,
+  ClientUnitUpdatePayload,
   ClientWarehouseOption,
   ClientWarehouseSetting,
   ClientWarehouseSettingCreatePayload,
@@ -38,6 +41,37 @@ export async function listClientWarehouseSettings(clientId: number, options: { i
 export async function listClientWarehouseOptions(clientId: number, options: { includeInactive?: boolean } = {}) {
   const query = options.includeInactive ? "?include_inactive=true" : "";
   return apiRequest<ClientWarehouseOption[]>(`/api/master/clients/${clientId}/warehouse-options${query}`);
+}
+
+export async function listClientUnits(clientId: number, options: { includeInactive?: boolean } = {}) {
+  const query = options.includeInactive ? "?include_inactive=true" : "";
+  return apiRequest<ClientUnit[]>(`/api/master/clients/${clientId}/units${query}`);
+}
+
+export async function createClientUnit(clientId: number, payload: ClientUnitCreatePayload) {
+  return apiRequest<ClientUnit>(`/api/master/clients/${clientId}/units`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateClientUnit(clientId: number, unitId: number, payload: ClientUnitUpdatePayload) {
+  return apiRequest<ClientUnit>(`/api/master/clients/${clientId}/units/${unitId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function disableClientUnit(clientId: number, unitId: number) {
+  return apiRequest<ClientUnit>(`/api/master/clients/${clientId}/units/${unitId}/disable`, {
+    method: "POST",
+  });
+}
+
+export async function enableClientUnit(clientId: number, unitId: number) {
+  return apiRequest<ClientUnit>(`/api/master/clients/${clientId}/units/${unitId}/enable`, {
+    method: "POST",
+  });
 }
 
 export async function listWarehouses() {

@@ -10,7 +10,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.master import Client
+from app.models.master import Client, ClientUnit, Warehouse
 
 
 TEST_PASSWORD = "DummyPass123!"
@@ -25,6 +25,8 @@ def db_session() -> Generator[Session, None, None]:
     )
     for table in (
         Client.__table__,
+        Warehouse.__table__,
+        ClientUnit.__table__,
         Role.__table__,
         Permission.__table__,
         User.__table__,
@@ -209,6 +211,65 @@ def test_client_create_blocks_duplicate_client_code(client: TestClient, db_sessi
 
     assert response.status_code == 400
     assert response.json()["result_code"] == "MASTER_CLIENT_CODE_DUPLICATED"
+
+
+def test_client_unit_crud_flow(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_UNIT")
+    _create_user(
+        db_session,
+        login_id="client_unit_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=["MASTER_VIEW", *_manage_permissions()],
+    )
+    headers = _login(client, "client_unit_admin")
+
+    create_response = client.post(
+        f"/api/master/clients/{client_row.id}/units",
+        json={"unit_code": "ONLINE", "unit_name": "온라인팀", "unit_type": "TEAM", "sort_order": 1},
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    unit_id = create_response.json()["data"]["unit_id"]
+
+    list_response = client.get(f"/api/master/clients/{client_row.id}/units", headers=headers)
+    update_response = client.patch(
+        f"/api/master/clients/{client_row.id}/units/{unit_id}",
+        json={"unit_name": "온라인운영팀", "memo": "test"},
+        headers=headers,
+    )
+    disable_response = client.post(f"/api/master/clients/{client_row.id}/units/{unit_id}/disable", headers=headers)
+    enable_response = client.post(f"/api/master/clients/{client_row.id}/units/{unit_id}/enable", headers=headers)
+
+    assert list_response.status_code == 200
+    assert list_response.json()["data"][0]["unit_code"] == "ONLINE"
+    assert update_response.status_code == 200
+    assert update_response.json()["data"]["unit_name"] == "온라인운영팀"
+    assert disable_response.status_code == 200
+    assert disable_response.json()["data"]["active_yn"] is False
+    assert enable_response.status_code == 200
+    assert enable_response.json()["data"]["active_yn"] is True
+    _assert_no_sensitive_values(enable_response.json())
+
+
+def test_client_unit_blocks_duplicate_code_in_same_client(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_UNIT_DUP")
+    db_session.add(ClientUnit(client_id=client_row.id, unit_code="ONLINE", unit_name="온라인팀", active_yn=True))
+    db_session.commit()
+    _create_user(
+        db_session,
+        login_id="client_unit_dup_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_manage_permissions(),
+    )
+
+    response = client.post(
+        f"/api/master/clients/{client_row.id}/units",
+        json={"unit_code": "ONLINE", "unit_name": "중복팀"},
+        headers=_login(client, "client_unit_dup_admin"),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "MASTER_CLIENT_UNIT_CODE_DUPLICATED"
 
 
 def test_client_update_does_not_change_client_code(client: TestClient, db_session: Session):

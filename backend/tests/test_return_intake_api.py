@@ -16,7 +16,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.inventory import CurrentInventory, InventoryEvent
-from app.models.master import Client, ClientWarehouseSetting, Product, ProductBarcode, Warehouse
+from app.models.master import Client, ClientUnit, ClientWarehouseSetting, Product, ProductBarcode, Warehouse
 from app.models.returns import (
     ReturnExternalOutboundBatch,
     ReturnIntakeBatch,
@@ -44,6 +44,7 @@ def db_session() -> Generator[Session, None, None]:
     for table in (
         Client.__table__,
         Warehouse.__table__,
+        ClientUnit.__table__,
         Product.__table__,
         ProductBarcode.__table__,
         Role.__table__,
@@ -204,6 +205,19 @@ def _create_warehouse_setting(
     )
     db.commit()
     return warehouse
+
+
+def _create_client_unit(db: Session, client_id: int, code: str = "ONLINE", active_yn: bool = True) -> ClientUnit:
+    unit = ClientUnit(
+        client_id=client_id,
+        unit_code=code,
+        unit_name=f"{code} Team",
+        unit_type="TEAM",
+        active_yn=active_yn,
+    )
+    db.add(unit)
+    db.commit()
+    return unit
 
 
 def _create_batch(client: TestClient, db: Session, login_id: str, client_id: int) -> int:
@@ -378,6 +392,75 @@ def test_paste_rows_preserves_original_row_order(client: TestClient, db_session:
     assert [row["row_no"] for row in rows] == [3, 4]
     assert rows[0]["customer_phone_masked"] == "****2222"
     _assert_no_sensitive_values(rows_response.json())
+
+
+def test_paste_rows_saves_client_unit_assignment(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_client_unit(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_unit_paste_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_unit_paste_admin")
+    create_response = client.post(
+        "/api/returns/intake/batches",
+        json={"client_id": client_row.id, "client_unit_id": unit.id, "source_type": "PASTE"},
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    batch_id = create_response.json()["data"]["batch_id"]
+
+    response = client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json=_rows_payload(client_unit_id=unit.id),
+        headers=headers,
+    )
+    rows_response = client.get(f"/api/returns/intake/batches/{batch_id}/rows", headers=headers)
+
+    assert response.status_code == 200
+    rows = rows_response.json()["data"]["items"]
+    assert rows[0]["client_unit_id"] == unit.id
+    assert rows[0]["team_assign_status"] == "ASSIGNED"
+
+
+def test_unit_assignment_pending_row_can_be_assigned(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_client_unit(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_unit_assign_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers = _login(client, "return_unit_assign_admin")
+    batch_id = _create_batch(client, db_session, "return_unit_assign_admin", client_row.id)
+    paste_response = client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json=_rows_payload(),
+        headers=headers,
+    )
+    assert paste_response.status_code == 200
+
+    pending_response = client.get("/api/returns/intake/unit-assignment-pending", headers=headers)
+    assert pending_response.status_code == 200
+    pending_rows = pending_response.json()["data"]["items"]
+    assert len(pending_rows) == 2
+    assert pending_rows[0]["team_assign_status"] == "TEAM_ASSIGN_PENDING"
+
+    assign_response = client.post(
+        f"/api/returns/intake/rows/{pending_rows[0]['row_id']}/assign-unit",
+        json={"client_unit_id": unit.id},
+        headers=headers,
+    )
+    assert assign_response.status_code == 200
+    assert assign_response.json()["data"]["client_unit_id"] == unit.id
+    assert assign_response.json()["data"]["team_assign_status"] == "ASSIGNED"
+
+    next_pending = client.get("/api/returns/intake/unit-assignment-pending", headers=headers)
+    assert next_pending.status_code == 200
+    assert len(next_pending.json()["data"]["items"]) == 1
 
 
 def test_validate_marks_matching_products_valid(client: TestClient, db_session: Session):

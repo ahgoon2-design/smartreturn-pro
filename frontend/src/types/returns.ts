@@ -12,12 +12,15 @@ export type ReturnLabelPrintStatus =
 export type ReturnExternalOutboundStatus = "NOT_REQUIRED" | "READY" | "SCANNED" | "CONFIRMED";
 export type ReturnHoldStatus = "HOLD_PENDING" | "CUSTOMER_CHECKING" | "READY_TO_REJUDGE" | "RESOLVED";
 export type ReturnDisposalStatus = "DISPOSAL_PENDING" | "DISPOSAL_CONFIRMED";
+export type ReturnTeamAssignStatus = "NOT_REQUIRED" | "TEAM_ASSIGN_PENDING" | "ASSIGNED";
 
 export interface ReturnIntakeBatchSummary {
   batch_id: number;
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
   source_type: string;
   source_name?: string | null;
   status: ReturnIntakeBatchStatus | string;
@@ -35,6 +38,7 @@ export type ReturnIntakeBatchListResponse = PageResponse<ReturnIntakeBatchSummar
 
 export interface ReturnIntakeBatchCreatePayload {
   client_id: number;
+  client_unit_id?: number | null;
   source_type: string;
   source_name?: string | null;
   memo?: string | null;
@@ -42,6 +46,7 @@ export interface ReturnIntakeBatchCreatePayload {
 
 export interface ReturnIntakePasteRow {
   row_no?: number;
+  client_unit_id?: number | null;
   order_no?: string | null;
   return_tracking_no?: string | null;
   original_tracking_no?: string | null;
@@ -55,6 +60,7 @@ export interface ReturnIntakePasteRow {
 
 export interface ReturnIntakePasteRowsPayload {
   rows: ReturnIntakePasteRow[];
+  client_unit_id?: number | null;
   replace_existing?: boolean;
 }
 
@@ -72,6 +78,9 @@ export interface ReturnIntakeRow {
   row_id: number;
   batch_id: number;
   client_id: number;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  team_assign_status?: ReturnTeamAssignStatus | string | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;
@@ -121,6 +130,21 @@ export interface ReturnIntakeRow {
 
 export type ReturnIntakeRowsResponse = PageResponse<ReturnIntakeRow>;
 
+export interface ReturnUnitAssignmentPendingRow extends ReturnIntakeRow {
+  client_code?: string | null;
+  client_name?: string | null;
+}
+
+export type ReturnUnitAssignmentPendingListResponse = PageResponse<ReturnUnitAssignmentPendingRow>;
+
+export interface AssignReturnUnitPayload {
+  client_unit_id: number;
+}
+
+export interface AssignReturnUnitResponse extends ReturnUnitAssignmentPendingRow {
+  message: string;
+}
+
 export interface ReturnIntakeValidateResponse {
   batch_id: number;
   status: string;
@@ -148,6 +172,9 @@ export interface ReturnProcessingTask {
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  team_assign_status?: ReturnTeamAssignStatus | string | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;
@@ -241,6 +268,9 @@ export interface ReturnClosingCandidate {
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  team_assign_status?: ReturnTeamAssignStatus | string | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;
@@ -296,6 +326,9 @@ export interface ReturnExternalOutboundCandidate {
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  team_assign_status?: ReturnTeamAssignStatus | string | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;
@@ -371,6 +404,9 @@ export interface ReturnExternalOutboundBatchRow {
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  team_assign_status?: ReturnTeamAssignStatus | string | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;
@@ -398,6 +434,9 @@ export interface ReturnHoldCandidate {
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  team_assign_status?: ReturnTeamAssignStatus | string | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;
@@ -450,6 +489,9 @@ export interface ReturnDisposalCandidate {
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  team_assign_status?: ReturnTeamAssignStatus | string | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;

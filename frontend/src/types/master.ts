@@ -61,6 +61,45 @@ export interface ClientWarehouseOption {
   default_usage_types?: string[];
 }
 
+export interface ClientUnit {
+  unit_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  unit_code: string;
+  unit_name: string;
+  unit_type?: string | null;
+  default_warehouse_id?: number | null;
+  default_warehouse_name?: string | null;
+  return_warehouse_id?: number | null;
+  return_warehouse_name?: string | null;
+  active_yn: boolean;
+  sort_order: number;
+  memo?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ClientUnitCreatePayload {
+  unit_code: string;
+  unit_name: string;
+  unit_type?: string | null;
+  default_warehouse_id?: number | null;
+  return_warehouse_id?: number | null;
+  sort_order?: number;
+  memo?: string | null;
+}
+
+export interface ClientUnitUpdatePayload {
+  unit_code?: string;
+  unit_name?: string;
+  unit_type?: string | null;
+  default_warehouse_id?: number | null;
+  return_warehouse_id?: number | null;
+  sort_order?: number;
+  memo?: string | null;
+}
+
 export interface WarehouseSummary {
   warehouse_id: number;
   warehouse_code: string;

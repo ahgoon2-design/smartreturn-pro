@@ -10,6 +10,8 @@ from app.core.permissions import require_password_change_completed, require_perm
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.master import (
+    ClientUnitCreateRequest,
+    ClientUnitUpdateRequest,
     ClientWarehouseSettingNestedCreateRequest,
     ClientWarehouseSettingCreateRequest,
     ClientWarehouseSettingUpdateRequest,
@@ -146,6 +148,87 @@ def enable_client_api(
         result_code="MASTER_CLIENT_ENABLED",
         message="고객사를 재활성화했습니다.",
         data=master_service.set_client_active(db, auth, client_id, True),
+    )
+
+
+@router.get("/clients/{client_id}/units", response_model=ApiResult)
+def list_client_units_api(
+    client_id: int,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_master_view(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_UNITS_FOUND",
+        message="고객사 운영단위/팀 목록을 조회했습니다.",
+        data=master_service.get_client_units_for_client(
+            db,
+            auth,
+            client_id,
+            include_inactive=include_inactive,
+        ),
+    )
+
+
+@router.post("/clients/{client_id}/units", response_model=ApiResult)
+def create_client_unit_api(
+    client_id: int,
+    request: ClientUnitCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_UNIT_CREATED",
+        message="고객사 운영단위/팀을 생성했습니다.",
+        data=master_service.create_client_unit_for_client(db, auth, client_id, request),
+    )
+
+
+@router.patch("/clients/{client_id}/units/{unit_id}", response_model=ApiResult)
+def update_client_unit_api(
+    client_id: int,
+    unit_id: int,
+    request: ClientUnitUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_UNIT_UPDATED",
+        message="고객사 운영단위/팀을 수정했습니다.",
+        data=master_service.update_client_unit_for_client(db, auth, client_id, unit_id, request),
+    )
+
+
+@router.post("/clients/{client_id}/units/{unit_id}/disable", response_model=ApiResult)
+def disable_client_unit_api(
+    client_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_UNIT_DISABLED",
+        message="고객사 운영단위/팀을 사용중지했습니다.",
+        data=master_service.set_client_unit_active_for_client(db, auth, client_id, unit_id, False),
+    )
+
+
+@router.post("/clients/{client_id}/units/{unit_id}/enable", response_model=ApiResult)
+def enable_client_unit_api(
+    client_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_client_manage(auth)
+    return api_success(
+        result_code="MASTER_CLIENT_UNIT_ENABLED",
+        message="고객사 운영단위/팀을 사용 처리했습니다.",
+        data=master_service.set_client_unit_active_for_client(db, auth, client_id, unit_id, True),
     )
 
 

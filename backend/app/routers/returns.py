@@ -10,6 +10,7 @@ from app.core.permissions import require_password_change_completed
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.returns import (
+    ReturnAssignUnitRequest,
     ReturnClosingConfirmRequest,
     ReturnDisposalConfirmRequest,
     ReturnExternalOutboundConfirmRequest,
@@ -135,6 +136,45 @@ def prepare_return_intake_batch_for_processing_api(
         result_code="RETURN_INTAKE_PREPARED_FOR_PROCESSING",
         message="반품처리 대기 대상을 생성했습니다.",
         data=return_intake_service.prepare_return_intake_batch_for_processing(db, auth, batch_id),
+    )
+
+
+@router.get("/intake/unit-assignment-pending", response_model=ApiResult)
+def list_return_unit_assignment_pending_api(
+    client_id: int | None = None,
+    keyword: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_UNIT_ASSIGNMENT_PENDING_FOUND",
+        message="팀배정대기 반품 목록을 조회했습니다.",
+        data=return_intake_service.list_return_unit_assignment_pending(
+            db,
+            auth,
+            client_id=client_id,
+            keyword=keyword,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
+@router.post("/intake/rows/{row_id}/assign-unit", response_model=ApiResult)
+def assign_return_intake_row_unit_api(
+    row_id: int,
+    request: ReturnAssignUnitRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_INTAKE_ROW_UNIT_ASSIGNED",
+        message="반품 row에 운영단위/팀을 배정했습니다.",
+        data=return_intake_service.assign_return_intake_row_unit(db, auth, row_id, request),
     )
 
 

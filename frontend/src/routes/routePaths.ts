@@ -7,6 +7,7 @@ export const ROUTE_PATHS = {
   masterProducts: "/master/products",
   masterCommonCodes: "/master/common-codes",
   returnIntake: "/returns/intake",
+  returnUnitAssignment: "/returns/unit-assignment",
   returnProcessing: "/returns/processing",
   returnClosing: "/returns/closing",
   returnExternalOutbound: "/returns/external-outbound",

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.master import (
     Client,
+    ClientUnit,
     ClientWarehouseSetting,
     CommonCode,
     CommonCodeGroup,
@@ -85,6 +86,101 @@ def set_client_active(db: Session, client: Client, active_yn: bool) -> Client:
     client.active_yn = active_yn
     db.flush()
     return client
+
+
+def list_client_units(
+    db: Session,
+    client_id: int,
+    active_only: bool = True,
+) -> list[tuple[ClientUnit, Client, Warehouse | None, Warehouse | None]]:
+    default_warehouse = aliased(Warehouse)
+    return_warehouse = aliased(Warehouse)
+    query = (
+        db.query(ClientUnit, Client, default_warehouse, return_warehouse)
+        .join(Client, Client.id == ClientUnit.client_id)
+        .outerjoin(default_warehouse, default_warehouse.id == ClientUnit.default_warehouse_id)
+        .outerjoin(return_warehouse, return_warehouse.id == ClientUnit.return_warehouse_id)
+        .filter(ClientUnit.client_id == client_id)
+    )
+    if active_only:
+        query = query.filter(ClientUnit.active_yn.is_(True), Client.active_yn.is_(True))
+    return query.order_by(ClientUnit.sort_order, ClientUnit.unit_name, ClientUnit.id).all()
+
+
+def list_client_units_only(db: Session, client_id: int, active_only: bool = True) -> list[ClientUnit]:
+    query = db.query(ClientUnit).filter(ClientUnit.client_id == client_id)
+    query = _active(query, ClientUnit, active_only)
+    return query.order_by(ClientUnit.sort_order, ClientUnit.unit_name, ClientUnit.id).all()
+
+
+def get_client_unit_by_id(db: Session, unit_id: int) -> ClientUnit | None:
+    return db.query(ClientUnit).filter(ClientUnit.id == unit_id).one_or_none()
+
+
+def get_client_unit_with_client(
+    db: Session,
+    unit_id: int,
+) -> tuple[ClientUnit, Client] | None:
+    return (
+        db.query(ClientUnit, Client)
+        .join(Client, Client.id == ClientUnit.client_id)
+        .filter(ClientUnit.id == unit_id)
+        .one_or_none()
+    )
+
+
+def find_client_unit_by_code(
+    db: Session,
+    *,
+    client_id: int,
+    unit_code: str,
+    exclude_unit_id: int | None = None,
+) -> ClientUnit | None:
+    query = db.query(ClientUnit).filter(ClientUnit.client_id == client_id, ClientUnit.unit_code == unit_code)
+    if exclude_unit_id is not None:
+        query = query.filter(ClientUnit.id != exclude_unit_id)
+    return query.one_or_none()
+
+
+def create_client_unit(
+    db: Session,
+    *,
+    client_id: int,
+    unit_code: str,
+    unit_name: str,
+    unit_type: str | None = None,
+    default_warehouse_id: int | None = None,
+    return_warehouse_id: int | None = None,
+    sort_order: int = 0,
+    memo: str | None = None,
+) -> ClientUnit:
+    unit = ClientUnit(
+        client_id=client_id,
+        unit_code=unit_code,
+        unit_name=unit_name,
+        unit_type=unit_type,
+        default_warehouse_id=default_warehouse_id,
+        return_warehouse_id=return_warehouse_id,
+        sort_order=sort_order,
+        memo=memo,
+        active_yn=True,
+    )
+    db.add(unit)
+    db.flush()
+    return unit
+
+
+def update_client_unit(db: Session, unit: ClientUnit, values: dict[str, object]) -> ClientUnit:
+    for field, value in values.items():
+        setattr(unit, field, value)
+    db.flush()
+    return unit
+
+
+def set_client_unit_active(db: Session, unit: ClientUnit, active_yn: bool) -> ClientUnit:
+    unit.active_yn = active_yn
+    db.flush()
+    return unit
 
 
 def list_warehouses(db: Session, active_only: bool = True) -> list[Warehouse]:

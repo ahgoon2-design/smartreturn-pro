@@ -12,6 +12,9 @@ from app.schemas.auth import AuthContext
 from app.schemas.master import (
     ClientCreateRequest,
     ClientDetail,
+    ClientUnitCreateRequest,
+    ClientUnitResponse,
+    ClientUnitUpdateRequest,
     ClientWarehouseSettingNestedCreateRequest,
     ClientWarehouseSettingCreateRequest,
     ClientWarehouseSettingResponse,
@@ -298,6 +301,39 @@ def _client_warehouse_setting_response(db: Session, auth: AuthContext, setting) 
     )
 
 
+def _client_unit_response(unit, client, default_warehouse=None, return_warehouse=None) -> dict:
+    return _dump(
+        ClientUnitResponse(
+            unit_id=unit.id,
+            client_id=client.id,
+            client_code=client.client_code,
+            client_name=client.client_name,
+            unit_code=unit.unit_code,
+            unit_name=unit.unit_name,
+            unit_type=unit.unit_type,
+            default_warehouse_id=unit.default_warehouse_id,
+            default_warehouse_name=default_warehouse.warehouse_name if default_warehouse else None,
+            return_warehouse_id=unit.return_warehouse_id,
+            return_warehouse_name=return_warehouse.warehouse_name if return_warehouse else None,
+            active_yn=unit.active_yn,
+            sort_order=unit.sort_order,
+            memo=unit.memo,
+            created_at=unit.created_at,
+            updated_at=unit.updated_at,
+        )
+    )
+
+
+def _client_unit_response_by_id(db: Session, unit_id: int) -> dict:
+    row = repo.get_client_unit_with_client(db, unit_id)
+    if row is None:
+        raise _business_error("MASTER_CLIENT_UNIT_NOT_FOUND", "고객사 운영단위를 찾을 수 없습니다.", 404)
+    unit, client = row
+    default_warehouse = repo.get_warehouse_by_id(db, unit.default_warehouse_id) if unit.default_warehouse_id else None
+    return_warehouse = repo.get_warehouse_by_id(db, unit.return_warehouse_id) if unit.return_warehouse_id else None
+    return _client_unit_response(unit, client, default_warehouse, return_warehouse)
+
+
 def _common_code_group_summary(group) -> dict:
     return _dump(
         CommonCodeGroupSummary(
@@ -410,6 +446,125 @@ def set_client_active(db: Session, auth: AuthContext, client_id: int, active_yn:
         repo.set_client_active(db, client, active_yn)
         db.commit()
         return _dump(_client_detail(client))
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _ensure_optional_active_warehouse(db: Session, warehouse_id: int | None):
+    if warehouse_id is None:
+        return None
+    return _ensure_active_warehouse(db, warehouse_id)
+
+
+def _ensure_client_unit_code_available(
+    db: Session,
+    *,
+    client_id: int,
+    unit_code: str,
+    exclude_unit_id: int | None = None,
+) -> None:
+    existing = repo.find_client_unit_by_code(db, client_id=client_id, unit_code=unit_code)
+    if existing is not None and existing.id != exclude_unit_id:
+        raise _business_error("MASTER_CLIENT_UNIT_CODE_DUPLICATED", "이미 등록된 고객사 운영단위 코드입니다.")
+
+
+def get_client_units_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    *,
+    include_inactive: bool = False,
+) -> list[dict]:
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    client = repo.get_client_by_id(db, effective_client_id)
+    if client is None:
+        raise _business_error("MASTER_CLIENT_NOT_FOUND", "고객사를 찾을 수 없습니다.", 404)
+    active_only = not include_inactive or auth.is_client_user
+    rows = repo.list_client_units(db, client_id=effective_client_id, active_only=active_only)
+    return [_client_unit_response(unit, client, default_warehouse, return_warehouse) for unit, client, default_warehouse, return_warehouse in rows]
+
+
+def create_client_unit_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    request: ClientUnitCreateRequest,
+) -> dict:
+    _require_client_manage(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    _ensure_active_client(db, effective_client_id)
+    _ensure_client_unit_code_available(db, client_id=effective_client_id, unit_code=request.unit_code)
+    _ensure_optional_active_warehouse(db, request.default_warehouse_id)
+    _ensure_optional_active_warehouse(db, request.return_warehouse_id)
+    try:
+        unit = repo.create_client_unit(db, client_id=effective_client_id, **request.model_dump())
+        db.commit()
+        return _client_unit_response_by_id(db, unit.id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_client_unit_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    unit_id: int,
+    request: ClientUnitUpdateRequest,
+) -> dict:
+    _require_client_manage(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    row = repo.get_client_unit_with_client(db, unit_id)
+    if row is None:
+        raise _business_error("MASTER_CLIENT_UNIT_NOT_FOUND", "고객사 운영단위를 찾을 수 없습니다.", 404)
+    unit, _client = row
+    if unit.client_id != effective_client_id:
+        raise ClientScopeDeniedError("다른 고객사의 운영단위는 수정할 수 없습니다.")
+    values = request.model_dump(exclude_unset=True)
+    if "unit_code" in values and values["unit_code"] is not None:
+        _ensure_client_unit_code_available(
+            db,
+            client_id=effective_client_id,
+            unit_code=str(values["unit_code"]),
+            exclude_unit_id=unit.id,
+        )
+    if "default_warehouse_id" in values:
+        _ensure_optional_active_warehouse(db, values["default_warehouse_id"])
+    if "return_warehouse_id" in values:
+        _ensure_optional_active_warehouse(db, values["return_warehouse_id"])
+    try:
+        repo.update_client_unit(db, unit, values)
+        db.commit()
+        return _client_unit_response_by_id(db, unit.id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_client_unit_active_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    unit_id: int,
+    active_yn: bool,
+) -> dict:
+    _require_client_manage(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    row = repo.get_client_unit_with_client(db, unit_id)
+    if row is None:
+        raise _business_error("MASTER_CLIENT_UNIT_NOT_FOUND", "고객사 운영단위를 찾을 수 없습니다.", 404)
+    unit, _client = row
+    if unit.client_id != effective_client_id:
+        raise ClientScopeDeniedError("다른 고객사의 운영단위는 변경할 수 없습니다.")
+    if active_yn:
+        _ensure_active_client(db, effective_client_id)
+        _ensure_optional_active_warehouse(db, unit.default_warehouse_id)
+        _ensure_optional_active_warehouse(db, unit.return_warehouse_id)
+    try:
+        repo.set_client_unit_active(db, unit, active_yn)
+        db.commit()
+        return _client_unit_response_by_id(db, unit.id)
     except Exception:
         db.rollback()
         raise

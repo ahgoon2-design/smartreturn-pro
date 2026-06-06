@@ -10,6 +10,7 @@ import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { ROUTE_PATHS } from "../../routes/routePaths";
 import type { ClientDetail } from "../../types/master";
+import { ClientUnitsSection } from "./ClientUnitsSection";
 import { ClientWarehouseSettingsSection } from "./ClientWarehouseSettingsSection";
 
 export function ClientDetailPage() {
@@ -125,6 +126,7 @@ export function ClientDetailPage() {
           </Card>
 
           <ClientWarehouseSettingsSection clientId={getClientId(client)} />
+          <ClientUnitsSection clientId={getClientId(client)} />
         </>
       ) : null}
     </SmartPage>
