@@ -1,5 +1,5 @@
 import { CheckCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Modal, Select, Space, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Modal, Select, Space, Typography, message } from "antd";
 import type { Key } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
@@ -39,6 +39,7 @@ export function ReturnClosingPage() {
   const [confirming, setConfirming] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [confirmSummary, setConfirmSummary] = useState<ReturnClosingConfirmResponse | null>(null);
+  const [includeRoutedJudgements, setIncludeRoutedJudgements] = useState(false);
 
   useEffect(() => {
     void initialize();
@@ -171,7 +172,7 @@ export function ReturnClosingPage() {
       const result = await confirmReturnClosing({
         row_ids: selectedRowKeys.map((key) => Number(key)),
         client_id: selectedClientId,
-        confirm_good_only: true,
+        confirm_good_only: !includeRoutedJudgements,
       });
       setConfirmSummary(result);
       message.success("반품 일마감을 처리했습니다.");
@@ -225,6 +226,9 @@ export function ReturnClosingPage() {
           onChange={setJudgementStatus}
           options={JUDGEMENT_OPTIONS}
         />
+        <Checkbox checked={includeRoutedJudgements} onChange={(event) => setIncludeRoutedJudgements(event.target.checked)}>
+          라우팅 설정된 GOOD 외 판정도 재고반영
+        </Checkbox>
         <Button icon={<SearchOutlined />} onClick={() => void loadCandidates()} loading={loading}>
           후보 조회
         </Button>

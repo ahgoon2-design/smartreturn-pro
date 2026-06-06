@@ -13,6 +13,7 @@ from app.models.master import (
     CommonCodeGroup,
     Product,
     ProductBarcode,
+    ReturnJudgmentWarehouseRoute,
     Warehouse,
 )
 
@@ -183,6 +184,137 @@ def set_client_unit_active(db: Session, unit: ClientUnit, active_yn: bool) -> Cl
     return unit
 
 
+def list_return_judgment_warehouse_routes(
+    db: Session,
+    client_id: int,
+    active_only: bool = True,
+) -> list[tuple[ReturnJudgmentWarehouseRoute, Client, ClientUnit | None, Warehouse]]:
+    query = (
+        db.query(ReturnJudgmentWarehouseRoute, Client, ClientUnit, Warehouse)
+        .join(Client, Client.id == ReturnJudgmentWarehouseRoute.client_id)
+        .outerjoin(ClientUnit, ClientUnit.id == ReturnJudgmentWarehouseRoute.client_unit_id)
+        .join(Warehouse, Warehouse.id == ReturnJudgmentWarehouseRoute.warehouse_id)
+        .filter(ReturnJudgmentWarehouseRoute.client_id == client_id)
+    )
+    if active_only:
+        query = query.filter(
+            ReturnJudgmentWarehouseRoute.active_yn.is_(True),
+            Client.active_yn.is_(True),
+            Warehouse.active_yn.is_(True),
+        )
+    return query.order_by(
+        ReturnJudgmentWarehouseRoute.judgment_code,
+        ReturnJudgmentWarehouseRoute.client_unit_id.is_(None),
+        ReturnJudgmentWarehouseRoute.sort_order,
+        ReturnJudgmentWarehouseRoute.id,
+    ).all()
+
+
+def get_return_judgment_warehouse_route_by_id(
+    db: Session,
+    route_id: int,
+) -> ReturnJudgmentWarehouseRoute | None:
+    return db.query(ReturnJudgmentWarehouseRoute).filter(ReturnJudgmentWarehouseRoute.id == route_id).one_or_none()
+
+
+def get_return_judgment_warehouse_route_with_client(
+    db: Session,
+    route_id: int,
+) -> tuple[ReturnJudgmentWarehouseRoute, Client] | None:
+    return (
+        db.query(ReturnJudgmentWarehouseRoute, Client)
+        .join(Client, Client.id == ReturnJudgmentWarehouseRoute.client_id)
+        .filter(ReturnJudgmentWarehouseRoute.id == route_id)
+        .one_or_none()
+    )
+
+
+def find_active_return_judgment_warehouse_route(
+    db: Session,
+    *,
+    client_id: int,
+    judgment_code: str,
+    client_unit_id: int | None = None,
+) -> ReturnJudgmentWarehouseRoute | None:
+    query = db.query(ReturnJudgmentWarehouseRoute).filter(
+        ReturnJudgmentWarehouseRoute.client_id == client_id,
+        ReturnJudgmentWarehouseRoute.judgment_code == judgment_code,
+        ReturnJudgmentWarehouseRoute.active_yn.is_(True),
+    )
+    if client_unit_id is None:
+        query = query.filter(ReturnJudgmentWarehouseRoute.client_unit_id.is_(None))
+    else:
+        query = query.filter(ReturnJudgmentWarehouseRoute.client_unit_id == client_unit_id)
+    return query.order_by(ReturnJudgmentWarehouseRoute.sort_order, ReturnJudgmentWarehouseRoute.id).first()
+
+
+def find_duplicate_return_judgment_warehouse_route(
+    db: Session,
+    *,
+    client_id: int,
+    judgment_code: str,
+    client_unit_id: int | None,
+    exclude_route_id: int | None = None,
+) -> ReturnJudgmentWarehouseRoute | None:
+    query = db.query(ReturnJudgmentWarehouseRoute).filter(
+        ReturnJudgmentWarehouseRoute.client_id == client_id,
+        ReturnJudgmentWarehouseRoute.judgment_code == judgment_code,
+        ReturnJudgmentWarehouseRoute.active_yn.is_(True),
+    )
+    if client_unit_id is None:
+        query = query.filter(ReturnJudgmentWarehouseRoute.client_unit_id.is_(None))
+    else:
+        query = query.filter(ReturnJudgmentWarehouseRoute.client_unit_id == client_unit_id)
+    if exclude_route_id is not None:
+        query = query.filter(ReturnJudgmentWarehouseRoute.id != exclude_route_id)
+    return query.first()
+
+
+def create_return_judgment_warehouse_route(
+    db: Session,
+    *,
+    client_id: int,
+    client_unit_id: int | None,
+    judgment_code: str,
+    warehouse_id: int,
+    sort_order: int = 0,
+    memo: str | None = None,
+) -> ReturnJudgmentWarehouseRoute:
+    route = ReturnJudgmentWarehouseRoute(
+        client_id=client_id,
+        client_unit_id=client_unit_id,
+        judgment_code=judgment_code,
+        warehouse_id=warehouse_id,
+        sort_order=sort_order,
+        memo=memo,
+        active_yn=True,
+    )
+    db.add(route)
+    db.flush()
+    return route
+
+
+def update_return_judgment_warehouse_route(
+    db: Session,
+    route: ReturnJudgmentWarehouseRoute,
+    values: dict[str, object],
+) -> ReturnJudgmentWarehouseRoute:
+    for field, value in values.items():
+        setattr(route, field, value)
+    db.flush()
+    return route
+
+
+def set_return_judgment_warehouse_route_active(
+    db: Session,
+    route: ReturnJudgmentWarehouseRoute,
+    active_yn: bool,
+) -> ReturnJudgmentWarehouseRoute:
+    route.active_yn = active_yn
+    db.flush()
+    return route
+
+
 def list_warehouses(db: Session, active_only: bool = True) -> list[Warehouse]:
     query = db.query(Warehouse)
     query = _active(query, Warehouse, active_only)
@@ -282,6 +414,23 @@ def find_client_warehouse_setting(
     if exclude_setting_id is not None:
         query = query.filter(ClientWarehouseSetting.id != exclude_setting_id)
     return query.one_or_none()
+
+
+def find_active_client_warehouse_for_warehouse(
+    db: Session,
+    *,
+    client_id: int,
+    warehouse_id: int,
+) -> ClientWarehouseSetting | None:
+    return (
+        db.query(ClientWarehouseSetting)
+        .filter(
+            ClientWarehouseSetting.client_id == client_id,
+            ClientWarehouseSetting.warehouse_id == warehouse_id,
+            ClientWarehouseSetting.active_yn.is_(True),
+        )
+        .first()
+    )
 
 
 def create_client_warehouse_setting(

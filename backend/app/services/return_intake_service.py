@@ -89,6 +89,9 @@ TEAM_ASSIGN_ASSIGNED = "ASSIGNED"
 
 JUDGEMENT_GOOD = "GOOD"
 JUDGEMENT_REFURB = "REFURB"
+JUDGEMENT_REFURB_A = "REFURB_A"
+JUDGEMENT_REFURB_B = "REFURB_B"
+JUDGEMENT_REFURB_C = "REFURB_C"
 JUDGEMENT_SAMPLE = "SAMPLE"
 JUDGEMENT_MANUFACTURER_RETURN = "MANUFACTURER_RETURN"
 JUDGEMENT_DISPOSAL = "DISPOSAL"
@@ -97,6 +100,9 @@ JUDGEMENT_HOLD = "HOLD"
 ALLOWED_JUDGEMENT_STATUSES = {
     JUDGEMENT_GOOD,
     JUDGEMENT_REFURB,
+    JUDGEMENT_REFURB_A,
+    JUDGEMENT_REFURB_B,
+    JUDGEMENT_REFURB_C,
     JUDGEMENT_SAMPLE,
     JUDGEMENT_MANUFACTURER_RETURN,
     JUDGEMENT_DISPOSAL,
@@ -104,6 +110,9 @@ ALLOWED_JUDGEMENT_STATUSES = {
 }
 LABEL_REQUIRED_JUDGEMENT_STATUSES = {
     JUDGEMENT_REFURB,
+    JUDGEMENT_REFURB_A,
+    JUDGEMENT_REFURB_B,
+    JUDGEMENT_REFURB_C,
     JUDGEMENT_SAMPLE,
     JUDGEMENT_MANUFACTURER_RETURN,
     JUDGEMENT_HOLD,
@@ -112,14 +121,28 @@ LABEL_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
 LABEL_STATUS_LOCAL_AGENT_NOT_CONNECTED = "LOCAL_AGENT_NOT_CONNECTED"
 
 RETURN_CLOSING_EVENT_TYPE_GOOD_IN = "RETURN_GOOD_IN"
+RETURN_CLOSING_EVENT_TYPE_JUDGEMENT_IN = "RETURN_JUDGEMENT_IN"
 RETURN_CLOSING_SOURCE_TYPE = "RETURN_CLOSING"
 RETURN_CLOSING_STOCK_STATUS_GOOD = "GOOD"
 RETURN_GOOD_WAREHOUSE_USAGE_PRIORITY = ("RETURN_GOOD", "INBOUND")
 RETURN_CLOSING_ACTION_INVENTORY_TARGET = "INVENTORY_REFLECT_TARGET"
 RETURN_CLOSING_ACTION_FOLLOWUP_TARGET = "FOLLOWUP_TARGET"
+INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES = {
+    JUDGEMENT_GOOD,
+    JUDGEMENT_REFURB,
+    JUDGEMENT_REFURB_A,
+    JUDGEMENT_REFURB_B,
+    JUDGEMENT_REFURB_C,
+    JUDGEMENT_SAMPLE,
+    JUDGEMENT_MANUFACTURER_RETURN,
+    JUDGEMENT_DISPOSAL,
+}
 
 EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES = {
     JUDGEMENT_REFURB,
+    JUDGEMENT_REFURB_A,
+    JUDGEMENT_REFURB_B,
+    JUDGEMENT_REFURB_C,
     JUDGEMENT_SAMPLE,
     JUDGEMENT_MANUFACTURER_RETURN,
 }
@@ -320,6 +343,10 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         inventory_reflected_yn=row.inventory_reflected_yn,
         inventory_reflected_at=row.inventory_reflected_at,
         inventory_event_id=row.inventory_event_id,
+        recommended_warehouse_id=row.recommended_warehouse_id,
+        final_warehouse_id=row.final_warehouse_id,
+        warehouse_route_id=row.warehouse_route_id,
+        warehouse_override_reason=row.warehouse_override_reason,
         external_outbound_required=row.external_outbound_required,
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
@@ -375,6 +402,10 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         inventory_reflected_yn=row.inventory_reflected_yn,
         inventory_reflected_at=row.inventory_reflected_at,
         inventory_event_id=row.inventory_event_id,
+        recommended_warehouse_id=row.recommended_warehouse_id,
+        final_warehouse_id=row.final_warehouse_id,
+        warehouse_route_id=row.warehouse_route_id,
+        warehouse_override_reason=row.warehouse_override_reason,
         external_outbound_required=row.external_outbound_required,
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
@@ -396,7 +427,7 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
 
 
 def _closing_candidate_response(row: ReturnIntakeRow, client) -> dict:
-    is_good = row.judgement_status == JUDGEMENT_GOOD
+    is_reflectable = row.judgement_status in INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES
     return ReturnClosingCandidateResponse(
         row_id=row.id,
         task_id=row.id,
@@ -421,13 +452,21 @@ def _closing_candidate_response(row: ReturnIntakeRow, client) -> dict:
         inventory_reflected_yn=row.inventory_reflected_yn,
         inventory_reflected_at=row.inventory_reflected_at,
         inventory_event_id=row.inventory_event_id,
+        recommended_warehouse_id=row.recommended_warehouse_id,
+        final_warehouse_id=row.final_warehouse_id,
+        warehouse_route_id=row.warehouse_route_id,
+        warehouse_override_reason=row.warehouse_override_reason,
         judged_at=row.judged_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
         closing_action=(
-            RETURN_CLOSING_ACTION_INVENTORY_TARGET if is_good else RETURN_CLOSING_ACTION_FOLLOWUP_TARGET
+            RETURN_CLOSING_ACTION_INVENTORY_TARGET if is_reflectable else RETURN_CLOSING_ACTION_FOLLOWUP_TARGET
         ),
-        message=("GOOD/양품 정상재고 반영 대상입니다." if is_good else "정상재고 반영 없이 후속 처리 대상으로 남깁니다."),
+        message=(
+            "판정별 창고 라우팅 기준 재고반영 대상입니다."
+            if is_reflectable
+            else "확정 판정이 아니므로 후속 처리 대상입니다."
+        ),
     ).model_dump()
 
 
@@ -636,6 +675,10 @@ def _return_history_response(row: ReturnIntakeRow, client, attachment_count: int
         inventory_reflected_yn=row.inventory_reflected_yn,
         inventory_reflected_at=row.inventory_reflected_at,
         inventory_event_id=row.inventory_event_id,
+        recommended_warehouse_id=row.recommended_warehouse_id,
+        final_warehouse_id=row.final_warehouse_id,
+        warehouse_route_id=row.warehouse_route_id,
+        warehouse_override_reason=row.warehouse_override_reason,
         external_outbound_status=row.external_outbound_status,
         external_outbound_at=row.external_outbound_at,
         external_outbound_batch_id=row.external_outbound_batch_id,
@@ -1101,6 +1144,7 @@ def judge_return_processing_task(
         )
 
     _apply_return_judgement(
+        db,
         row,
         auth,
         judgement_status=judgement_status,
@@ -1361,7 +1405,7 @@ def confirm_return_closing(
                     )
                 )
                 continue
-            if row.judgement_status != JUDGEMENT_GOOD:
+            if request.confirm_good_only and row.judgement_status != JUDGEMENT_GOOD:
                 followup_rows += 1
                 row_results.append(
                     ReturnClosingRowResult(
@@ -1369,6 +1413,17 @@ def confirm_return_closing(
                         judgement_status=row.judgement_status,
                         result="FOLLOWUP",
                         message="정상재고 반영 대상이 아니므로 후속 처리 대상으로 남깁니다.",
+                    )
+                )
+                continue
+            if row.judgement_status not in INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES:
+                followup_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result="FOLLOWUP",
+                        message="재고반영 대상 판정이 아니므로 후속 처리 대상으로 남깁니다.",
                     )
                 )
                 continue
@@ -1397,7 +1452,7 @@ def confirm_return_closing(
                 )
                 continue
 
-            warehouse = _resolve_return_good_warehouse(db, row.client_id)
+            warehouse = _resolve_final_return_warehouse(db, row)
             if warehouse is None:
                 failed_rows += 1
                 row_results.append(
@@ -1410,7 +1465,13 @@ def confirm_return_closing(
                 )
                 continue
 
-            idempotency_key = f"return-closing:{row.id}:good"
+            stock_status = row.judgement_status or RETURN_CLOSING_STOCK_STATUS_GOOD
+            event_type = (
+                RETURN_CLOSING_EVENT_TYPE_GOOD_IN
+                if row.judgement_status == JUDGEMENT_GOOD
+                else RETURN_CLOSING_EVENT_TYPE_JUDGEMENT_IN
+            )
+            idempotency_key = f"return-closing:{row.id}:{stock_status.lower()}"
             existing_event = inventory_repository.find_event_by_idempotency_key(db, idempotency_key)
             if existing_event is not None:
                 row.inventory_reflected_yn = True
@@ -1424,6 +1485,7 @@ def confirm_return_closing(
                         result="SKIPPED",
                         message="이미 생성된 재고 이벤트가 있어 중복 반영하지 않았습니다.",
                         inventory_event_id=existing_event.id,
+                        warehouse_id=existing_event.warehouse_id,
                     )
                 )
                 continue
@@ -1435,8 +1497,8 @@ def confirm_return_closing(
                 location_id=None,
                 product_id=product.id,
                 product_code=product.product_code,
-                stock_status=RETURN_CLOSING_STOCK_STATUS_GOOD,
-                event_type=RETURN_CLOSING_EVENT_TYPE_GOOD_IN,
+                stock_status=stock_status,
+                event_type=event_type,
                 qty_delta=row.qty,
                 source_type=RETURN_CLOSING_SOURCE_TYPE,
                 source_id=row.id,
@@ -1449,6 +1511,10 @@ def confirm_return_closing(
                     "return_intake_row_id": row.id,
                     "batch_id": row.batch_id,
                     "judgement_status": row.judgement_status,
+                    "client_unit_id": row.client_unit_id,
+                    "warehouse_route_id": row.warehouse_route_id,
+                    "recommended_warehouse_id": row.recommended_warehouse_id,
+                    "final_warehouse_id": row.final_warehouse_id,
                     "return_management_no": row.return_management_no,
                     "return_label_no": row.return_label_no,
                 },
@@ -1460,7 +1526,7 @@ def confirm_return_closing(
                 warehouse_id=warehouse.id,
                 location_id=None,
                 product_id=product.id,
-                stock_status=RETURN_CLOSING_STOCK_STATUS_GOOD,
+                stock_status=stock_status,
                 qty_delta=row.qty,
             )
             row.inventory_reflected_yn = True
@@ -1475,6 +1541,7 @@ def confirm_return_closing(
                     result="REFLECTED",
                     message="정상재고에 반영했습니다.",
                     inventory_event_id=event.id,
+                    warehouse_id=warehouse.id,
                 )
             )
 
@@ -1908,6 +1975,7 @@ def rejudge_return_hold_task(
         row.hold_response_memo = response_memo
 
     _apply_return_judgement(
+        db,
         row,
         auth,
         judgement_status=next_judgement_status,
@@ -2057,11 +2125,80 @@ def _resolve_return_good_warehouse(db: Session, client_id: int):
     return None
 
 
+def _resolve_return_warehouse_route(db: Session, row: ReturnIntakeRow, judgement_status: str | None = None):
+    safe_judgement_status = (judgement_status or row.judgement_status or "").strip().upper()
+    if not safe_judgement_status:
+        return None, None
+
+    route = None
+    if row.client_unit_id is not None:
+        route = master_repository.find_active_return_judgment_warehouse_route(
+            db,
+            client_id=row.client_id,
+            judgment_code=safe_judgement_status,
+            client_unit_id=row.client_unit_id,
+        )
+    if route is None:
+        route = master_repository.find_active_return_judgment_warehouse_route(
+            db,
+            client_id=row.client_id,
+            judgment_code=safe_judgement_status,
+            client_unit_id=None,
+        )
+    if route is None:
+        return None, None
+
+    warehouse = master_repository.get_warehouse_by_id(db, route.warehouse_id)
+    if warehouse is None or not warehouse.active_yn:
+        return route, None
+    if master_repository.find_active_client_warehouse_for_warehouse(
+        db,
+        client_id=row.client_id,
+        warehouse_id=warehouse.id,
+    ) is None:
+        return route, None
+    return route, warehouse
+
+
+def _apply_recommended_return_warehouse(db: Session, row: ReturnIntakeRow, judgement_status: str | None = None) -> None:
+    route, warehouse = _resolve_return_warehouse_route(db, row, judgement_status)
+    row.warehouse_route_id = route.id if route is not None else None
+    row.recommended_warehouse_id = warehouse.id if warehouse is not None else None
+
+
+def _resolve_final_return_warehouse(db: Session, row: ReturnIntakeRow):
+    if row.final_warehouse_id is not None:
+        warehouse = master_repository.get_warehouse_by_id(db, row.final_warehouse_id)
+        if (
+            warehouse is not None
+            and warehouse.active_yn
+            and master_repository.find_active_client_warehouse_for_warehouse(
+                db,
+                client_id=row.client_id,
+                warehouse_id=warehouse.id,
+            )
+            is not None
+        ):
+            return warehouse
+        return None
+
+    route, warehouse = _resolve_return_warehouse_route(db, row)
+    row.warehouse_route_id = route.id if route is not None else row.warehouse_route_id
+    row.recommended_warehouse_id = warehouse.id if warehouse is not None else row.recommended_warehouse_id
+    if warehouse is not None:
+        return warehouse
+
+    if row.judgement_status == JUDGEMENT_GOOD:
+        return _resolve_return_good_warehouse(db, row.client_id)
+    return None
+
+
 def _is_label_print_required(judgement_status: str, print_label: bool | None) -> bool:
     return judgement_status in LABEL_REQUIRED_JUDGEMENT_STATUSES or bool(print_label)
 
 
 def _apply_return_judgement(
+    db: Session,
     row: ReturnIntakeRow,
     auth: AuthContext,
     *,
@@ -2082,6 +2219,7 @@ def _apply_return_judgement(
     now = datetime.now(timezone.utc)
     row.judgement_status = judgement_status
     row.judgement_memo = _safe_text(judgement_memo)
+    _apply_recommended_return_warehouse(db, row, judgement_status)
     row.label_print_required = label_print_required
     row.judged_at = now
     row.judged_by = auth.user_id

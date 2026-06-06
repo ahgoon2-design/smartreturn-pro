@@ -142,6 +142,10 @@ class ReturnIntakeRowResponse(BaseModel):
     inventory_reflected_yn: bool = False
     inventory_reflected_at: datetime | None = None
     inventory_event_id: int | None = None
+    recommended_warehouse_id: int | None = None
+    final_warehouse_id: int | None = None
+    warehouse_route_id: int | None = None
+    warehouse_override_reason: str | None = None
     external_outbound_required: bool = False
     external_outbound_status: str = "NOT_REQUIRED"
     external_outbound_at: datetime | None = None
@@ -232,6 +236,10 @@ class ReturnProcessingTaskResponse(BaseModel):
     inventory_reflected_yn: bool = False
     inventory_reflected_at: datetime | None = None
     inventory_event_id: int | None = None
+    recommended_warehouse_id: int | None = None
+    final_warehouse_id: int | None = None
+    warehouse_route_id: int | None = None
+    warehouse_override_reason: str | None = None
     external_outbound_required: bool = False
     external_outbound_status: str = "NOT_REQUIRED"
     external_outbound_at: datetime | None = None
@@ -330,6 +338,10 @@ class ReturnClosingCandidateResponse(BaseModel):
     inventory_reflected_yn: bool = False
     inventory_reflected_at: datetime | None = None
     inventory_event_id: int | None = None
+    recommended_warehouse_id: int | None = None
+    final_warehouse_id: int | None = None
+    warehouse_route_id: int | None = None
+    warehouse_override_reason: str | None = None
     judged_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -356,6 +368,7 @@ class ReturnClosingRowResult(BaseModel):
     result: str
     message: str
     inventory_event_id: int | None = None
+    warehouse_id: int | None = None
 
 
 class ReturnClosingConfirmResponse(BaseModel):
@@ -665,6 +678,10 @@ class ReturnHistoryItemResponse(BaseModel):
     inventory_reflected_yn: bool = False
     inventory_reflected_at: datetime | None = None
     inventory_event_id: int | None = None
+    recommended_warehouse_id: int | None = None
+    final_warehouse_id: int | None = None
+    warehouse_route_id: int | None = None
+    warehouse_override_reason: str | None = None
     external_outbound_status: str | None = None
     external_outbound_at: datetime | None = None
     external_outbound_batch_id: int | None = None

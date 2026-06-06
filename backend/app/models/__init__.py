@@ -10,6 +10,7 @@ from app.models.master import (
     Location,
     Product,
     ProductBarcode,
+    ReturnJudgmentWarehouseRoute,
     Warehouse,
 )
 from app.models.returns import ReturnExternalOutboundBatch, ReturnIntakeBatch, ReturnIntakeRow
@@ -31,6 +32,7 @@ __all__ = [
     "Permission",
     "Product",
     "ProductBarcode",
+    "ReturnJudgmentWarehouseRoute",
     "ReturnExternalOutboundBatch",
     "ReturnIntakeBatch",
     "ReturnIntakeRow",

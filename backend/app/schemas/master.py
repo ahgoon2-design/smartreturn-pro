@@ -246,6 +246,74 @@ class ClientUnitUpdateRequest(BaseModel):
         return value or None
 
 
+class ReturnJudgmentWarehouseRouteResponse(BaseModel):
+    route_id: int
+    client_id: int
+    client_code: str | None = None
+    client_name: str | None = None
+    client_unit_id: int | None = None
+    client_unit_name: str | None = None
+    judgment_code: str
+    warehouse_id: int
+    warehouse_code: str | None = None
+    warehouse_name: str | None = None
+    active_yn: bool
+    sort_order: int
+    memo: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ReturnJudgmentWarehouseRouteCreateRequest(BaseModel):
+    client_unit_id: int | None = None
+    judgment_code: str
+    warehouse_id: int
+    sort_order: int = 0
+    memo: str | None = None
+
+    @field_validator("judgment_code")
+    @classmethod
+    def _required_judgment_code(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("memo")
+    @classmethod
+    def _optional_memo(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ReturnJudgmentWarehouseRouteUpdateRequest(BaseModel):
+    client_unit_id: int | None = None
+    judgment_code: str | None = None
+    warehouse_id: int | None = None
+    sort_order: int | None = None
+    memo: str | None = None
+
+    @field_validator("judgment_code")
+    @classmethod
+    def _optional_judgment_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("memo")
+    @classmethod
+    def _optional_memo(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
 class ClientWarehouseSettingCreateRequest(BaseModel):
     client_id: int
     warehouse_id: int

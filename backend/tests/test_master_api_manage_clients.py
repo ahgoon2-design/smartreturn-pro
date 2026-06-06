@@ -10,7 +10,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.master import Client, ClientUnit, Warehouse
+from app.models.master import Client, ClientUnit, ClientWarehouseSetting, ReturnJudgmentWarehouseRoute, Warehouse
 
 
 TEST_PASSWORD = "DummyPass123!"
@@ -27,6 +27,8 @@ def db_session() -> Generator[Session, None, None]:
         Client.__table__,
         Warehouse.__table__,
         ClientUnit.__table__,
+        ClientWarehouseSetting.__table__,
+        ReturnJudgmentWarehouseRoute.__table__,
         Role.__table__,
         Permission.__table__,
         User.__table__,
@@ -114,6 +116,23 @@ def _login(client: TestClient, login_id: str) -> dict[str, str]:
 
 def _manage_permissions() -> list[str]:
     return ["MASTER_MANAGE", "CLIENT_MANAGE"]
+
+
+def _warehouse_manage_permissions() -> list[str]:
+    return ["MASTER_VIEW", "MASTER_MANAGE", "WAREHOUSE_MANAGE"]
+
+
+def _create_client_warehouse_setting(db: Session, client_id: int, warehouse_id: int) -> ClientWarehouseSetting:
+    setting = ClientWarehouseSetting(
+        client_id=client_id,
+        warehouse_id=warehouse_id,
+        usage_type="RETURN_GOOD",
+        is_default=True,
+        active_yn=True,
+    )
+    db.add(setting)
+    db.commit()
+    return setting
 
 
 def _client_payload(**overrides) -> dict:
@@ -270,6 +289,114 @@ def test_client_unit_blocks_duplicate_code_in_same_client(client: TestClient, db
 
     assert response.status_code == 400
     assert response.json()["result_code"] == "MASTER_CLIENT_UNIT_CODE_DUPLICATED"
+
+
+def test_return_warehouse_route_crud_flow(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_ROUTE")
+    warehouse = Warehouse(warehouse_code="ROUTE-WH", warehouse_name="Route Warehouse", active_yn=True)
+    db_session.add(warehouse)
+    db_session.flush()
+    _create_client_warehouse_setting(db_session, client_id=client_row.id, warehouse_id=warehouse.id)
+    unit = ClientUnit(client_id=client_row.id, unit_code="ONLINE", unit_name="온라인팀", active_yn=True)
+    db_session.add(unit)
+    db_session.commit()
+    _create_user(
+        db_session,
+        login_id="route_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_warehouse_manage_permissions(),
+    )
+    headers = _login(client, "route_admin")
+
+    create_response = client.post(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes",
+        json={
+            "client_unit_id": unit.id,
+            "judgment_code": "GOOD",
+            "warehouse_id": warehouse.id,
+            "sort_order": 1,
+            "memo": "route",
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    route_id = create_response.json()["data"]["route_id"]
+
+    list_response = client.get(f"/api/master/clients/{client_row.id}/return-warehouse-routes", headers=headers)
+    update_response = client.patch(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes/{route_id}",
+        json={"sort_order": 5, "memo": "updated"},
+        headers=headers,
+    )
+    disable_response = client.post(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes/{route_id}/disable",
+        headers=headers,
+    )
+    enable_response = client.post(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes/{route_id}/enable",
+        headers=headers,
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json()["data"][0]["route_id"] == route_id
+    assert update_response.status_code == 200
+    assert update_response.json()["data"]["sort_order"] == 5
+    assert disable_response.status_code == 200
+    assert disable_response.json()["data"]["active_yn"] is False
+    assert enable_response.status_code == 200
+    assert enable_response.json()["data"]["active_yn"] is True
+    _assert_no_sensitive_values(enable_response.json())
+
+
+def test_return_warehouse_route_blocks_duplicate_and_foreign_scope(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_ROUTE_SCOPE")
+    other_client = _create_client(db_session, code="CLIENT_ROUTE_OTHER")
+    warehouse = Warehouse(warehouse_code="ROUTE-SCOPE-WH", warehouse_name="Route Scope Warehouse", active_yn=True)
+    other_warehouse = Warehouse(warehouse_code="OTHER-WH", warehouse_name="Other Warehouse", active_yn=True)
+    db_session.add_all([warehouse, other_warehouse])
+    db_session.flush()
+    _create_client_warehouse_setting(db_session, client_id=client_row.id, warehouse_id=warehouse.id)
+    _create_client_warehouse_setting(db_session, client_id=other_client.id, warehouse_id=other_warehouse.id)
+    unit = ClientUnit(client_id=client_row.id, unit_code="ONLINE", unit_name="온라인팀", active_yn=True)
+    other_unit = ClientUnit(client_id=other_client.id, unit_code="OTHER", unit_name="다른팀", active_yn=True)
+    db_session.add_all([unit, other_unit])
+    db_session.commit()
+    _create_user(
+        db_session,
+        login_id="route_scope_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_warehouse_manage_permissions(),
+    )
+    headers = _login(client, "route_scope_admin")
+
+    ok_response = client.post(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes",
+        json={"client_unit_id": unit.id, "judgment_code": "GOOD", "warehouse_id": warehouse.id},
+        headers=headers,
+    )
+    duplicate_response = client.post(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes",
+        json={"client_unit_id": unit.id, "judgment_code": "GOOD", "warehouse_id": warehouse.id},
+        headers=headers,
+    )
+    foreign_unit_response = client.post(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes",
+        json={"client_unit_id": other_unit.id, "judgment_code": "SAMPLE", "warehouse_id": warehouse.id},
+        headers=headers,
+    )
+    foreign_warehouse_response = client.post(
+        f"/api/master/clients/{client_row.id}/return-warehouse-routes",
+        json={"client_unit_id": unit.id, "judgment_code": "SAMPLE", "warehouse_id": other_warehouse.id},
+        headers=headers,
+    )
+
+    assert ok_response.status_code == 200
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json()["result_code"] == "MASTER_RETURN_WAREHOUSE_ROUTE_DUPLICATED"
+    assert foreign_unit_response.status_code == 404
+    assert foreign_unit_response.json()["result_code"] == "MASTER_RETURN_WAREHOUSE_ROUTE_UNIT_INVALID"
+    assert foreign_warehouse_response.status_code == 400
+    assert foreign_warehouse_response.json()["result_code"] == "MASTER_RETURN_WAREHOUSE_ROUTE_WAREHOUSE_UNLINKED"
 
 
 def test_client_update_does_not_change_client_code(client: TestClient, db_session: Session):

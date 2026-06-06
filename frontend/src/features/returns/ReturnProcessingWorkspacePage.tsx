@@ -48,6 +48,9 @@ const NO_TARGET_PRODUCT_FEEDBACK: ProductCheckFeedback = {
 const JUDGEMENT_OPTIONS: Array<{ value: ReturnJudgementStatus; label: string }> = [
   { value: "GOOD", label: "양품" },
   { value: "REFURB", label: "리퍼" },
+  { value: "REFURB_A", label: "리퍼A" },
+  { value: "REFURB_B", label: "리퍼B" },
+  { value: "REFURB_C", label: "리퍼C" },
   { value: "SAMPLE", label: "샘플" },
   { value: "MANUFACTURER_RETURN", label: "제조사반품" },
   { value: "DISPOSAL", label: "폐기" },
@@ -56,6 +59,9 @@ const JUDGEMENT_OPTIONS: Array<{ value: ReturnJudgementStatus; label: string }> 
 
 const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
   "REFURB",
+  "REFURB_A",
+  "REFURB_B",
+  "REFURB_C",
   "SAMPLE",
   "MANUFACTURER_RETURN",
   "HOLD",
@@ -816,6 +822,9 @@ function toJudgementLabel(value: unknown) {
   const labels: Record<string, string> = {
     GOOD: "양품",
     REFURB: "리퍼",
+    REFURB_A: "리퍼A",
+    REFURB_B: "리퍼B",
+    REFURB_C: "리퍼C",
     SAMPLE: "샘플",
     MANUFACTURER_RETURN: "제조사반품",
     DISPOSAL: "폐기",

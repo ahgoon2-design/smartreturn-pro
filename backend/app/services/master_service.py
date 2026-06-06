@@ -36,6 +36,9 @@ from app.schemas.master import (
     ProductDetail,
     ProductSummary,
     ProductUpdateRequest,
+    ReturnJudgmentWarehouseRouteCreateRequest,
+    ReturnJudgmentWarehouseRouteResponse,
+    ReturnJudgmentWarehouseRouteUpdateRequest,
     WarehouseCreateRequest,
     WarehouseOptionResponse,
     WarehouseSummary,
@@ -65,6 +68,18 @@ CLIENT_WAREHOUSE_USAGE_TYPE_LABELS = {
     "RETURN_MANUFACTURER": "제조사반품",
     "SAMPLE": "샘플",
     "STORAGE": "보관",
+}
+
+RETURN_WAREHOUSE_ROUTE_JUDGMENT_CODES = {
+    "GOOD",
+    "REFURB",
+    "REFURB_A",
+    "REFURB_B",
+    "REFURB_C",
+    "SAMPLE",
+    "MANUFACTURER_RETURN",
+    "DISPOSAL",
+    "HOLD",
 }
 
 
@@ -334,6 +349,38 @@ def _client_unit_response_by_id(db: Session, unit_id: int) -> dict:
     return _client_unit_response(unit, client, default_warehouse, return_warehouse)
 
 
+def _return_warehouse_route_response(route, client, client_unit=None, warehouse=None) -> dict:
+    return _dump(
+        ReturnJudgmentWarehouseRouteResponse(
+            route_id=route.id,
+            client_id=route.client_id,
+            client_code=client.client_code if client else None,
+            client_name=client.client_name if client else None,
+            client_unit_id=route.client_unit_id,
+            client_unit_name=client_unit.unit_name if client_unit else None,
+            judgment_code=route.judgment_code,
+            warehouse_id=route.warehouse_id,
+            warehouse_code=warehouse.warehouse_code if warehouse else None,
+            warehouse_name=warehouse.warehouse_name if warehouse else None,
+            active_yn=route.active_yn,
+            sort_order=route.sort_order,
+            memo=route.memo,
+            created_at=route.created_at,
+            updated_at=route.updated_at,
+        )
+    )
+
+
+def _return_warehouse_route_response_by_id(db: Session, route_id: int) -> dict:
+    row = repo.get_return_judgment_warehouse_route_with_client(db, route_id)
+    if row is None:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_NOT_FOUND", "판정별 창고 라우팅을 찾을 수 없습니다.", 404)
+    route, client = row
+    unit = repo.get_client_unit_by_id(db, route.client_unit_id) if route.client_unit_id else None
+    warehouse = repo.get_warehouse_by_id(db, route.warehouse_id)
+    return _return_warehouse_route_response(route, client, unit, warehouse)
+
+
 def _common_code_group_summary(group) -> dict:
     return _dump(
         CommonCodeGroupSummary(
@@ -457,6 +504,51 @@ def _ensure_optional_active_warehouse(db: Session, warehouse_id: int | None):
     return _ensure_active_warehouse(db, warehouse_id)
 
 
+def _ensure_return_warehouse_route_judgment_code(judgment_code: str) -> str:
+    judgment_code = judgment_code.strip().upper()
+    if judgment_code not in RETURN_WAREHOUSE_ROUTE_JUDGMENT_CODES:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_JUDGMENT_INVALID", "지원하지 않는 판정 코드입니다.")
+    return judgment_code
+
+
+def _ensure_route_client_unit(db: Session, client_id: int, client_unit_id: int | None):
+    if client_unit_id is None:
+        return None
+    unit = repo.get_client_unit_by_id(db, client_unit_id)
+    if unit is None or unit.client_id != client_id:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_UNIT_INVALID", "고객사 운영단위를 확인할 수 없습니다.", 404)
+    if not unit.active_yn:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_UNIT_INACTIVE", "사용중지된 운영단위는 라우팅에 연결할 수 없습니다.")
+    return unit
+
+
+def _ensure_route_warehouse(db: Session, client_id: int, warehouse_id: int):
+    warehouse = _ensure_active_warehouse(db, warehouse_id)
+    setting = repo.find_active_client_warehouse_for_warehouse(db, client_id=client_id, warehouse_id=warehouse_id)
+    if setting is None:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_WAREHOUSE_UNLINKED", "고객사에 연결된 활성 창고만 라우팅에 사용할 수 있습니다.")
+    return warehouse
+
+
+def _ensure_return_warehouse_route_available(
+    db: Session,
+    *,
+    client_id: int,
+    client_unit_id: int | None,
+    judgment_code: str,
+    exclude_route_id: int | None = None,
+) -> None:
+    existing = repo.find_duplicate_return_judgment_warehouse_route(
+        db,
+        client_id=client_id,
+        client_unit_id=client_unit_id,
+        judgment_code=judgment_code,
+        exclude_route_id=exclude_route_id,
+    )
+    if existing is not None:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_DUPLICATED", "이미 활성화된 판정별 창고 라우팅이 있습니다.")
+
+
 def _ensure_client_unit_code_available(
     db: Session,
     *,
@@ -565,6 +657,136 @@ def set_client_unit_active_for_client(
         repo.set_client_unit_active(db, unit, active_yn)
         db.commit()
         return _client_unit_response_by_id(db, unit.id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def get_return_warehouse_routes_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    *,
+    include_inactive: bool = False,
+) -> list[dict]:
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    client = repo.get_client_by_id(db, effective_client_id)
+    if client is None:
+        raise _business_error("MASTER_CLIENT_NOT_FOUND", "고객사를 찾을 수 없습니다.", 404)
+    active_only = not include_inactive or auth.is_client_user
+    rows = repo.list_return_judgment_warehouse_routes(db, client_id=effective_client_id, active_only=active_only)
+    return [_return_warehouse_route_response(route, client, unit, warehouse) for route, client, unit, warehouse in rows]
+
+
+def create_return_warehouse_route_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    request: ReturnJudgmentWarehouseRouteCreateRequest,
+) -> dict:
+    _require_warehouse_manage(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    _ensure_active_client(db, effective_client_id)
+    judgment_code = _ensure_return_warehouse_route_judgment_code(request.judgment_code)
+    unit = _ensure_route_client_unit(db, effective_client_id, request.client_unit_id)
+    _ensure_route_warehouse(db, effective_client_id, request.warehouse_id)
+    _ensure_return_warehouse_route_available(
+        db,
+        client_id=effective_client_id,
+        client_unit_id=unit.id if unit else None,
+        judgment_code=judgment_code,
+    )
+    try:
+        route = repo.create_return_judgment_warehouse_route(
+            db,
+            client_id=effective_client_id,
+            client_unit_id=unit.id if unit else None,
+            judgment_code=judgment_code,
+            warehouse_id=request.warehouse_id,
+            sort_order=request.sort_order,
+            memo=request.memo,
+        )
+        db.commit()
+        return _return_warehouse_route_response_by_id(db, route.id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_return_warehouse_route_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    route_id: int,
+    request: ReturnJudgmentWarehouseRouteUpdateRequest,
+) -> dict:
+    _require_warehouse_manage(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    row = repo.get_return_judgment_warehouse_route_with_client(db, route_id)
+    if row is None:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_NOT_FOUND", "판정별 창고 라우팅을 찾을 수 없습니다.", 404)
+    route, _client = row
+    if route.client_id != effective_client_id:
+        raise ClientScopeDeniedError("다른 고객사의 판정별 창고 라우팅은 수정할 수 없습니다.")
+    values = request.model_dump(exclude_unset=True)
+    next_judgment_code = route.judgment_code
+    if "judgment_code" in values and values["judgment_code"] is not None:
+        next_judgment_code = _ensure_return_warehouse_route_judgment_code(str(values["judgment_code"]))
+        values["judgment_code"] = next_judgment_code
+    next_client_unit_id = route.client_unit_id
+    if "client_unit_id" in values:
+        unit = _ensure_route_client_unit(db, effective_client_id, values["client_unit_id"])
+        next_client_unit_id = unit.id if unit else None
+        values["client_unit_id"] = next_client_unit_id
+    if "warehouse_id" in values and values["warehouse_id"] is not None:
+        _ensure_route_warehouse(db, effective_client_id, int(values["warehouse_id"]))
+    if route.active_yn:
+        _ensure_return_warehouse_route_available(
+            db,
+            client_id=effective_client_id,
+            client_unit_id=next_client_unit_id,
+            judgment_code=next_judgment_code,
+            exclude_route_id=route.id,
+        )
+    try:
+        repo.update_return_judgment_warehouse_route(db, route, values)
+        db.commit()
+        return _return_warehouse_route_response_by_id(db, route.id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def set_return_warehouse_route_active_for_client(
+    db: Session,
+    auth: AuthContext,
+    client_id: int,
+    route_id: int,
+    active_yn: bool,
+) -> dict:
+    _require_warehouse_manage(auth)
+    effective_client_id = resolve_effective_client_id(auth, client_id)
+    row = repo.get_return_judgment_warehouse_route_with_client(db, route_id)
+    if row is None:
+        raise _business_error("MASTER_RETURN_WAREHOUSE_ROUTE_NOT_FOUND", "판정별 창고 라우팅을 찾을 수 없습니다.", 404)
+    route, _client = row
+    if route.client_id != effective_client_id:
+        raise ClientScopeDeniedError("다른 고객사의 판정별 창고 라우팅은 변경할 수 없습니다.")
+    if active_yn:
+        _ensure_active_client(db, effective_client_id)
+        _ensure_route_client_unit(db, effective_client_id, route.client_unit_id)
+        _ensure_route_warehouse(db, effective_client_id, route.warehouse_id)
+        _ensure_return_warehouse_route_available(
+            db,
+            client_id=effective_client_id,
+            client_unit_id=route.client_unit_id,
+            judgment_code=route.judgment_code,
+            exclude_route_id=route.id,
+        )
+    try:
+        repo.set_return_judgment_warehouse_route_active(db, route, active_yn)
+        db.commit()
+        return _return_warehouse_route_response_by_id(db, route.id)
     except Exception:
         db.rollback()
         raise

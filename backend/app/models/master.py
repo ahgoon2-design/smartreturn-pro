@@ -110,6 +110,38 @@ class ClientUnit(Base):
     )
 
 
+class ReturnJudgmentWarehouseRoute(Base):
+    __tablename__ = "return_judgment_warehouse_routes"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_id",
+            "client_unit_id",
+            "judgment_code",
+            "warehouse_id",
+            name="uq_return_judgment_warehouse_route",
+        ),
+        Index("ix_return_judgment_routes_client_judgment", "client_id", "judgment_code", "active_yn"),
+        Index("ix_return_judgment_routes_client_unit", "client_id", "client_unit_id", "active_yn"),
+        Index("ix_return_judgment_routes_warehouse", "warehouse_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
+    judgment_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouses.id"), nullable=False)
+    active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    memo: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class Location(Base):
     __tablename__ = "locations"
     __table_args__ = (

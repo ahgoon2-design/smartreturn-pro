@@ -100,6 +100,40 @@ export interface ClientUnitUpdatePayload {
   memo?: string | null;
 }
 
+export interface ReturnWarehouseRoute {
+  route_id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  client_unit_id?: number | null;
+  client_unit_name?: string | null;
+  judgment_code: string;
+  warehouse_id: number;
+  warehouse_code?: string | null;
+  warehouse_name?: string | null;
+  active_yn: boolean;
+  sort_order: number;
+  memo?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ReturnWarehouseRouteCreatePayload {
+  client_unit_id?: number | null;
+  judgment_code: string;
+  warehouse_id: number;
+  sort_order?: number;
+  memo?: string | null;
+}
+
+export interface ReturnWarehouseRouteUpdatePayload {
+  client_unit_id?: number | null;
+  judgment_code?: string;
+  warehouse_id?: number;
+  sort_order?: number;
+  memo?: string | null;
+}
+
 export interface WarehouseSummary {
   warehouse_id: number;
   warehouse_code: string;

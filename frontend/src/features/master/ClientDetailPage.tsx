@@ -10,6 +10,7 @@ import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { ROUTE_PATHS } from "../../routes/routePaths";
 import type { ClientDetail } from "../../types/master";
+import { ClientReturnWarehouseRoutesSection } from "./ClientReturnWarehouseRoutesSection";
 import { ClientUnitsSection } from "./ClientUnitsSection";
 import { ClientWarehouseSettingsSection } from "./ClientWarehouseSettingsSection";
 
@@ -127,6 +128,7 @@ export function ClientDetailPage() {
 
           <ClientWarehouseSettingsSection clientId={getClientId(client)} />
           <ClientUnitsSection clientId={getClientId(client)} />
+          <ClientReturnWarehouseRoutesSection clientId={getClientId(client)} />
         </>
       ) : null}
     </SmartPage>

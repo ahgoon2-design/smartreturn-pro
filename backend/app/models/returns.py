@@ -44,6 +44,9 @@ class ReturnIntakeRow(Base):
         Index("ix_return_intake_rows_batch_validation", "batch_id", "validation_status"),
         Index("ix_return_intake_rows_client_status", "client_id", "status"),
         Index("ix_return_intake_rows_client_unit", "client_id", "client_unit_id"),
+        Index("ix_return_intake_rows_recommended_warehouse", "recommended_warehouse_id"),
+        Index("ix_return_intake_rows_final_warehouse", "final_warehouse_id"),
+        Index("ix_return_intake_rows_warehouse_route", "warehouse_route_id"),
         Index("ix_return_intake_rows_team_assignment", "client_id", "team_assign_status"),
         Index("ix_return_intake_rows_client_judgement", "client_id", "judgement_status"),
         Index(
@@ -107,6 +110,10 @@ class ReturnIntakeRow(Base):
     judgement_memo: Mapped[str | None] = mapped_column(Text)
     judged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     judged_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    recommended_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
+    final_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
+    warehouse_route_id: Mapped[int | None] = mapped_column(ForeignKey("return_judgment_warehouse_routes.id"))
+    warehouse_override_reason: Mapped[str | None] = mapped_column(Text)
     return_management_no: Mapped[str | None] = mapped_column(String(80))
     return_label_no: Mapped[str | None] = mapped_column(String(80))
     label_print_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

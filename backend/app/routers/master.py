@@ -25,6 +25,8 @@ from app.schemas.master import (
     ProductBarcodeUpdateRequest,
     ProductCreateRequest,
     ProductUpdateRequest,
+    ReturnJudgmentWarehouseRouteCreateRequest,
+    ReturnJudgmentWarehouseRouteUpdateRequest,
     WarehouseCreateRequest,
     WarehouseUpdateRequest,
 )
@@ -229,6 +231,87 @@ def enable_client_unit_api(
         result_code="MASTER_CLIENT_UNIT_ENABLED",
         message="고객사 운영단위/팀을 사용 처리했습니다.",
         data=master_service.set_client_unit_active_for_client(db, auth, client_id, unit_id, True),
+    )
+
+
+@router.get("/clients/{client_id}/return-warehouse-routes", response_model=ApiResult)
+def list_return_warehouse_routes_api(
+    client_id: int,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_master_view(auth)
+    return api_success(
+        result_code="MASTER_RETURN_WAREHOUSE_ROUTES_FOUND",
+        message="반품 판정별 창고 라우팅 목록을 조회했습니다.",
+        data=master_service.get_return_warehouse_routes_for_client(
+            db,
+            auth,
+            client_id,
+            include_inactive=include_inactive,
+        ),
+    )
+
+
+@router.post("/clients/{client_id}/return-warehouse-routes", response_model=ApiResult)
+def create_return_warehouse_route_api(
+    client_id: int,
+    request: ReturnJudgmentWarehouseRouteCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_RETURN_WAREHOUSE_ROUTE_CREATED",
+        message="반품 판정별 창고 라우팅을 생성했습니다.",
+        data=master_service.create_return_warehouse_route_for_client(db, auth, client_id, request),
+    )
+
+
+@router.patch("/clients/{client_id}/return-warehouse-routes/{route_id}", response_model=ApiResult)
+def update_return_warehouse_route_api(
+    client_id: int,
+    route_id: int,
+    request: ReturnJudgmentWarehouseRouteUpdateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_RETURN_WAREHOUSE_ROUTE_UPDATED",
+        message="반품 판정별 창고 라우팅을 수정했습니다.",
+        data=master_service.update_return_warehouse_route_for_client(db, auth, client_id, route_id, request),
+    )
+
+
+@router.post("/clients/{client_id}/return-warehouse-routes/{route_id}/disable", response_model=ApiResult)
+def disable_return_warehouse_route_api(
+    client_id: int,
+    route_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_RETURN_WAREHOUSE_ROUTE_DISABLED",
+        message="반품 판정별 창고 라우팅을 사용중지했습니다.",
+        data=master_service.set_return_warehouse_route_active_for_client(db, auth, client_id, route_id, False),
+    )
+
+
+@router.post("/clients/{client_id}/return-warehouse-routes/{route_id}/enable", response_model=ApiResult)
+def enable_return_warehouse_route_api(
+    client_id: int,
+    route_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_warehouse_manage(auth)
+    return api_success(
+        result_code="MASTER_RETURN_WAREHOUSE_ROUTE_ENABLED",
+        message="반품 판정별 창고 라우팅을 사용 처리했습니다.",
+        data=master_service.set_return_warehouse_route_active_for_client(db, auth, client_id, route_id, True),
     )
 
 

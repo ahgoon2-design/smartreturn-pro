@@ -20,6 +20,9 @@ import type {
   ProductBarcodeUpdatePayload,
   ProductDetail,
   ProductSummary,
+  ReturnWarehouseRoute,
+  ReturnWarehouseRouteCreatePayload,
+  ReturnWarehouseRouteUpdatePayload,
   WarehouseSummary,
 } from "../types/master";
 import type { PageResponse } from "../types/api";
@@ -70,6 +73,37 @@ export async function disableClientUnit(clientId: number, unitId: number) {
 
 export async function enableClientUnit(clientId: number, unitId: number) {
   return apiRequest<ClientUnit>(`/api/master/clients/${clientId}/units/${unitId}/enable`, {
+    method: "POST",
+  });
+}
+
+export async function listReturnWarehouseRoutes(clientId: number, options: { includeInactive?: boolean } = {}) {
+  const query = options.includeInactive ? "?include_inactive=true" : "";
+  return apiRequest<ReturnWarehouseRoute[]>(`/api/master/clients/${clientId}/return-warehouse-routes${query}`);
+}
+
+export async function createReturnWarehouseRoute(clientId: number, payload: ReturnWarehouseRouteCreatePayload) {
+  return apiRequest<ReturnWarehouseRoute>(`/api/master/clients/${clientId}/return-warehouse-routes`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateReturnWarehouseRoute(clientId: number, routeId: number, payload: ReturnWarehouseRouteUpdatePayload) {
+  return apiRequest<ReturnWarehouseRoute>(`/api/master/clients/${clientId}/return-warehouse-routes/${routeId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function disableReturnWarehouseRoute(clientId: number, routeId: number) {
+  return apiRequest<ReturnWarehouseRoute>(`/api/master/clients/${clientId}/return-warehouse-routes/${routeId}/disable`, {
+    method: "POST",
+  });
+}
+
+export async function enableReturnWarehouseRoute(clientId: number, routeId: number) {
+  return apiRequest<ReturnWarehouseRoute>(`/api/master/clients/${clientId}/return-warehouse-routes/${routeId}/enable`, {
     method: "POST",
   });
 }

@@ -16,7 +16,15 @@ from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.inventory import CurrentInventory, InventoryEvent
-from app.models.master import Client, ClientUnit, ClientWarehouseSetting, Product, ProductBarcode, Warehouse
+from app.models.master import (
+    Client,
+    ClientUnit,
+    ClientWarehouseSetting,
+    Product,
+    ProductBarcode,
+    ReturnJudgmentWarehouseRoute,
+    Warehouse,
+)
 from app.models.returns import (
     ReturnExternalOutboundBatch,
     ReturnIntakeBatch,
@@ -45,6 +53,7 @@ def db_session() -> Generator[Session, None, None]:
         Client.__table__,
         Warehouse.__table__,
         ClientUnit.__table__,
+        ReturnJudgmentWarehouseRoute.__table__,
         Product.__table__,
         ProductBarcode.__table__,
         Role.__table__,
@@ -205,6 +214,27 @@ def _create_warehouse_setting(
     )
     db.commit()
     return warehouse
+
+
+def _create_return_warehouse_route(
+    db: Session,
+    *,
+    client_id: int,
+    warehouse_id: int,
+    judgement_code: str = "GOOD",
+    client_unit_id: int | None = None,
+) -> ReturnJudgmentWarehouseRoute:
+    route = ReturnJudgmentWarehouseRoute(
+        client_id=client_id,
+        client_unit_id=client_unit_id,
+        judgment_code=judgement_code,
+        warehouse_id=warehouse_id,
+        active_yn=True,
+        sort_order=1,
+    )
+    db.add(route)
+    db.commit()
+    return route
 
 
 def _create_client_unit(db: Session, client_id: int, code: str = "ONLINE", active_yn: bool = True) -> ClientUnit:
@@ -1122,6 +1152,109 @@ def test_return_closing_confirm_good_creates_event_and_current_inventory(client:
     assert retry_data["reflected_rows"] == 0
     assert retry_data["skipped_rows"] == 1
     assert db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).count() == 1
+
+
+def test_return_closing_uses_team_route_before_client_route(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_ROUTE_CLOSE")
+    product = _create_product(db_session, client_row.id)
+    default_warehouse = _create_warehouse_setting(db_session, client_id=client_row.id, usage_type="RETURN_GOOD")
+    team_warehouse = _create_warehouse_setting(db_session, client_id=client_row.id, usage_type="RETURN_GOOD_TEAM")
+    unit = _create_client_unit(db_session, client_row.id, code="ONLINE")
+    _create_return_warehouse_route(db_session, client_id=client_row.id, warehouse_id=default_warehouse.id, judgement_code="GOOD")
+    team_route = _create_return_warehouse_route(
+        db_session,
+        client_id=client_row.id,
+        client_unit_id=unit.id,
+        warehouse_id=team_warehouse.id,
+        judgement_code="GOOD",
+    )
+    _create_user(
+        db_session,
+        login_id="return_closing_team_route_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_closing_team_route_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "client_unit_id": unit.id,
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-TEAM-ROUTE",
+                    "return_tracking_no": "RTN-TEAM-ROUTE",
+                    "product_code": product.product_code,
+                    "barcode": product.barcode,
+                    "qty": 1,
+                }
+            ],
+        },
+    )
+
+    judge_response = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
+    event = db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).one()
+    current = (
+        db_session.query(CurrentInventory)
+        .filter(
+            CurrentInventory.client_id == client_row.id,
+            CurrentInventory.warehouse_id == team_warehouse.id,
+            CurrentInventory.product_id == product.id,
+            CurrentInventory.stock_status == "GOOD",
+        )
+        .one()
+    )
+
+    assert judge_response["recommended_warehouse_id"] == team_warehouse.id
+    assert judge_response["warehouse_route_id"] == team_route.id
+    assert response.status_code == 200
+    assert response.json()["data"]["reflected_rows"] == 1
+    assert response.json()["data"]["row_results"][0]["warehouse_id"] == team_warehouse.id
+    assert row.warehouse_route_id == team_route.id
+    assert event.warehouse_id == team_warehouse.id
+    assert current.qty_on_hand == 1
+
+
+def test_return_closing_fails_without_route_when_no_default_warehouse(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_NO_ROUTE")
+    product = _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_closing_no_route_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_closing_no_route_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-NO-ROUTE",
+                    "return_tracking_no": "RTN-NO-ROUTE",
+                    "product_code": product.product_code,
+                    "barcode": product.barcode,
+                    "qty": 1,
+                }
+            ]
+        },
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+
+    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["reflected_rows"] == 0
+    assert data["failed_rows"] == 1
+    assert db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).count() == 0
 
 
 def test_current_inventory_requires_auth(client: TestClient):

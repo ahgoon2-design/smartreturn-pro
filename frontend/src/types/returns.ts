@@ -2,7 +2,16 @@ import type { PageResponse } from "./api";
 
 export type ReturnIntakeBatchStatus = "DRAFT" | "RECEIVED" | "VALIDATED" | "HAS_ERRORS" | "READY_FOR_PROCESSING";
 export type ReturnIntakeRowValidationStatus = "NOT_VALIDATED" | "VALID" | "WARNING" | "INVALID";
-export type ReturnJudgementStatus = "GOOD" | "REFURB" | "SAMPLE" | "MANUFACTURER_RETURN" | "DISPOSAL" | "HOLD";
+export type ReturnJudgementStatus =
+  | "GOOD"
+  | "REFURB"
+  | "REFURB_A"
+  | "REFURB_B"
+  | "REFURB_C"
+  | "SAMPLE"
+  | "MANUFACTURER_RETURN"
+  | "DISPOSAL"
+  | "HOLD";
 export type ReturnLabelPrintStatus =
   | "NOT_REQUIRED"
   | "PRINT_PENDING"
@@ -109,6 +118,10 @@ export interface ReturnIntakeRow {
   inventory_reflected_yn?: boolean;
   inventory_reflected_at?: string | null;
   inventory_event_id?: number | null;
+  recommended_warehouse_id?: number | null;
+  final_warehouse_id?: number | null;
+  warehouse_route_id?: number | null;
+  warehouse_override_reason?: string | null;
   external_outbound_required?: boolean;
   external_outbound_status?: ReturnExternalOutboundStatus | string;
   external_outbound_at?: string | null;
@@ -199,6 +212,10 @@ export interface ReturnProcessingTask {
   inventory_reflected_yn?: boolean;
   inventory_reflected_at?: string | null;
   inventory_event_id?: number | null;
+  recommended_warehouse_id?: number | null;
+  final_warehouse_id?: number | null;
+  warehouse_route_id?: number | null;
+  warehouse_override_reason?: string | null;
   external_outbound_required?: boolean;
   external_outbound_status?: ReturnExternalOutboundStatus | string;
   external_outbound_at?: string | null;
@@ -285,6 +302,10 @@ export interface ReturnClosingCandidate {
   inventory_reflected_yn: boolean;
   inventory_reflected_at?: string | null;
   inventory_event_id?: number | null;
+  recommended_warehouse_id?: number | null;
+  final_warehouse_id?: number | null;
+  warehouse_route_id?: number | null;
+  warehouse_override_reason?: string | null;
   judged_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -306,6 +327,7 @@ export interface ReturnClosingRowResult {
   result: string;
   message: string;
   inventory_event_id?: number | null;
+  warehouse_id?: number | null;
 }
 
 export interface ReturnClosingConfirmResponse {
@@ -568,6 +590,10 @@ export interface ReturnHistoryItem {
   inventory_reflected_yn?: boolean;
   inventory_reflected_at?: string | null;
   inventory_event_id?: number | null;
+  recommended_warehouse_id?: number | null;
+  final_warehouse_id?: number | null;
+  warehouse_route_id?: number | null;
+  warehouse_override_reason?: string | null;
   external_outbound_status?: ReturnExternalOutboundStatus | string | null;
   external_outbound_at?: string | null;
   external_outbound_batch_id?: number | null;
