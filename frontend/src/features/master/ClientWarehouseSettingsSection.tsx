@@ -1,5 +1,5 @@
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Checkbox, Form, Modal, Select, Space, Switch, Typography, message } from "antd";
+import { Alert, Button, Checkbox, Form, Select, Space, Switch, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
@@ -12,6 +12,8 @@ import {
   updateClientWarehouseSetting,
 } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
+import { SmartDataSection } from "../../components/common/SmartDataSection";
+import { SmartModalShell } from "../../components/common/SmartModalShell";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid";
@@ -265,8 +267,7 @@ export function ClientWarehouseSettingsSection({ clientId }: { clientId: number 
   }
 
   return (
-    <Card
-      className="smart-work-panel"
+    <SmartDataSection
       title="창고/처리장소 설정"
       extra={
         <Space>
@@ -309,7 +310,7 @@ export function ClientWarehouseSettingsSection({ clientId }: { clientId: number 
         getRowClassName={(record) => (!record.active_yn ? "smart-grid-row--inactive" : record.is_default ? "smart-grid-row--success" : "")}
       />
 
-      <Modal
+      <SmartModalShell
         title={editingSetting ? "창고 설정 수정" : "창고 설정 추가"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
@@ -350,8 +351,8 @@ export function ClientWarehouseSettingsSection({ clientId }: { clientId: number 
             />
           )}
         </Form>
-      </Modal>
-    </Card>
+      </SmartModalShell>
+    </SmartDataSection>
   );
 }
 

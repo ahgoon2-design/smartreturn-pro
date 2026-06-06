@@ -14,6 +14,7 @@ import {
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
+import { SmartScanPanel } from "../../components/common/SmartScanPanel";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.types";
@@ -480,7 +481,7 @@ export function ReturnProcessingWorkspacePage() {
         }
       />
 
-      <section className="return-processing-scan-panel" aria-label="운송장 스캔">
+      <SmartScanPanel className="return-processing-scan-panel" ariaLabel="운송장 스캔">
         <div className="return-processing-scan-main">
           <Typography.Text strong>운송장번호 스캔</Typography.Text>
           <Input
@@ -506,7 +507,7 @@ export function ReturnProcessingWorkspacePage() {
           message={scanFeedback.message}
           description={scanFeedback.description}
         />
-      </section>
+      </SmartScanPanel>
 
       <SmartErrorNotice message={errorMessage} />
 

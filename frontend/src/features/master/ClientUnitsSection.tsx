@@ -1,5 +1,5 @@
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, message } from "antd";
+import { Button, Form, Input, InputNumber, Select, Space, Switch, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
@@ -11,6 +11,8 @@ import {
   updateClientUnit,
 } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
+import { SmartDataSection } from "../../components/common/SmartDataSection";
+import { SmartModalShell } from "../../components/common/SmartModalShell";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid";
@@ -199,8 +201,7 @@ export function ClientUnitsSection({ clientId }: { clientId: number }) {
   }
 
   return (
-    <Card
-      className="smart-work-panel"
+    <SmartDataSection
       title="운영단위/팀"
       extra={
         <Space>
@@ -225,7 +226,7 @@ export function ClientUnitsSection({ clientId }: { clientId: number }) {
         maxHeight={300}
       />
 
-      <Modal
+      <SmartModalShell
         title={editingUnit ? "운영단위/팀 수정" : "운영단위/팀 추가"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
@@ -258,8 +259,8 @@ export function ClientUnitsSection({ clientId }: { clientId: number }) {
             <Input.TextArea rows={3} maxLength={500} />
           </Form.Item>
         </Form>
-      </Modal>
-    </Card>
+      </SmartModalShell>
+    </SmartDataSection>
   );
 }
 

@@ -17,9 +17,9 @@
 | `document-style.md` | 문서 작성, closeout, 인덱스 수정 시 | 한글 문서 작성 기준과 closeout 문서 구성을 정리한다. |
 | `backend-api.md` | FastAPI backend API 작업 시 | ApiResult, 인증/권한, client scope, 테스트 기준을 정리한다. |
 | `frontend-app.md` | React/Vite/TypeScript frontend 작업 시 | 앱 구조, 라우팅, 인증 context, API client 기준을 정리한다. |
-| `ui-design-system.md` | 화면 디자인, 공통 UI 작업 시 | Ant Design 기반 공통 UI와 화면 밀도 기준을 정리한다. |
-| `ui-grid.md` | grid/table/preview 화면 작업 시 | SmartDataGrid wrapper, row 순서, 상태 표시 기준을 정리한다. |
-| `worker-screen-ux.md` | 스캔/검수/작업자 화면 작업 시 | 정확도, 속도, 자동화 중심의 작업자 UX 기준을 정리한다. |
+| `ui-design-system.md` | 화면 디자인, 공통 UI 작업 시 | Ant Design 기반 공통 UI, 공통 컴포넌트 조합 순서, 화면 밀도 기준을 정리한다. |
+| `ui-grid.md` | grid/table/preview 화면 작업 시 | SmartDataGrid wrapper, row 순서, 상태 표시, copyable 셀 기준을 정리한다. |
+| `worker-screen-ux.md` | 스캔/검수/작업자 화면 작업 시 | SmartScanPanel, 정확도, 속도, 자동화 중심의 작업자 UX 기준을 정리한다. |
 | `import-preview.md` | import preview, paste rows, validation 화면 작업 시 | import job 생성, rows 저장, validate, rows/errors 표시 계약을 정리한다. |
 | `return-client-unit-routing.md` | 반품/재고/창고/기준정보 작업 시 | 고객사 운영단위/팀 기준 반품·창고·재고 라우팅 규칙을 정리한다. |
 

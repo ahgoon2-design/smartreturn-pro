@@ -43,10 +43,13 @@
 - AG Grid를 직접 쓰지 말고 `SmartDataGrid`/`SmartEditableDataGrid` 같은 공통 래퍼를 만든 뒤 사용한다.
 - 엑셀 원본 preview는 `SmartExcelPreviewGrid` 기준으로 한다.
 - 고객사/상품/창고/공통코드 선택은 화면별 Select가 아니라 `SmartLookupModal`/`SmartCommonCodeSelect` 기준으로 한다.
+- 관리 화면은 `SmartPage`, `SmartPageHeader`, `SmartToolbar`, `SmartDataSection`, `SmartDataGrid`, `SmartModalShell` 계열을 먼저 조합한다.
+- 작업자 스캔 화면은 `SmartScanPanel`, 큰 입력, 명확한 피드백, 하단/상세 action 영역 기준으로 만든다.
 - 공통모달은 내용만 다르고 크기, footer, 버튼 위치, 입력 폭은 통일한다.
 - 버튼이 아닌 정보 카드/패널은 버튼처럼 보이면 안 된다.
 - 그리드가 화면의 주인공이어야 하며, 안내문과 카드가 그리드를 밀어내면 실패다.
 - 1366x768 기준 핵심 입력, 그리드 첫 5행, 우측 정보패널, 하단 액션바가 보여야 한다.
+- 화면별 디자인 문제가 반복되면 개별 화면 CSS보다 공통 컴포넌트와 공통 `sr-*`/`smart-*` class를 먼저 보정한다.
 
 ## DB/업무 원장 원칙
 - import job과 업무 테이블을 분리한다.

@@ -1,10 +1,12 @@
 import { ArrowLeftOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Form, Input, InputNumber, Modal, Result, Skeleton, Space, Typography, message } from "antd";
+import { Button, Descriptions, Form, Input, InputNumber, Result, Skeleton, Space, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { createProductBarcode, disableProductBarcode, enableProductBarcode, getProduct, updateProductBarcode } from "../../api/master";
+import { SmartDataSection } from "../../components/common/SmartDataSection";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
+import { SmartModalShell } from "../../components/common/SmartModalShell";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
@@ -284,7 +286,7 @@ export function ProductDetailPage() {
 
       {!loading && product ? (
         <>
-          <Card className="smart-work-panel" title="상품 기본정보">
+          <SmartDataSection title="상품 기본정보">
             <Descriptions bordered size="small" column={2}>
               <Descriptions.Item label="product_id">
                 <Typography.Text copyable>{product.product_id}</Typography.Text>
@@ -312,10 +314,9 @@ export function ProductDetailPage() {
                 {toDisplayText(product.remarks)}
               </Descriptions.Item>
             </Descriptions>
-          </Card>
+          </SmartDataSection>
 
-          <Card
-            className="smart-work-panel"
+          <SmartDataSection
             title="바코드 관리"
             extra={
               <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal} disabled={!canManageProduct}>
@@ -338,17 +339,17 @@ export function ProductDetailPage() {
               maxHeight={320}
               getRowClassName={(record) => (record.active_yn ? "" : "smart-grid-row-muted")}
             />
-          </Card>
+          </SmartDataSection>
 
-          <Card className="smart-work-panel" title="후속 구현">
+          <SmartDataSection title="후속 구현">
             <Typography.Paragraph>
               상품 기본정보 수정, 대표 바코드 지정, 상품군/판정정책 연결은 후속 단계에서 별도 API 계약을 확인한 뒤 연결합니다.
             </Typography.Paragraph>
-          </Card>
+          </SmartDataSection>
         </>
       ) : null}
 
-      <Modal
+      <SmartModalShell
         title={editingBarcode ? "바코드 수정" : "바코드 추가"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
@@ -372,7 +373,7 @@ export function ProductDetailPage() {
             <Input.TextArea rows={3} placeholder="필요 시 메모를 입력해 주세요." />
           </Form.Item>
         </Form>
-      </Modal>
+      </SmartModalShell>
     </SmartPage>
   );
 }

@@ -10,6 +10,7 @@ SmartReturn Pro의 grid/table/preview 화면 작업 기준을 정리한다.
 - 실사용 화면은 `SmartDataGrid`, `SmartEditableDataGrid`, `SmartExcelPreviewGrid` 같은 wrapper 기준으로 확장한다.
 - AG Grid를 쓰더라도 화면에서 직접 import하지 않고 wrapper 내부에서만 사용한다.
 - skeleton 단계에서 기본 table을 쓰더라도 실사용 전 공통 Grid wrapper로 전환한다.
+- Ant Design `Table`을 화면 파일에서 직접 사용하지 않는다. 필요한 기능은 `SmartDataGrid` 옵션이나 helper로 올린다.
 
 ## 원본 순서 보존
 
@@ -30,6 +31,21 @@ grid row에는 상태가 한눈에 보여야 한다.
 - 보류
 
 상태는 badge, 색상, 한글 문구를 함께 사용한다.
+
+## 복사 가능한 주요 셀
+
+아래 값이 grid에 표시되면 `SmartDataGrid`의 `copyable` 옵션을 우선 적용한다.
+
+- 운송장번호
+- 주문번호
+- 상품코드
+- 바코드
+- 반품관리번호
+- 라벨번호
+- 창고코드
+- 고객사 코드/이름
+
+민감값은 `copyable`을 켜지 않는다.
 
 ## 화면 밀도
 

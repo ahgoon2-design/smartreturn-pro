@@ -1,5 +1,5 @@
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Typography, message } from "antd";
+import { Button, Form, Input, InputNumber, Select, Space, Switch, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
@@ -12,6 +12,8 @@ import {
   updateReturnWarehouseRoute,
 } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
+import { SmartDataSection } from "../../components/common/SmartDataSection";
+import { SmartModalShell } from "../../components/common/SmartModalShell";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid";
@@ -215,8 +217,7 @@ export function ClientReturnWarehouseRoutesSection({ clientId }: { clientId: num
   }
 
   return (
-    <Card
-      className="smart-work-panel"
+    <SmartDataSection
       title="판정별 창고 라우팅"
       extra={
         <Space>
@@ -251,7 +252,7 @@ export function ClientReturnWarehouseRoutesSection({ clientId }: { clientId: num
         getRowClassName={(record) => (!record.active_yn ? "smart-grid-row--inactive" : "")}
       />
 
-      <Modal
+      <SmartModalShell
         title={editingRoute ? "판정별 창고 라우팅 수정" : "판정별 창고 라우팅 추가"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
@@ -288,8 +289,8 @@ export function ClientReturnWarehouseRoutesSection({ clientId }: { clientId: num
             <Input.TextArea rows={3} maxLength={500} />
           </Form.Item>
         </Form>
-      </Modal>
-    </Card>
+      </SmartModalShell>
+    </SmartDataSection>
   );
 }
 

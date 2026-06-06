@@ -1,5 +1,5 @@
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Typography, message } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Select, Space, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
@@ -15,9 +15,12 @@ import {
   updateCommonCodeGroup,
 } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
+import { SmartDataSection } from "../../components/common/SmartDataSection";
+import { SmartModalShell } from "../../components/common/SmartModalShell";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
+import { SmartToolbar } from "../../components/common/SmartToolbar";
 import { SmartDataGrid } from "../../components/grid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid";
 import { useAuth } from "../../context/AuthContext";
@@ -513,8 +516,8 @@ export function CommonCodeManagementPage() {
       ) : null}
 
       <div className="smart-master-split">
-        <Card className="smart-work-panel smart-master-split-panel" title="코드 그룹">
-          <section className="smart-toolbar" aria-label="코드 그룹 필터">
+        <SmartDataSection className="smart-master-split-panel" title="코드 그룹">
+          <SmartToolbar ariaLabel="코드 그룹 필터">
             <Input
               className="smart-control"
               allowClear
@@ -530,7 +533,7 @@ export function CommonCodeManagementPage() {
               onChange={setGroupStatusFilter}
             />
             <Typography.Text type="secondary">현재 {filteredGroups.length}건</Typography.Text>
-          </section>
+          </SmartToolbar>
           <SmartErrorNotice message={groupErrorMessage} />
           <SmartDataGrid<CommonCodeGroupSummary>
             rows={filteredGroups}
@@ -552,13 +555,13 @@ export function CommonCodeManagementPage() {
                 .join(" ")
             }
           />
-        </Card>
+        </SmartDataSection>
 
-        <Card
-          className="smart-work-panel smart-master-split-panel"
+        <SmartDataSection
+          className="smart-master-split-panel"
           title={selectedGroup ? `코드 목록 · ${selectedGroup.group_name}` : "코드 목록"}
         >
-          <section className="smart-toolbar" aria-label="공통코드 필터">
+          <SmartToolbar ariaLabel="공통코드 필터">
             <Input
               className="smart-control"
               allowClear
@@ -576,7 +579,7 @@ export function CommonCodeManagementPage() {
               disabled={!selectedGroup}
             />
             <Typography.Text type="secondary">{selectedGroup ? `현재 ${filteredCodes.length}건` : "코드 그룹을 선택하세요"}</Typography.Text>
-          </section>
+          </SmartToolbar>
           <SmartErrorNotice message={codeErrorMessage} />
           <SmartDataGrid<CommonCodeSummary>
             rows={selectedGroup ? filteredCodes : []}
@@ -593,7 +596,7 @@ export function CommonCodeManagementPage() {
             maxHeight={360}
             getRowClassName={(record) => (!record.active_yn ? "smart-grid-row-muted" : "")}
           />
-        </Card>
+        </SmartDataSection>
       </div>
 
       <Alert
@@ -603,7 +606,7 @@ export function CommonCodeManagementPage() {
         description="목록 API는 현재 active 데이터 중심이며 설명, 등록일, 수정일, locked/system 여부를 응답하지 않습니다. 해당 값은 화면에서 추정하지 않고 '-' 또는 후속 항목으로 표시합니다."
       />
 
-      <Modal
+      <SmartModalShell
         title={editingGroup ? "코드 그룹 수정" : "코드 그룹 추가"}
         open={groupModalOpen && modalTarget === "GROUP"}
         onCancel={() => setGroupModalOpen(false)}
@@ -628,9 +631,9 @@ export function CommonCodeManagementPage() {
             <Alert type="info" showIcon message="코드그룹 값은 생성 후 변경하지 않습니다." />
           )}
         </Form>
-      </Modal>
+      </SmartModalShell>
 
-      <Modal
+      <SmartModalShell
         title={editingCode ? "공통코드 수정" : "공통코드 추가"}
         open={codeModalOpen && modalTarget === "CODE"}
         onCancel={() => setCodeModalOpen(false)}
@@ -658,7 +661,7 @@ export function CommonCodeManagementPage() {
             <Alert type="info" showIcon message="코드값은 생성 후 변경하지 않습니다. 코드명과 정렬순서만 수정합니다." />
           )}
         </Form>
-      </Modal>
+      </SmartModalShell>
     </SmartPage>
   );
 }
