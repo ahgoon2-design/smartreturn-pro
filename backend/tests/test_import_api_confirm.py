@@ -12,7 +12,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportValidationError
+from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportMappingDecision, ImportMappingProfile, ImportValidationError
 from app.models.master import Client, Product, ProductBarcode, Warehouse
 
 
@@ -40,6 +40,8 @@ def db_session() -> Generator[Session, None, None]:
         ImportJobFile.__table__,
         ImportJobRow.__table__,
         ImportValidationError.__table__,
+        ImportMappingProfile.__table__,
+        ImportMappingDecision.__table__,
         Role.__table__,
         Permission.__table__,
         User.__table__,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 import re
 import xml.etree.ElementTree as ET
@@ -78,6 +78,34 @@ VALIDATION_SOURCE_TYPES = {"PASTE", "MANUAL", "EXCEL_FILE", "CSV_FILE"}
 VALIDATION_READY_STATUS = "READY_TO_VALIDATE"
 VALIDATION_COMPLETED_STATUSES = {"VALIDATED", "HAS_ERRORS"}
 IMPORT_APPLIED_STATUS = "APPLIED"
+
+MAPPING_AUTO_APPLY = "AUTO_APPLY"
+MAPPING_NEEDS_REVIEW = "NEEDS_REVIEW"
+MAPPING_LOW_CONFIDENCE = "LOW_CONFIDENCE"
+MAPPING_BLOCKED = "BLOCKED"
+
+MAPPING_PROVIDERS = {"ALIAS", "PROFILE", "DECISION_HISTORY", "RULE", "MANUAL", "FUTURE_AI"}
+MAPPING_DECISION_TYPES = {"CONFIRMED", "CORRECTED", "REJECTED", "AUTO_APPLIED_CONFIRMED"}
+MAPPING_DECISION_NEGATIVE_TYPES = {"REJECTED"}
+MAPPING_DECISION_POSITIVE_TYPES = {"CONFIRMED", "CORRECTED", "AUTO_APPLIED_CONFIRMED"}
+MAPPING_AMBIGUOUS_TRACKING_FIELDS = {"tracking_no", "return_tracking_no", "original_tracking_no"}
+
+RISKY_MAPPING_FIELDS = {
+    "tracking_no",
+    "return_tracking_no",
+    "original_tracking_no",
+    "product_code",
+    "product_barcode",
+    "primary_barcode",
+    "qty",
+    "unit_qty",
+    "warehouse_code",
+    "warehouse_name",
+    "client_code",
+    "client_name",
+    "judgment_code",
+    "business_no",
+}
 EXCEL_UPLOAD_READY_STATUS = "DRAFT"
 EXCEL_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 DEFAULT_IMPORT_BARCODE_TYPE = "EACH"
@@ -480,6 +508,123 @@ class FilteredImportRows:
     skipped_noise_rows: int
 
 
+@dataclass(frozen=True)
+class MappingProviderResult:
+    field_key: str | None
+    source_header_name: str
+    confidence: float
+    provider_name: str
+    reason: str
+    evidence: dict
+    risk_flags: tuple[str, ...] = ()
+    blocked_reason: str | None = None
+
+
+class AliasSuggestionProvider:
+    provider_name = "ALIAS"
+
+    def suggest(self, import_type: str, header: str) -> list[MappingProviderResult]:
+        field_key = _header_alias_lookup(import_type).get(_excel_header_lookup_key(header))
+        if not field_key:
+            return []
+        return [
+            MappingProviderResult(
+                field_key=field_key,
+                source_header_name=header,
+                confidence=0.95,
+                provider_name=self.provider_name,
+                reason=f"헤더명이 {field_key} alias와 정확히 일치합니다.",
+                evidence={"match": "exact_alias"},
+            )
+        ]
+
+
+class ProfileSuggestionProvider:
+    provider_name = "PROFILE"
+
+    def __init__(self, profile_mapping: dict | None, *, exact_match: bool, similarity: float) -> None:
+        self.profile_mapping = profile_mapping or {}
+        self.exact_match = exact_match
+        self.similarity = similarity
+
+    def suggest(self, _import_type: str, header: str) -> list[MappingProviderResult]:
+        field_key = self.profile_mapping.get(header)
+        if not isinstance(field_key, str):
+            return []
+        confidence = 0.98 if self.exact_match else max(0.70, min(0.88, self.similarity))
+        reason = (
+            "같은 고객사와 자료유형의 이전 profile이 현재 헤더 구성과 정확히 일치합니다."
+            if self.exact_match
+            else "이전 profile과 유사하지만 헤더 구성이 달라 사용자 확인이 필요합니다."
+        )
+        return [
+            MappingProviderResult(
+                field_key=field_key,
+                source_header_name=header,
+                confidence=confidence,
+                provider_name=self.provider_name,
+                reason=reason,
+                evidence={"header_signature_exact": self.exact_match, "similarity": round(self.similarity, 2)},
+            )
+        ]
+
+
+class DecisionHistorySuggestionProvider:
+    provider_name = "DECISION_HISTORY"
+
+    def __init__(self, decisions: list | None) -> None:
+        self.decisions = decisions or []
+        self.latest = _latest_decision_by_header(self.decisions)
+        self.counts = _decision_history_counts(self.decisions)
+
+    def history_count(self, header: str) -> int:
+        lookup_key = _excel_header_lookup_key(header)
+        return sum(count for (header_key, _, _), count in self.counts.items() if header_key == lookup_key)
+
+    def latest_decision(self, header: str):
+        return self.latest.get(_excel_header_lookup_key(header))
+
+    def suggest(self, import_type: str, header: str) -> list[MappingProviderResult]:
+        decision = self.latest_decision(header)
+        if decision is None:
+            return []
+        count = self.history_count(header)
+        field_names = _canonical_field_names(import_type)
+        if decision.decision_type in MAPPING_DECISION_NEGATIVE_TYPES:
+            return [
+                MappingProviderResult(
+                    field_key=decision.canonical_field,
+                    source_header_name=header,
+                    confidence=0.0,
+                    provider_name=self.provider_name,
+                    reason="이 고객사/자료유형에서 이전에 사용자가 이 헤더 매핑을 제외한 이력이 있습니다.",
+                    evidence={"decision_type": decision.decision_type, "history_count": count},
+                    risk_flags=("REJECTED_HISTORY",),
+                    blocked_reason="과거 REJECTED 이력이 있어 자동적용할 수 없습니다.",
+                )
+            ]
+        if decision.canonical_field not in field_names:
+            return []
+        confidence = 0.97 if count >= 2 or decision.decision_type == "CORRECTED" else 0.90
+        return [
+            MappingProviderResult(
+                field_key=decision.canonical_field,
+                source_header_name=header,
+                confidence=confidence,
+                provider_name=self.provider_name,
+                reason=f"이 고객사/자료유형에서 이전에 '{header}'를 {decision.canonical_field}로 확정한 이력이 있습니다.",
+                evidence={"decision_type": decision.decision_type, "history_count": count},
+            )
+        ]
+
+
+class FutureAiSuggestionProvider:
+    provider_name = "FUTURE_AI"
+
+    def suggest(self, _import_type: str, _header: str) -> list[MappingProviderResult]:
+        return []
+
+
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
     return AuthError(message, result_code=result_code, status_code=status_code)
 
@@ -553,63 +698,256 @@ def _collect_headers(rows) -> list[str]:
     return headers
 
 
-def _build_mapping_suggestions(import_type: str, headers: list[str], profile_mapping: dict | None = None) -> tuple[dict[str, str], list[dict]]:
+def _is_risky_mapping_field(field_name: str | None) -> bool:
+    return bool(field_name and field_name in RISKY_MAPPING_FIELDS)
+
+
+def _field_is_required(import_type: str, field_name: str | None) -> bool:
+    return bool(field_name and field_name in _required_field_names(import_type))
+
+
+def _decision_level_from_confidence(confidence: float, *, blocked: bool = False, needs_review: bool = False) -> str:
+    if blocked:
+        return MAPPING_BLOCKED
+    if confidence >= 0.95 and not needs_review:
+        return MAPPING_AUTO_APPLY
+    if confidence >= 0.70:
+        return MAPPING_NEEDS_REVIEW
+    if confidence >= 0.40:
+        return MAPPING_LOW_CONFIDENCE
+    return MAPPING_LOW_CONFIDENCE
+
+
+def _reason_for_provider(provider: str, *, header: str, target_field: str | None, confidence: float) -> str:
+    if not target_field:
+        return "일치하는 매핑 후보가 없어 사용자가 직접 선택해야 합니다."
+    if provider == "PROFILE":
+        return "같은 고객사와 자료유형의 이전 매핑 profile과 일치합니다."
+    if provider == "DECISION_HISTORY":
+        return "이전에 사용자가 확정한 매핑 이력을 반영했습니다."
+    if provider == "MANUAL":
+        return "사용자가 직접 확인한 매핑입니다."
+    if provider == "ALIAS" and confidence >= 0.95:
+        return f"헤더 '{header}'가 {target_field} alias와 강하게 일치합니다."
+    if provider == "ALIAS":
+        return f"헤더 '{header}'가 {target_field} alias와 유사해 확인이 필요합니다."
+    return "규칙 기반 추천 결과입니다."
+
+
+def _latest_decision_by_header(decisions) -> dict[str, object]:
+    latest: dict[str, object] = {}
+    for decision in decisions:
+        if decision.normalized_header not in latest:
+            latest[decision.normalized_header] = decision
+    return latest
+
+
+def _decision_history_counts(decisions) -> dict[tuple[str, str | None, str], int]:
+    counts: dict[tuple[str, str | None, str], int] = {}
+    for decision in decisions:
+        key = (decision.normalized_header, decision.canonical_field, decision.decision_type)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _headers_similarity(left_signature: str | None, right_signature: str | None) -> float:
+    left = {item for item in str(left_signature or "").split("|") if item}
+    right = {item for item in str(right_signature or "").split("|") if item}
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _select_provider_result(results: list[MappingProviderResult]) -> MappingProviderResult | None:
+    if not results:
+        return None
+    return sorted(results, key=lambda item: (item.confidence, item.provider_name == "DECISION_HISTORY"), reverse=True)[0]
+
+
+def _tracking_confusion_reason(import_type: str, header: str, target_field: str | None) -> str | None:
+    if import_type not in {"RETURN_INTAKE", "VENDOR_RETURN_DETAIL", "RETURN_WAYBILL_EXPECTED"}:
+        return None
+    if target_field not in MAPPING_AMBIGUOUS_TRACKING_FIELDS:
+        return None
+    lookup_key = _excel_header_lookup_key(header)
+    original_tokens = ("원송장", "원운송장", "originaltracking")
+    return_tokens = ("반품송장", "반품운송장", "회수송장", "반송장", "returntracking")
+    if any(token in lookup_key for token in original_tokens) and target_field == "return_tracking_no":
+        return "원송장번호를 반품운송장번호로 자동 확정할 수 없습니다."
+    if any(token in lookup_key for token in return_tokens) and target_field == "original_tracking_no":
+        return "반품운송장번호를 원송장번호로 자동 확정할 수 없습니다."
+    if lookup_key in {"운송장번호", "송장번호", "송장", "trackingno"} and target_field in {"return_tracking_no", "original_tracking_no"}:
+        return "운송장번호 헤더가 원송장/반품송장 중 어느 의미인지 확인이 필요합니다."
+    if import_type in {"RETURN_INTAKE", "VENDOR_RETURN_DETAIL"} and lookup_key in {"운송장번호", "송장번호", "송장", "trackingno"} and target_field == "tracking_no":
+        return "운송장번호가 원송장인지 반품운송장인지 확인이 필요합니다."
+    return None
+
+
+class RuleSafetyProvider:
+    provider_name = "RULE"
+
+    def apply(self, import_type: str, mapping: dict[str, str], suggestions: list[dict]) -> tuple[dict[str, str], list[dict]]:
+        target_counts: dict[str, int] = {}
+        for target_field in mapping.values():
+            target_counts[target_field] = target_counts.get(target_field, 0) + 1
+
+        duplicated_targets = {target for target, count in target_counts.items() if count > 1}
+        if duplicated_targets:
+            mapping = {
+                source_header: target_field
+                for source_header, target_field in mapping.items()
+                if target_field not in duplicated_targets
+            }
+
+        for suggestion in suggestions:
+            target_field = suggestion.get("target_field")
+            if not target_field:
+                continue
+            confusion_reason = _tracking_confusion_reason(import_type, suggestion.get("source_header") or "", target_field)
+            if confusion_reason:
+                suggestion["decision_level"] = MAPPING_BLOCKED if "자동 확정할 수 없습니다" in confusion_reason else MAPPING_NEEDS_REVIEW
+                suggestion["conflict_reason"] = confusion_reason
+                suggestion["reason"] = confusion_reason
+                suggestion["user_action_required"] = True
+                if suggestion["decision_level"] == MAPPING_BLOCKED:
+                    mapping.pop(suggestion.get("source_header"), None)
+            if target_field in duplicated_targets:
+                conflict_reason = "같은 canonical field에 여러 헤더가 매핑되어 충돌합니다."
+                suggestion["status"] = "AMBIGUOUS"
+                suggestion["decision_level"] = MAPPING_BLOCKED if suggestion["is_risky_field"] or suggestion["is_required"] else MAPPING_NEEDS_REVIEW
+                suggestion["conflict_reason"] = conflict_reason
+                suggestion["reason"] = conflict_reason
+                suggestion["user_action_required"] = True
+
+        mapped_targets = set(mapping.values())
+        for required_field in sorted(_required_field_names(import_type) - mapped_targets):
+            suggestions.append(
+                {
+                    "source_header": "",
+                    "target_field": required_field,
+                    "canonical_field": required_field,
+                    "confidence": 0.0,
+                    "status": "REQUIRED_MISSING",
+                    "decision_level": MAPPING_BLOCKED,
+                    "reason": f"필수 필드 {required_field}가 매핑되지 않았습니다.",
+                    "provider": self.provider_name,
+                    "providers": [self.provider_name],
+                    "is_required": True,
+                    "is_risky_field": _is_risky_mapping_field(required_field),
+                    "previous_profile_matched": False,
+                    "decision_history_count": 0,
+                    "conflict_reason": f"필수 필드 {required_field} 미매핑",
+                    "alternative_candidates": [],
+                    "risk_flags": ["REQUIRED_MISSING"],
+                    "blocked_reason": f"필수 필드 {required_field}가 매핑되지 않았습니다.",
+                    "user_action_required": True,
+                    "needs_user_confirmation": True,
+                    "is_auto_applied": False,
+                }
+            )
+        return mapping, suggestions
+
+
+def _build_mapping_suggestions(
+    import_type: str,
+    headers: list[str],
+    profile_mapping: dict | None = None,
+    decisions: list | None = None,
+    profile_exact_match: bool = False,
+    profile_similarity: float = 0.0,
+) -> tuple[dict[str, str], list[dict]]:
     field_names = _canonical_field_names(import_type)
-    alias_lookup = _header_alias_lookup(import_type)
-    profile_mapping = profile_mapping or {}
+    providers = [
+        ProfileSuggestionProvider(profile_mapping, exact_match=profile_exact_match, similarity=profile_similarity),
+        DecisionHistorySuggestionProvider(decisions),
+        AliasSuggestionProvider(),
+        FutureAiSuggestionProvider(),
+    ]
     applied_mapping: dict[str, str] = {}
     suggestions: list[dict] = []
-    target_counts: dict[str, int] = {}
 
     for header in headers:
         clean_header = str(header).strip()
         if not clean_header:
             continue
-        target_field = None
-        confidence = 0.0
-        status = "UNMAPPED"
-        profile_target = profile_mapping.get(clean_header)
-        if isinstance(profile_target, str) and profile_target in field_names:
-            target_field = profile_target
-            confidence = 0.98
-            status = "PROFILE"
-        else:
-            lookup_key = _excel_header_lookup_key(clean_header)
-            alias_target = alias_lookup.get(lookup_key)
-            if alias_target:
-                target_field = alias_target
-                confidence = 1.0 if lookup_key == _excel_header_lookup_key(alias_target) else 0.93
-                status = "AUTO"
+        provider_results = [result for provider in providers for result in provider.suggest(import_type, clean_header)]
+        valid_results = [result for result in provider_results if result.field_key in field_names or result.field_key is None]
+        selected = _select_provider_result([result for result in valid_results if result.field_key in field_names])
+        history_provider = next((provider for provider in providers if isinstance(provider, DecisionHistorySuggestionProvider)), None)
+        latest_decision = history_provider.latest_decision(clean_header) if history_provider else None
+        decision_history_count = history_provider.history_count(clean_header) if history_provider else 0
+        negative_history = latest_decision is not None and latest_decision.decision_type in MAPPING_DECISION_NEGATIVE_TYPES
+        target_field = selected.field_key if selected else None
+        confidence = selected.confidence if selected else 0.0
+        provider_name = selected.provider_name if selected else "RULE"
+        providers_used = [result.provider_name for result in valid_results if result.field_key]
+        previous_profile_matched = any(result.provider_name == "PROFILE" for result in valid_results if result.field_key == target_field)
+        needs_review = False
+        conflict_reason = selected.blocked_reason if selected else None
+        risk_flags = set(selected.risk_flags if selected else ())
+        reason = selected.reason if selected else "일치하는 매핑 후보가 없어 사용자가 직접 선택해야 합니다."
 
-        if target_field:
-            target_counts[target_field] = target_counts.get(target_field, 0) + 1
-            if target_counts[target_field] == 1:
-                applied_mapping[clean_header] = target_field
-            else:
-                status = "AMBIGUOUS"
-                applied_mapping.pop(clean_header, None)
+        if provider_name == "PROFILE" and not profile_exact_match:
+            needs_review = True
+            risk_flags.add("PROFILE_SIGNATURE_CHANGED")
+        if provider_name == "DECISION_HISTORY" and decision_history_count < 2:
+            needs_review = True
+        if negative_history:
+            needs_review = True
+            confidence = min(confidence, 0.69) if confidence else 0.0
+            conflict_reason = "과거 REJECTED 이력이 있어 자동적용할 수 없습니다."
+            reason = conflict_reason
+            risk_flags.add("REJECTED_HISTORY")
+        if _is_risky_mapping_field(target_field) and confidence < 0.95:
+            needs_review = True
 
+        status = provider_name if target_field else "UNMAPPED"
+        if provider_name == "ALIAS":
+            status = "AUTO"
+        if target_field and confidence >= 0.40 and not negative_history:
+            applied_mapping[clean_header] = target_field
+
+        decision_level = _decision_level_from_confidence(confidence, needs_review=needs_review)
+        if negative_history and target_field:
+            decision_level = MAPPING_NEEDS_REVIEW
+        if target_field and _is_risky_mapping_field(target_field) and confidence < 0.70:
+            decision_level = MAPPING_BLOCKED
+            conflict_reason = conflict_reason or "위험 필드의 신뢰도가 낮아 확정 저장할 수 없습니다."
         suggestions.append(
             {
                 "source_header": clean_header,
                 "target_field": target_field,
+                "canonical_field": target_field,
                 "confidence": round(confidence, 2),
                 "status": status,
+                "decision_level": decision_level,
+                "reason": reason,
+                "provider": provider_name,
+                "providers": sorted(set(providers_used)) or [provider_name],
+                "is_required": _field_is_required(import_type, target_field),
+                "is_risky_field": _is_risky_mapping_field(target_field),
+                "previous_profile_matched": previous_profile_matched,
+                "decision_history_count": decision_history_count,
+                "conflict_reason": conflict_reason,
+                "alternative_candidates": [
+                    {
+                        "field_key": result.field_key,
+                        "confidence": round(result.confidence, 2),
+                        "provider": result.provider_name,
+                        "reason": result.reason,
+                    }
+                    for result in valid_results
+                    if result.field_key and (not selected or result.field_key != selected.field_key or result.provider_name != selected.provider_name)
+                ][:5],
+                "risk_flags": sorted(risk_flags),
+                "blocked_reason": conflict_reason if decision_level == MAPPING_BLOCKED else None,
+                "user_action_required": decision_level in {MAPPING_NEEDS_REVIEW, MAPPING_LOW_CONFIDENCE, MAPPING_BLOCKED},
+                "needs_user_confirmation": decision_level in {MAPPING_NEEDS_REVIEW, MAPPING_LOW_CONFIDENCE, MAPPING_BLOCKED},
+                "is_auto_applied": decision_level == MAPPING_AUTO_APPLY,
             }
         )
 
-    duplicated_targets = {target for target, count in target_counts.items() if count > 1}
-    if duplicated_targets:
-        applied_mapping = {
-            source_header: target_field
-            for source_header, target_field in applied_mapping.items()
-            if target_field not in duplicated_targets
-        }
-        for suggestion in suggestions:
-            if suggestion["target_field"] in duplicated_targets:
-                suggestion["status"] = "AMBIGUOUS"
-
-    return applied_mapping, suggestions
+    return RuleSafetyProvider().apply(import_type, applied_mapping, suggestions)
 
 
 def _apply_header_mapping(raw_json: dict, mapping: dict[str, str]) -> dict:
@@ -1271,6 +1609,28 @@ def _latest_matching_profile(db: Session, *, job, header_signature: str):
     return profiles[0] if profiles else None
 
 
+def _best_profile_match(db: Session, *, job, header_signature: str) -> tuple[object | None, bool, float]:
+    exact_profile = _latest_matching_profile(db, job=job, header_signature=header_signature)
+    if exact_profile is not None:
+        return exact_profile, True, 1.0
+    profiles = repo.list_import_mapping_profiles(
+        db,
+        client_id=job.requested_client_id,
+        import_type=job.import_type,
+        source_type=job.source_type,
+        active_only=True,
+    )
+    scored = [
+        (profile, _headers_similarity(header_signature, profile.header_signature))
+        for profile in profiles
+    ]
+    scored = [(profile, similarity) for profile, similarity in scored if similarity >= 0.50]
+    if not scored:
+        return None, False, 0.0
+    profile, similarity = sorted(scored, key=lambda item: (item[1], item[0].last_used_at or item[0].created_at, item[0].id), reverse=True)[0]
+    return profile, False, similarity
+
+
 def _mapping_response_from_job(db: Session, *, job, rows, mapping: dict[str, str], suggestions: list[dict]) -> ImportMappingResponse:
     headers = _collect_headers(rows)
     header_signature = _headers_signature(headers)
@@ -1279,10 +1639,39 @@ def _mapping_response_from_job(db: Session, *, job, rows, mapping: dict[str, str
     low_confidence_headers = [
         item["source_header"]
         for item in suggestions
-        if item["target_field"] and item["confidence"] < 0.9 and item["status"] != "AMBIGUOUS"
+        if item["source_header"] and item["target_field"] and item["confidence"] < 0.9 and item["status"] not in {"AMBIGUOUS", "REQUIRED_MISSING"}
     ]
     required_missing_fields = sorted(_required_field_names(job.import_type) - set(mapping.values()))
-    confirmation_required = bool(ambiguous_headers or unmapped_headers or low_confidence_headers or required_missing_fields)
+    decision_counts = {
+        MAPPING_AUTO_APPLY: 0,
+        MAPPING_NEEDS_REVIEW: 0,
+        MAPPING_LOW_CONFIDENCE: 0,
+        MAPPING_BLOCKED: 0,
+    }
+    blocked_reasons: list[str] = []
+    for item in suggestions:
+        level = item.get("decision_level") or MAPPING_LOW_CONFIDENCE
+        if level in decision_counts:
+            decision_counts[level] += 1
+        if level == MAPPING_BLOCKED:
+            blocked_reasons.append(item.get("conflict_reason") or item.get("reason") or "차단된 매핑이 있습니다.")
+    required_fields_status = {
+        field_name: {
+            "mapped": field_name in set(mapping.values()),
+            "decision_level": MAPPING_AUTO_APPLY if field_name in set(mapping.values()) else MAPPING_BLOCKED,
+        }
+        for field_name in sorted(_required_field_names(job.import_type))
+    }
+    confirmation_required = bool(
+        ambiguous_headers
+        or unmapped_headers
+        or low_confidence_headers
+        or required_missing_fields
+        or decision_counts[MAPPING_NEEDS_REVIEW]
+        or decision_counts[MAPPING_LOW_CONFIDENCE]
+        or decision_counts[MAPPING_BLOCKED]
+    )
+    confirm_block_reasons = sorted(set(blocked_reasons + [f"필수 필드 {field_name}가 매핑되지 않았습니다." for field_name in required_missing_fields]))
     return ImportMappingResponse(
         job_id=job.id,
         import_type=job.import_type,
@@ -1296,6 +1685,28 @@ def _mapping_response_from_job(db: Session, *, job, rows, mapping: dict[str, str
         ambiguous_headers=ambiguous_headers,
         unmapped_headers=unmapped_headers,
         required_missing_fields=required_missing_fields,
+        decision_summary={
+            "auto_apply": decision_counts[MAPPING_AUTO_APPLY],
+            "needs_review": decision_counts[MAPPING_NEEDS_REVIEW],
+            "low_confidence": decision_counts[MAPPING_LOW_CONFIDENCE],
+            "blocked": decision_counts[MAPPING_BLOCKED],
+        },
+        blocked_reasons=sorted(set(blocked_reasons)),
+        confirm_block_reasons=confirm_block_reasons,
+        can_confirm=not confirm_block_reasons and not confirmation_required,
+        required_fields_status=required_fields_status,
+        auto_apply_count=decision_counts[MAPPING_AUTO_APPLY],
+        needs_review_count=decision_counts[MAPPING_NEEDS_REVIEW],
+        low_confidence_count=decision_counts[MAPPING_LOW_CONFIDENCE],
+        blocked_count=decision_counts[MAPPING_BLOCKED],
+        profile_match_status="EXACT"
+        if any(item.get("previous_profile_matched") and item.get("decision_level") == MAPPING_AUTO_APPLY for item in suggestions)
+        else "SIMILAR"
+        if any(item.get("previous_profile_matched") for item in suggestions)
+        else "NONE",
+        learning_status="DECISION_HISTORY_USED"
+        if any(item.get("provider") == "DECISION_HISTORY" for item in suggestions)
+        else "RULE_PROFILE_ONLY",
     )
 
 
@@ -1324,6 +1735,90 @@ def _save_mapping_profile_if_requested(
     )
 
 
+def _suggestion_by_header(mapping_payload: dict | None) -> dict[str, dict]:
+    if not isinstance(mapping_payload, dict):
+        return {}
+    suggestions = mapping_payload.get("suggestions")
+    if not isinstance(suggestions, list):
+        return {}
+    return {
+        str(item.get("source_header") or ""): item
+        for item in suggestions
+        if isinstance(item, dict) and item.get("source_header")
+    }
+
+
+def _previous_applied_mapping(job) -> dict[str, str]:
+    raw_json = job.raw_json if isinstance(job.raw_json, dict) else {}
+    mapping_payload = raw_json.get("mapping") if isinstance(raw_json, dict) else None
+    if not isinstance(mapping_payload, dict):
+        return {}
+    applied_mapping = mapping_payload.get("applied_mapping")
+    if not isinstance(applied_mapping, dict):
+        return {}
+    return {str(source): str(target) for source, target in applied_mapping.items() if source and target}
+
+
+def _save_mapping_decisions(
+    db: Session,
+    auth: AuthContext,
+    *,
+    job,
+    headers: list[str],
+    mapping: dict[str, str],
+    header_signature: str,
+    profile_id: int | None,
+) -> None:
+    raw_json = job.raw_json if isinstance(job.raw_json, dict) else {}
+    previous_payload = raw_json.get("mapping") if isinstance(raw_json, dict) else None
+    previous_mapping = _previous_applied_mapping(job)
+    previous_suggestions = _suggestion_by_header(previous_payload)
+    now = datetime.now(timezone.utc)
+    decision_rows: list[dict] = []
+    for header in headers:
+        clean_header = str(header).strip()
+        if not clean_header:
+            continue
+        normalized_header = _excel_header_lookup_key(clean_header)
+        next_target = mapping.get(clean_header)
+        previous_target = previous_mapping.get(clean_header)
+        previous_suggestion = previous_suggestions.get(clean_header, {})
+        if next_target:
+            decision_type = "CORRECTED" if previous_target and previous_target != next_target else "CONFIRMED"
+        elif previous_target:
+            decision_type = "REJECTED"
+        else:
+            continue
+        decision_rows.append(
+            {
+                "client_id": job.requested_client_id,
+                "import_type": job.import_type,
+                "source_type": job.source_type,
+                "source_channel": job.source_type,
+                "original_header": clean_header,
+                "normalized_header": normalized_header,
+                "canonical_field": next_target or previous_target,
+                "decision_type": decision_type,
+                "confidence_before": previous_suggestion.get("confidence") if isinstance(previous_suggestion, dict) else None,
+                "confidence_after": 1.0 if next_target else 0.0,
+                "profile_id": profile_id,
+                "header_signature": header_signature,
+                "file_signature": None,
+                "sample_value_hash": None,
+                "source_context_json": {
+                    "previous_target": previous_target,
+                    "previous_provider": previous_suggestion.get("provider") if isinstance(previous_suggestion, dict) else None,
+                    "previous_decision_level": previous_suggestion.get("decision_level") if isinstance(previous_suggestion, dict) else None,
+                    "decision_source": "USER_MAPPING_APPLY",
+                },
+                "confirmed_by": auth.user_id,
+                "confirmed_at": now,
+            }
+        )
+    if decision_rows:
+        repo.create_import_mapping_decisions(db, decisions=decision_rows)
+
+
 def auto_map_import_job(db: Session, auth: AuthContext, *, job_id: int, request: ImportAutoMapRequest) -> dict:
     _require_import_manage(auth)
     row = repo.get_import_job(db, job_id)
@@ -1336,11 +1831,21 @@ def auto_map_import_job(db: Session, auth: AuthContext, *, job_id: int, request:
         raise _business_error("IMPORT_JOB_MAPPING_NO_ROWS", "매핑할 row가 없습니다.")
     headers = _collect_headers(rows)
     header_signature = _headers_signature(headers)
-    profile = _latest_matching_profile(db, job=job, header_signature=header_signature)
+    profile, profile_exact_match, profile_similarity = _best_profile_match(db, job=job, header_signature=header_signature)
+    decisions = repo.list_import_mapping_decisions(
+        db,
+        client_id=job.requested_client_id,
+        import_type=job.import_type,
+        source_type=job.source_type,
+        normalized_headers=[_excel_header_lookup_key(header) for header in headers],
+    )
     mapping, suggestions = _build_mapping_suggestions(
         job.import_type,
         headers,
         profile.mapping_json if profile else None,
+        decisions=decisions,
+        profile_exact_match=profile_exact_match,
+        profile_similarity=profile_similarity,
     )
     response = _mapping_response_from_job(db, job=job, rows=rows, mapping=mapping, suggestions=suggestions)
 
@@ -1350,13 +1855,23 @@ def auto_map_import_job(db: Session, auth: AuthContext, *, job_id: int, request:
         for row_item in rows:
             normalized = _apply_header_mapping(row_item.raw_json, mapping)
             repo.update_import_job_row_mapping(db, row=row_item, normalized_json=normalized or None)
+        repo.delete_import_validation_errors(db, job_id=job.id)
+        job.status = VALIDATION_READY_STATUS
+        job.valid_rows = 0
+        job.invalid_rows = 0
+        job.error_rows = 0
+        job.progress_percent = 0
+        job.message = None
         current_raw = job.raw_json if isinstance(job.raw_json, dict) else {}
         repo.update_import_job_mapping_metadata(
             db,
             job=job,
             raw_json={
                 **current_raw,
-                "mapping": response.model_dump(),
+                "mapping": {
+                    **response.model_dump(),
+                    "mapping_review_confirmed": False,
+                },
             },
         )
         _save_mapping_profile_if_requested(
@@ -1398,8 +1913,24 @@ def apply_import_job_mapping(db: Session, auth: AuthContext, *, job_id: int, req
         {
             "source_header": header,
             "target_field": mapping.get(header),
+            "canonical_field": mapping.get(header),
             "confidence": 1.0 if mapping.get(header) else 0,
             "status": "MANUAL" if mapping.get(header) else "UNMAPPED",
+            "decision_level": MAPPING_AUTO_APPLY if mapping.get(header) else MAPPING_LOW_CONFIDENCE,
+            "reason": "사용자가 직접 확인한 매핑입니다." if mapping.get(header) else "사용하지 않는 헤더입니다.",
+            "provider": "MANUAL",
+            "providers": ["MANUAL"],
+            "is_required": _field_is_required(job.import_type, mapping.get(header)),
+            "is_risky_field": _is_risky_mapping_field(mapping.get(header)),
+            "previous_profile_matched": False,
+            "decision_history_count": 0,
+            "conflict_reason": None,
+            "alternative_candidates": [],
+            "risk_flags": [],
+            "blocked_reason": None,
+            "user_action_required": False if mapping.get(header) else True,
+            "needs_user_confirmation": False if mapping.get(header) else True,
+            "is_auto_applied": False,
         }
         for header in headers
     ]
@@ -1409,16 +1940,15 @@ def apply_import_job_mapping(db: Session, auth: AuthContext, *, job_id: int, req
         for row_item in rows:
             normalized = _apply_header_mapping(row_item.raw_json, mapping)
             repo.update_import_job_row_mapping(db, row=row_item, normalized_json=normalized or None)
+        repo.delete_import_validation_errors(db, job_id=job.id)
+        job.status = VALIDATION_READY_STATUS
+        job.valid_rows = 0
+        job.invalid_rows = 0
+        job.error_rows = 0
+        job.progress_percent = 0
+        job.message = None
         current_raw = job.raw_json if isinstance(job.raw_json, dict) else {}
-        repo.update_import_job_mapping_metadata(
-            db,
-            job=job,
-            raw_json={
-                **current_raw,
-                "mapping": response.model_dump(),
-            },
-        )
-        _save_mapping_profile_if_requested(
+        profile = _save_mapping_profile_if_requested(
             db,
             auth,
             job=job,
@@ -1426,6 +1956,26 @@ def apply_import_job_mapping(db: Session, auth: AuthContext, *, job_id: int, req
             mapping=mapping,
             save_profile=request.save_profile,
             profile_name=request.profile_name,
+        )
+        _save_mapping_decisions(
+            db,
+            auth,
+            job=job,
+            headers=headers,
+            mapping=mapping,
+            header_signature=header_signature,
+            profile_id=profile.id if profile else None,
+        )
+        repo.update_import_job_mapping_metadata(
+            db,
+            job=job,
+            raw_json={
+                **current_raw,
+                "mapping": {
+                    **response.model_dump(),
+                    "mapping_review_confirmed": True,
+                },
+            },
         )
         db.commit()
         return response.model_dump()
@@ -2298,6 +2848,97 @@ def _apply_product_barcode_row(db: Session, *, client_id: int, row_item) -> tupl
     return "SKIPPED", product.id, None
 
 
+def _mapping_safety_block_reasons(job, rows: list | None = None) -> list[str]:
+    raw_json = job.raw_json if isinstance(job.raw_json, dict) else {}
+    mapping_payload = raw_json.get("mapping") if isinstance(raw_json, dict) else None
+    if not isinstance(mapping_payload, dict):
+        required_fields = _required_field_names(job.import_type)
+        if not rows or not required_fields:
+            return ["매핑 안전 판정 정보가 없어 확정 저장할 수 없습니다."]
+        missing_fields = sorted(
+            field_name
+            for field_name in required_fields
+            if any(not _text_value(_row_data(row_item), field_name) for row_item in rows)
+        )
+        return [f"필수 필드 {field_name}가 매핑되지 않았습니다." for field_name in missing_fields]
+    reasons: list[str] = []
+    applied_mapping = mapping_payload.get("applied_mapping")
+    applied_mapping = applied_mapping if isinstance(applied_mapping, dict) else {}
+    required_missing = sorted(_required_field_names(job.import_type) - set(applied_mapping.values()))
+    for field_name in sorted(set((mapping_payload.get("required_missing_fields") or []) + required_missing)):
+        reasons.append(f"필수 필드 {field_name}가 매핑되지 않았습니다.")
+    target_counts: dict[str, int] = {}
+    for target_field in applied_mapping.values():
+        if isinstance(target_field, str) and target_field:
+            target_counts[target_field] = target_counts.get(target_field, 0) + 1
+    for target_field, count in target_counts.items():
+        if count > 1:
+            reasons.append(f"동일 target field {target_field}에 여러 헤더가 매핑되어 충돌합니다.")
+    if rows is not None and len(rows) == 0:
+        reasons.append("실제 데이터 row가 없어 확정 저장할 수 없습니다.")
+    for reason in mapping_payload.get("blocked_reasons") or []:
+        reasons.append(str(reason))
+    confirmed = bool(mapping_payload.get("mapping_review_confirmed"))
+    for item in mapping_payload.get("suggestions") or []:
+        if not isinstance(item, dict):
+            continue
+        level = item.get("decision_level")
+        if level == MAPPING_BLOCKED:
+            reasons.append(item.get("conflict_reason") or item.get("reason") or "차단된 매핑이 있습니다.")
+        elif not confirmed and level in {MAPPING_NEEDS_REVIEW, MAPPING_LOW_CONFIDENCE}:
+            reasons.append(item.get("reason") or "위험 필드 매핑 확인이 필요합니다.")
+        elif confirmed and level == MAPPING_LOW_CONFIDENCE and item.get("is_required"):
+            reasons.append(item.get("reason") or "필수 필드의 낮은 신뢰도 매핑은 수동 수정이 필요합니다.")
+    return sorted(set(reasons))
+
+
+def _save_auto_applied_confirmed_decisions(db: Session, auth: AuthContext, *, job) -> None:
+    raw_json = job.raw_json if isinstance(job.raw_json, dict) else {}
+    mapping_payload = raw_json.get("mapping") if isinstance(raw_json, dict) else None
+    if not isinstance(mapping_payload, dict):
+        return
+    applied_mapping = mapping_payload.get("applied_mapping")
+    suggestions = mapping_payload.get("suggestions")
+    if not isinstance(applied_mapping, dict) or not isinstance(suggestions, list):
+        return
+    header_signature = str(mapping_payload.get("header_signature") or "")
+    now = datetime.now(timezone.utc)
+    decision_rows: list[dict] = []
+    for item in suggestions:
+        if not isinstance(item, dict):
+            continue
+        header = str(item.get("source_header") or "").strip()
+        target = applied_mapping.get(header)
+        if not header or not target or item.get("decision_level") != MAPPING_AUTO_APPLY:
+            continue
+        decision_rows.append(
+            {
+                "client_id": job.requested_client_id,
+                "import_type": job.import_type,
+                "source_type": job.source_type,
+                "source_channel": job.source_type,
+                "original_header": header,
+                "normalized_header": _excel_header_lookup_key(header),
+                "canonical_field": target,
+                "decision_type": "AUTO_APPLIED_CONFIRMED",
+                "confidence_before": item.get("confidence"),
+                "confidence_after": 1.0,
+                "profile_id": None,
+                "header_signature": header_signature or None,
+                "file_signature": None,
+                "sample_value_hash": None,
+                "source_context_json": {
+                    "provider": item.get("provider"),
+                    "decision_source": "CONFIRM_AUTO_APPLY",
+                },
+                "confirmed_by": auth.user_id,
+                "confirmed_at": now,
+            }
+        )
+    if decision_rows:
+        repo.create_import_mapping_decisions(db, decisions=decision_rows)
+
+
 def confirm_import_job(db: Session, auth: AuthContext, *, job_id: int) -> dict:
     _require_import_manage(auth)
     row = repo.get_import_job(db, job_id)
@@ -2322,6 +2963,12 @@ def confirm_import_job(db: Session, auth: AuthContext, *, job_id: int) -> dict:
         raise _business_error("IMPORT_JOB_CONFIRM_NO_ROWS", "Import job has no rows to confirm.")
     if any(row_item.validation_status == "INVALID" for row_item in rows) or job.invalid_rows > 0:
         raise _business_error("IMPORT_JOB_CONFIRM_HAS_ERRORS", "Import job has invalid rows.")
+    safety_reasons = _mapping_safety_block_reasons(job, rows)
+    if safety_reasons:
+        raise _business_error(
+            "IMPORT_JOB_CONFIRM_MAPPING_BLOCKED",
+            "매핑 확인이 필요하여 확정 저장할 수 없습니다: " + "; ".join(safety_reasons[:3]),
+        )
 
     try:
         applied_rows = 0
@@ -2403,6 +3050,8 @@ def confirm_import_job(db: Session, auth: AuthContext, *, job_id: int) -> dict:
             error_rows=failed_rows,
             message=message,
         )
+        if failed_rows == 0:
+            _save_auto_applied_confirmed_decisions(db, auth, job=job)
         db.commit()
         return ImportConfirmResponse(
             job_id=updated_job.id,

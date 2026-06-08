@@ -182,8 +182,24 @@ export interface ImportSourceTypeFieldsResponse {
 export interface ImportMappingSuggestionItem {
   source_header: string;
   target_field?: string | null;
+  canonical_field?: string | null;
   confidence: number;
   status: string;
+  decision_level?: "AUTO_APPLY" | "NEEDS_REVIEW" | "LOW_CONFIDENCE" | "BLOCKED" | string | null;
+  reason?: string | null;
+  provider?: string | null;
+  providers?: string[];
+  is_required?: boolean;
+  is_risky_field?: boolean;
+  previous_profile_matched?: boolean;
+  decision_history_count?: number;
+  conflict_reason?: string | null;
+  alternative_candidates?: Array<Record<string, unknown>>;
+  risk_flags?: string[];
+  blocked_reason?: string | null;
+  user_action_required?: boolean;
+  needs_user_confirmation?: boolean;
+  is_auto_applied?: boolean;
 }
 
 export interface ImportMappingResponse {
@@ -199,6 +215,17 @@ export interface ImportMappingResponse {
   ambiguous_headers: string[];
   unmapped_headers: string[];
   required_missing_fields: string[];
+  decision_summary?: Record<string, number>;
+  blocked_reasons?: string[];
+  confirm_block_reasons?: string[];
+  can_confirm?: boolean;
+  required_fields_status?: Record<string, { mapped: boolean; decision_level: string }>;
+  auto_apply_count?: number;
+  needs_review_count?: number;
+  low_confidence_count?: number;
+  blocked_count?: number;
+  profile_match_status?: string | null;
+  learning_status?: string | null;
 }
 
 export interface ImportMappingProfile {

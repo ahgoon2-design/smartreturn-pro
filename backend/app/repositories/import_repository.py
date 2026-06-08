@@ -7,7 +7,14 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportMappingProfile, ImportValidationError
+from app.models.import_job import (
+    ImportJob,
+    ImportJobFile,
+    ImportJobRow,
+    ImportMappingDecision,
+    ImportMappingProfile,
+    ImportValidationError,
+)
 from app.models.master import Client, Warehouse
 
 
@@ -177,6 +184,11 @@ def bulk_create_import_validation_errors(db: Session, *, errors: list[dict]) -> 
     db.add_all(error_models)
     db.flush()
     return error_models
+
+
+def delete_import_validation_errors(db: Session, *, job_id: int) -> None:
+    db.query(ImportValidationError).filter(ImportValidationError.job_id == job_id).delete(synchronize_session=False)
+    db.flush()
 
 
 def update_import_job_row_validation(
@@ -555,3 +567,69 @@ def touch_import_mapping_profile(db: Session, *, profile: ImportMappingProfile) 
     profile.last_used_at = datetime.now(timezone.utc)
     db.flush()
     return profile
+
+
+def list_import_mapping_decisions(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    import_type: str,
+    source_type: str,
+    normalized_headers: list[str] | None = None,
+) -> list[ImportMappingDecision]:
+    query = db.query(ImportMappingDecision).filter(
+        ImportMappingDecision.import_type == import_type,
+        ImportMappingDecision.source_type == source_type,
+    )
+    if client_id is not None:
+        query = query.filter(
+            (ImportMappingDecision.client_id == client_id) | (ImportMappingDecision.client_id.is_(None))
+        )
+    else:
+        query = query.filter(ImportMappingDecision.client_id.is_(None))
+    if normalized_headers:
+        query = query.filter(ImportMappingDecision.normalized_header.in_(normalized_headers))
+    return query.order_by(
+        ImportMappingDecision.client_id.desc().nullslast(),
+        ImportMappingDecision.confirmed_at.desc().nullslast(),
+        ImportMappingDecision.id.desc(),
+    ).all()
+
+
+def create_import_mapping_decisions(
+    db: Session,
+    *,
+    decisions: list[dict],
+) -> list[ImportMappingDecision]:
+    decision_models: list[ImportMappingDecision] = []
+    for decision in decisions:
+        existing = (
+            db.query(ImportMappingDecision)
+            .filter(
+                ImportMappingDecision.client_id == decision.get("client_id"),
+                ImportMappingDecision.import_type == decision.get("import_type"),
+                ImportMappingDecision.source_type == decision.get("source_type"),
+                ImportMappingDecision.normalized_header == decision.get("normalized_header"),
+                ImportMappingDecision.canonical_field == decision.get("canonical_field"),
+                ImportMappingDecision.decision_type == decision.get("decision_type"),
+                ImportMappingDecision.header_signature == decision.get("header_signature"),
+            )
+            .one_or_none()
+        )
+        if existing is None:
+            existing = ImportMappingDecision(**decision)
+            db.add(existing)
+        else:
+            existing.original_header = decision.get("original_header") or existing.original_header
+            existing.source_channel = decision.get("source_channel")
+            existing.confidence_before = decision.get("confidence_before")
+            existing.confidence_after = decision.get("confidence_after")
+            existing.profile_id = decision.get("profile_id")
+            existing.file_signature = decision.get("file_signature")
+            existing.sample_value_hash = decision.get("sample_value_hash")
+            existing.source_context_json = decision.get("source_context_json")
+            existing.confirmed_by = decision.get("confirmed_by")
+            existing.confirmed_at = decision.get("confirmed_at")
+        decision_models.append(existing)
+    db.flush()
+    return decision_models

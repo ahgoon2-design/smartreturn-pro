@@ -124,6 +124,22 @@ class ImportMappingSuggestionItem(BaseModel):
     target_field: str | None = None
     confidence: float = 0
     status: str
+    canonical_field: str | None = None
+    decision_level: str | None = None
+    reason: str | None = None
+    provider: str | None = None
+    providers: list[str] = Field(default_factory=list)
+    is_required: bool = False
+    is_risky_field: bool = False
+    previous_profile_matched: bool = False
+    decision_history_count: int = 0
+    conflict_reason: str | None = None
+    alternative_candidates: list[dict] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    blocked_reason: str | None = None
+    user_action_required: bool = False
+    needs_user_confirmation: bool = False
+    is_auto_applied: bool = False
 
 
 class ImportAutoMapRequest(BaseModel):
@@ -158,6 +174,17 @@ class ImportMappingResponse(BaseModel):
     ambiguous_headers: list[str] = Field(default_factory=list)
     unmapped_headers: list[str] = Field(default_factory=list)
     required_missing_fields: list[str] = Field(default_factory=list)
+    decision_summary: dict = Field(default_factory=dict)
+    blocked_reasons: list[str] = Field(default_factory=list)
+    confirm_block_reasons: list[str] = Field(default_factory=list)
+    can_confirm: bool = False
+    required_fields_status: dict = Field(default_factory=dict)
+    auto_apply_count: int = 0
+    needs_review_count: int = 0
+    low_confidence_count: int = 0
+    blocked_count: int = 0
+    profile_match_status: str | None = None
+    learning_status: str | None = None
 
 
 class ImportMappingProfileCreateRequest(BaseModel):

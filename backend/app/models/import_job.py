@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -143,6 +143,42 @@ class ImportMappingProfile(Base):
     active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ImportMappingDecision(Base):
+    __tablename__ = "import_mapping_decisions"
+    __table_args__ = (
+        Index("ix_import_mapping_decisions_client_type", "client_id", "import_type", "source_type"),
+        Index("ix_import_mapping_decisions_header", "normalized_header"),
+        Index("ix_import_mapping_decisions_field", "canonical_field"),
+        Index("ix_import_mapping_decisions_type", "decision_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
+    import_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_channel: Mapped[str | None] = mapped_column(String(80))
+    original_header: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_header: Mapped[str] = mapped_column(String(255), nullable=False)
+    canonical_field: Mapped[str | None] = mapped_column(String(100))
+    decision_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    confidence_before: Mapped[float | None] = mapped_column(Float)
+    confidence_after: Mapped[float | None] = mapped_column(Float)
+    profile_id: Mapped[int | None] = mapped_column(ForeignKey("import_mapping_profiles.id"))
+    header_signature: Mapped[str | None] = mapped_column(String(500))
+    file_signature: Mapped[str | None] = mapped_column(String(255))
+    sample_value_hash: Mapped[str | None] = mapped_column(String(128))
+    source_context_json: Mapped[dict | None] = mapped_column(JSONB)
+    confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

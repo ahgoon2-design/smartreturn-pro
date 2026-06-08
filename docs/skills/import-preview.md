@@ -70,3 +70,14 @@ job 상태:
 - `docs/import-preview-screen-skeleton-closeout-2026-05-29.md`
 - `docs/import-validation-api-manual-verification-closeout-2026-05-29.md`
 - `docs/frontend-app-scaffold-plan-2026-05-29.md`
+
+## Smart Import Mapper 4차 매핑 규칙
+
+- 자동매핑은 자동 저장이 아니라 추천이다. 저장 전에는 검증, 미리보기, 사용자 확정, backend final safety check를 반드시 거친다.
+- 매핑 추천은 `ALIAS`, `PROFILE`, `DECISION_HISTORY`, `RULE` provider를 합산해 판단한다. `FUTURE_AI` provider는 후속 확장 자리로만 둔다.
+- 필드별 판정은 `AUTO_APPLY`, `NEEDS_REVIEW`, `LOW_CONFIDENCE`, `BLOCKED`로 구분한다.
+- `AUTO_APPLY`라도 사용자가 수정할 수 있어야 하며, `NEEDS_REVIEW`와 `LOW_CONFIDENCE`는 사용자가 확인하기 전 확정 저장하지 않는다.
+- 필수 필드 미매핑, 위험 필드 충돌, 중복 후보, 과거 `REJECTED` 이력은 자동적용을 금지한다.
+- 사용자가 수정/확정/거절한 매핑은 decision 이력으로 저장하되, 개인정보나 원본 row 전체를 저장하지 않는다.
+- 다음 업로드에서는 같은 고객사, source type, header signature, decision 이력을 우선 참고하되 양식이 달라지면 확인필요로 낮춘다.
+- frontend가 실수로 확정 요청을 보내도 backend confirm 단계에서 mapping safety를 다시 검사해 차단해야 한다.

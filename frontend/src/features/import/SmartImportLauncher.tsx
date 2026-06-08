@@ -2,10 +2,12 @@ import { CheckCircleOutlined, DownloadOutlined, FileExcelOutlined, InboxOutlined
 import { Alert, Button, Input, Select, Space, Spin, Statistic, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import {
+  applyImportJobMapping,
   autoMapImportJob,
   confirmImportJob,
   createImportJob,
   downloadImportTemplate,
+  getImportSourceTypeFields,
   listImportJobErrors,
   listImportJobRows,
   savePasteRows,
@@ -22,6 +24,7 @@ import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { ClientSummary } from "../../types/master";
 import type {
   ImportConfirmResponse,
+  ImportCanonicalField,
   ImportJob,
   ImportJobRow,
   ImportMappingResponse,
@@ -58,6 +61,8 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
   const [rows, setRows] = useState<ImportJobRow[]>([]);
   const [errors, setErrors] = useState<ImportValidationError[]>([]);
   const [mapping, setMapping] = useState<ImportMappingResponse | null>(null);
+  const [mappingReviewed, setMappingReviewed] = useState(false);
+  const [fieldOptions, setFieldOptions] = useState<ImportCanonicalField[]>([]);
   const [confirmSummary, setConfirmSummary] = useState<ImportConfirmResponse | null>(null);
   const [rowFilter, setRowFilter] = useState<ImportPreviewRowFilter>("ALL");
   const [loading, setLoading] = useState(false);
@@ -75,8 +80,15 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
   const actualRows = job?.total_rows || rows.length || 0;
   const errorRows = useMemo(() => new Set(errors.filter((item) => item.severity === "ERROR").map((item) => item.row_id || item.row_no)).size, [errors]);
   const canCreatePreview = Boolean(clientId && !job && (sourceType === "EXCEL_FILE" ? excelFile : parsedRows.length > 0));
-  const canValidate = Boolean(job && currentJobStatus === "READY_TO_VALIDATE" && rows.length > 0);
-  const canConfirm = Boolean(job && currentJobStatus === "VALIDATED" && rows.length > 0 && errorRows === 0);
+  const mappingBlocked = Boolean((mapping?.blocked_count || 0) > 0 || (mapping?.required_missing_fields?.length || 0) > 0);
+  const mappingReviewRequired = Boolean((mapping?.needs_review_count || 0) > 0 || (mapping?.low_confidence_count || 0) > 0);
+  const canReviewMapping = Boolean(job && mapping);
+  const canValidate = Boolean(
+    job && currentJobStatus === "READY_TO_VALIDATE" && rows.length > 0 && !mappingBlocked && (!mappingReviewRequired || mappingReviewed),
+  );
+  const canConfirm = Boolean(
+    job && currentJobStatus === "VALIDATED" && rows.length > 0 && errorRows === 0 && !mappingBlocked && (!mappingReviewRequired || mappingReviewed),
+  );
 
   useEffect(() => {
     if (!open) {
@@ -89,7 +101,10 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
         setClientId((current) => current || getClientId(activeClients[0]) || null);
       })
       .catch((error) => setErrorMessage(toUserMessage(error)));
-  }, [open]);
+    getImportSourceTypeFields(importType)
+      .then((response) => setFieldOptions(response.fields || []))
+      .catch((error) => setErrorMessage(toUserMessage(error)));
+  }, [importType, open]);
 
   function resetState() {
     setSourceType("PASTE");
@@ -99,6 +114,8 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
     setRows([]);
     setErrors([]);
     setMapping(null);
+    setMappingReviewed(false);
+    setFieldOptions([]);
     setConfirmSummary(null);
     setRowFilter("ALL");
     setNotice("");
@@ -166,6 +183,9 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       setLoadingMessage("컬럼을 자동매핑하는 중입니다...");
       const nextMapping = await autoMapImportJob(jobId);
       setMapping(nextMapping);
+      setMappingReviewed(
+        !((nextMapping.needs_review_count || 0) > 0 || (nextMapping.low_confidence_count || 0) > 0 || (nextMapping.blocked_count || 0) > 0),
+      );
       setLoadingMessage("미리보기를 생성하는 중입니다...");
       await refreshRowsAndErrors(jobId);
       setNotice("미리보기와 추천 매핑을 생성했습니다. 매핑 결과를 확인한 뒤 검증을 실행하세요.");
@@ -197,6 +217,66 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       setLoading(false);
       setLoadingMessage("");
     }
+  }
+
+  async function handleReviewMapping() {
+    if (!job || !mapping) {
+      return;
+    }
+    setLoading(true);
+    setLoadingMessage("매핑 확인 내용을 저장하는 중입니다...");
+    setNotice("");
+    setErrorMessage("");
+    try {
+      const jobId = getJobId(job);
+      const nextMapping = await applyImportJobMapping(jobId, {
+        mappingJson: mapping.applied_mapping,
+        saveProfile: true,
+        profileName: `${importType} 기본 매핑`,
+      });
+      setMapping(nextMapping);
+      setMappingReviewed(true);
+      await refreshRowsAndErrors(jobId);
+      setNotice("매핑 확인이 저장되었습니다. 이제 검증을 실행할 수 있습니다.");
+    } catch (error) {
+      setErrorMessage(toUserMessage(error));
+    } finally {
+      setLoading(false);
+      setLoadingMessage("");
+    }
+  }
+
+  function handleMappingFieldChange(sourceHeader: string, nextField?: string) {
+    if (!mapping || !sourceHeader) {
+      return;
+    }
+    const nextAppliedMapping = { ...mapping.applied_mapping };
+    if (nextField) {
+      nextAppliedMapping[sourceHeader] = nextField;
+    } else {
+      delete nextAppliedMapping[sourceHeader];
+    }
+    setMapping({
+      ...mapping,
+      applied_mapping: nextAppliedMapping,
+      suggestions: mapping.suggestions.map((item) =>
+        item.source_header === sourceHeader
+          ? {
+              ...item,
+              target_field: nextField || null,
+              canonical_field: nextField || null,
+              provider: "MANUAL",
+              providers: ["MANUAL"],
+              decision_level: nextField ? "NEEDS_REVIEW" : "LOW_CONFIDENCE",
+              reason: nextField ? "사용자가 화면에서 수정한 매핑입니다. 매핑 확인 저장이 필요합니다." : "사용자가 매핑에서 제외했습니다.",
+              user_action_required: true,
+              needs_user_confirmation: true,
+              is_auto_applied: false,
+            }
+          : item,
+      ),
+    });
+    setMappingReviewed(false);
   }
 
   async function handleConfirm() {
@@ -260,6 +340,9 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
           </Button>,
           <Button key="validate" icon={<SearchOutlined />} loading={loading} disabled={!canValidate} onClick={handleValidate}>
             검증 실행
+          </Button>,
+          <Button key="review-mapping" loading={loading} disabled={!canReviewMapping || mappingReviewed} onClick={handleReviewMapping}>
+            매핑 확인
           </Button>,
           <Button key="confirm" type="primary" icon={<CheckCircleOutlined />} loading={loading} disabled={!canConfirm} onClick={handleConfirm}>
             확정 반영
@@ -349,6 +432,54 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
           </SmartDataSection>
 
           {mapping ? (
+            <SmartDataSection title="매핑 안전 판정">
+              <Space direction="vertical" size={6}>
+                <Alert
+                  type={mappingBlocked ? "error" : mappingReviewRequired && !mappingReviewed ? "warning" : "success"}
+                  showIcon
+                  message={`자동적용 ${mapping.auto_apply_count || 0}개 / 확인필요 ${mapping.needs_review_count || 0}개 / 낮은신뢰도 ${
+                    mapping.low_confidence_count || 0
+                  }개 / 차단 ${mapping.blocked_count || 0}개`}
+                  description={
+                    mappingReviewed
+                      ? "매핑 확인이 저장되었습니다. 저장 전 검증과 확정 단계는 그대로 유지됩니다."
+                      : "자동매핑은 추천 결과입니다. 확인필요 또는 낮은신뢰도 필드는 매핑 확인 후 검증할 수 있습니다."
+                  }
+                />
+                {mapping.blocked_reasons?.length ? (
+                  <Typography.Text type="danger">차단 사유: {mapping.blocked_reasons.join(", ")}</Typography.Text>
+                ) : null}
+                <Space direction="vertical" size={6} className="smart-full-width">
+                  {mapping.suggestions.slice(0, 12).map((item) => (
+                    <Space key={`${item.source_header || item.target_field}-${item.target_field || "none"}`} wrap className="smart-full-width">
+                      <SmartStatusBadge status={formatDecisionLevel(item.decision_level)} />
+                      <Typography.Text strong>{item.source_header || "(필수필드)"}</Typography.Text>
+                      <Select
+                        allowClear
+                        showSearch
+                        size="small"
+                        style={{ minWidth: 220 }}
+                        placeholder="매핑 선택"
+                        value={item.source_header ? mapping.applied_mapping[item.source_header] || undefined : item.target_field || undefined}
+                        disabled={!item.source_header}
+                        options={fieldOptions.map((field) => ({
+                          value: field.field_name,
+                          label: `${field.label}${field.required ? " *" : ""} (${field.field_name})`,
+                        }))}
+                        optionFilterProp="label"
+                        onChange={(value) => handleMappingFieldChange(item.source_header, value)}
+                      />
+                      <Typography.Text type={item.decision_level === "BLOCKED" ? "danger" : "secondary"}>
+                        {Math.round((item.confidence || 0) * 100)}% · {item.provider || "RULE"} · {item.reason || item.status}
+                      </Typography.Text>
+                    </Space>
+                  ))}
+                </Space>
+              </Space>
+            </SmartDataSection>
+          ) : null}
+
+          {mapping ? (
             <SmartDataSection title="매핑 추천 결과">
               <Space direction="vertical" size={6}>
                 <Typography.Text>
@@ -436,6 +567,22 @@ function getRowId(row: ImportJobRow) {
 
 function getClientId(client?: ClientSummary) {
   return Number(client?.client_id || client?.id || 0);
+}
+
+function formatDecisionLevel(level?: string | null) {
+  if (level === "AUTO_APPLY") {
+    return "자동적용";
+  }
+  if (level === "NEEDS_REVIEW") {
+    return "확인필요";
+  }
+  if (level === "LOW_CONFIDENCE") {
+    return "낮은신뢰도";
+  }
+  if (level === "BLOCKED") {
+    return "차단";
+  }
+  return level || "미판정";
 }
 
 function toUserMessage(error: unknown) {
