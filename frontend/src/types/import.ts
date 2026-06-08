@@ -9,6 +9,8 @@ export type ImportType =
   | "CLIENT_UNIT"
   | "RETURN_WAREHOUSE_ROUTE"
   | "RETURN_INTAKE"
+  | "RETURN_WAYBILL_EXPECTED"
+  | "VENDOR_RETURN_DETAIL"
   | "RETURN_EXPECTED"
   | "RETURN_RECEPTION"
   | "INBOUND_EXPECTED"
@@ -36,6 +38,9 @@ export interface ImportJob {
   skipped_rows?: number;
   skipped_empty_rows?: number;
   skipped_noise_rows?: number;
+  skipped_rows_total?: number;
+  total_read_rows?: number;
+  header_row_no?: number | null;
   applied_rows?: number;
   failed_rows?: number;
   progress_percent?: number;
@@ -65,11 +70,14 @@ export interface ImportExcelUploadResponse {
   progress_percent: number;
   file_name: string;
   worksheet_name: string;
+  header_row_no?: number;
+  total_read_rows?: number;
   headers: string[];
   mapped_headers?: Record<string, string>;
   unmapped_headers?: string[];
   skipped_empty_rows?: number;
   skipped_noise_rows?: number;
+  skipped_rows_total?: number;
 }
 
 export interface ImportPasteRowsResponse {
@@ -84,6 +92,8 @@ export interface ImportPasteRowsResponse {
   progress_percent: number;
   skipped_empty_rows?: number;
   skipped_noise_rows?: number;
+  skipped_rows_total?: number;
+  total_read_rows?: number;
 }
 
 export interface ImportPasteRowItem {

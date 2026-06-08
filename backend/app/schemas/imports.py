@@ -77,6 +77,8 @@ class ImportPasteRowsResponse(BaseModel):
     progress_percent: int
     skipped_empty_rows: int = 0
     skipped_noise_rows: int = 0
+    skipped_rows_total: int = 0
+    total_read_rows: int = 0
 
 
 class ImportExcelUploadResponse(BaseModel):
@@ -91,11 +93,14 @@ class ImportExcelUploadResponse(BaseModel):
     progress_percent: int
     file_name: str
     worksheet_name: str
+    header_row_no: int = 1
+    total_read_rows: int = 0
     headers: list[str]
     mapped_headers: dict[str, str] = Field(default_factory=dict)
     unmapped_headers: list[str] = Field(default_factory=list)
     skipped_empty_rows: int = 0
     skipped_noise_rows: int = 0
+    skipped_rows_total: int = 0
 
 
 class ImportValidationRunRequest(BaseModel):
@@ -251,6 +256,11 @@ class ImportJobSummaryResponse(BaseModel):
     invalid_rows: int
     error_rows: int
     progress_percent: int
+    total_read_rows: int = 0
+    skipped_empty_rows: int = 0
+    skipped_noise_rows: int = 0
+    skipped_rows_total: int = 0
+    header_row_no: int | None = None
     file_name: str | None = None
     worksheet_name: str | None = None
     created_by: int

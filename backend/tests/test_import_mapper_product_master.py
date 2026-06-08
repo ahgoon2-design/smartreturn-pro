@@ -269,6 +269,17 @@ def test_product_master_paste_skips_empty_and_noise_rows_without_errors():
         assert [row["row_no"] for row in rows] == [5]
         assert rows[0]["raw_json"]["상품코드"] == "PM-F001"
 
+        client.post(f"/api/import-jobs/{job_id}/auto-map", headers=headers, json={})
+        validate_response = client.post(f"/api/import-jobs/{job_id}/validate", headers=headers, json={"force": False})
+        assert validate_response.status_code == 200
+        assert validate_response.json()["data"]["status"] == "VALIDATED"
+        assert db.query(ImportValidationError).filter(ImportValidationError.job_id == job_id).count() == 0
+
+        confirm_response = client.post(f"/api/import-jobs/{job_id}/confirm", headers=headers)
+        assert confirm_response.status_code == 200
+        assert confirm_response.json()["data"]["applied_rows"] == 1
+        assert db.query(Product).filter(Product.client_id == client_row.id).count() == 1
+
 
 def test_product_master_error_rows_block_confirm():
     for client, db in _client_with_db():

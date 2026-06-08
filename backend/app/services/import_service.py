@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from io import BytesIO
 import re
 import xml.etree.ElementTree as ET
@@ -58,6 +59,8 @@ ALLOWED_IMPORT_TYPES = {
     "RETURN_RECEPTION",
     "INBOUND_EXPECTED",
     "OUTBOUND_ORDER",
+    "RETURN_WAYBILL_EXPECTED",
+    "VENDOR_RETURN_DETAIL",
 }
 
 ALLOWED_SOURCE_TYPES = {
@@ -90,6 +93,7 @@ CANONICAL_FIELDS: dict[str, list[dict]] = {
         {"field_name": "additional_barcode", "label": "추가바코드", "required": False},
         {"field_name": "carton_barcode", "label": "카톤바코드", "required": False},
         {"field_name": "unit_qty", "label": "카톤입수", "required": False},
+        {"field_name": "inner_qty", "label": "입수수량", "required": False},
         {"field_name": "is_active", "label": "사용여부", "required": False},
         {"field_name": "memo", "label": "메모", "required": False},
     ],
@@ -150,6 +154,9 @@ CANONICAL_FIELDS: dict[str, list[dict]] = {
         {"field_name": "memo", "label": "메모", "required": False},
     ],
     "RETURN_INTAKE": [
+        {"field_name": "request_date", "label": "요청일", "required": False},
+        {"field_name": "return_tracking_no", "label": "반품운송장번호", "required": False},
+        {"field_name": "original_tracking_no", "label": "원운송장번호", "required": False},
         {"field_name": "tracking_no", "label": "운송장번호", "required": True},
         {"field_name": "order_no", "label": "주문번호", "required": False},
         {"field_name": "product_code", "label": "상품코드", "required": False},
@@ -161,6 +168,28 @@ CANONICAL_FIELDS: dict[str, list[dict]] = {
         {"field_name": "return_reason", "label": "반품사유", "required": False},
         {"field_name": "client_unit_code", "label": "팀코드", "required": False},
         {"field_name": "client_unit_name", "label": "팀명", "required": False},
+    ],
+    "RETURN_WAYBILL_EXPECTED": [
+        {"field_name": "tracking_no", "label": "운송장번호", "required": True},
+        {"field_name": "order_no", "label": "주문번호", "required": False},
+        {"field_name": "delivery_date", "label": "배송일자", "required": False},
+        {"field_name": "product_name", "label": "품목명", "required": False},
+        {"field_name": "item_name", "label": "단품명", "required": False},
+        {"field_name": "qty", "label": "수량", "required": False},
+        {"field_name": "delivery_status", "label": "배송상태", "required": False},
+    ],
+    "VENDOR_RETURN_DETAIL": [
+        {"field_name": "return_tracking_no", "label": "반품운송장번호", "required": False},
+        {"field_name": "original_tracking_no", "label": "원운송장번호", "required": False},
+        {"field_name": "tracking_no", "label": "운송장번호", "required": False},
+        {"field_name": "order_no", "label": "주문번호", "required": False},
+        {"field_name": "request_date", "label": "요청일", "required": False},
+        {"field_name": "product_code", "label": "상품코드", "required": False},
+        {"field_name": "product_barcode", "label": "상품바코드", "required": False},
+        {"field_name": "product_name", "label": "상품명", "required": False},
+        {"field_name": "option_name", "label": "옵션명", "required": False},
+        {"field_name": "qty", "label": "수량", "required": False},
+        {"field_name": "judgment_code", "label": "판정코드", "required": False},
     ],
     "RETURN_EXPECTED": [
         {"field_name": "tracking_no", "label": "운송장번호", "required": True},
@@ -199,6 +228,9 @@ HEADER_ALIASES = {
         "sku",
         "옵션코드",
         "옵션 코드",
+        "ERP코드",
+        "ERP 코드",
+        "ERP코드(낱개)",
     ),
     "product_name": (
         "product_name",
@@ -213,7 +245,7 @@ HEADER_ALIASES = {
         "상품명/옵션명",
         "옵션명",
     ),
-    "option_name": ("option_name", "옵션명", "옵션", "규격", "색상/사이즈", "사이즈", "색상"),
+    "option_name": ("option_name", "옵션명", "옵션", "규격", "색상/사이즈", "사이즈", "색상", "품목명(원명)"),
     "primary_barcode": (
         "primary_barcode",
         "barcode",
@@ -239,8 +271,9 @@ HEADER_ALIASES = {
         "대표바코드",
         "대표 바코드",
     ),
-    "additional_barcode": ("additional_barcode", "추가바코드", "추가 바코드", "보조바코드", "별도바코드"),
+    "additional_barcode": ("additional_barcode", "추가바코드", "추가 바코드", "보조바코드", "별도바코드", "쿠팡바코드"),
     "carton_barcode": ("carton_barcode", "카톤바코드", "카톤 바코드", "박스바코드", "박스코드", "carton barcode"),
+    "inner_qty": ("inner_qty", "Inner Qty", "inner qty", "입수수량", "이너수량"),
     "barcode_type": (
         "barcode_type",
         "barcode type",
@@ -256,6 +289,8 @@ HEADER_ALIASES = {
         "단위수량",
         "단위 수량",
         "입수",
+        "Packing Unit",
+        "packing unit",
         "구성수량",
         "구성 수량",
         "묶음수량",
@@ -265,7 +300,7 @@ HEADER_ALIASES = {
         "박스수량",
         "수량/박스",
     ),
-    "is_active": ("is_active", "사용여부", "상태", "활성여부", "사용 여부"),
+    "is_active": ("is_active", "사용여부", "상태", "활성여부", "사용 여부", "사용"),
     "memo": ("memo", "메모", "비고", "설명"),
     "business_no": ("business_no", "사업자번호", "사업자 번호"),
     "representative_name": ("representative_name", "대표자명", "대표자"),
@@ -284,15 +319,21 @@ HEADER_ALIASES = {
     "unit_code": ("unit_code", "팀코드", "운영단위코드", "부서코드"),
     "unit_name": ("unit_name", "팀명", "운영단위", "운영단위명", "부서명"),
     "judgment_code": ("judgment_code", "판정코드", "판정상태", "판정"),
-    "tracking_no": ("tracking_no", "운송장번호", "송장번호", "송장", "택배번호"),
+    "tracking_no": ("tracking_no", "운송장번호", "송장번호", "송장", "택배번호", "반품송장", "반품송장번호", "반품송장 번호"),
+    "return_tracking_no": ("return_tracking_no", "반품송장", "반품송장번호", "반품송장 번호", "반품운송장", "반품운송장번호"),
+    "original_tracking_no": ("original_tracking_no", "원송장번호", "원 송장번호", "원운송장번호", "원 운송장번호"),
     "order_no": ("order_no", "주문번호", "주문 번호", "주문ID"),
     "product_barcode": ("product_barcode", "상품바코드", "상품 바코드", "바코드"),
-    "qty": ("qty", "수량", "반품수량"),
+    "qty": ("qty", "수량", "반품수량", "입고수량"),
     "customer_name": ("customer_name", "고객명", "수취인", "주문자"),
     "return_reason": ("return_reason", "반품사유", "사유"),
     "client_unit_code": ("client_unit_code", "팀코드", "운영단위코드"),
     "client_unit_name": ("client_unit_name", "팀명", "운영단위명"),
     "expected_qty": ("expected_qty", "입고예정수량", "예정수량"),
+    "delivery_date": ("delivery_date", "일자", "배송일자", "집배일자"),
+    "request_date": ("request_date", "요청일", "발주일"),
+    "item_name": ("item_name", "단품명", "품목명"),
+    "delivery_status": ("delivery_status", "최종상태", "배송상태"),
 }
 
 EXCEL_COMPAT_HEADER_ALIASES = {
@@ -366,7 +407,9 @@ DATA_ROW_CORE_FIELDS = {
     "CLIENT_WAREHOUSE": ("warehouse_name", "warehouse_code", "client_name", "client_code"),
     "CLIENT_UNIT": ("unit_name", "unit_code", "client_name", "client_code"),
     "RETURN_WAREHOUSE_ROUTE": ("judgment_code", "warehouse_name", "warehouse_code", "client_name", "client_code"),
-    "RETURN_INTAKE": ("tracking_no", "order_no", "product_code", "product_barcode", "product_name"),
+    "RETURN_INTAKE": ("return_tracking_no", "original_tracking_no", "tracking_no", "order_no", "product_code", "product_barcode", "product_name", "qty"),
+    "RETURN_WAYBILL_EXPECTED": ("tracking_no", "order_no", "product_name", "item_name", "qty"),
+    "VENDOR_RETURN_DETAIL": ("return_tracking_no", "original_tracking_no", "tracking_no", "order_no", "product_code", "product_barcode", "product_name", "qty"),
     "PRODUCT_BARCODE": ("product_code", "barcode"),
     "RETURN_RECEPTION": ("tracking_no", "invoice_no", "product_code", "barcode"),
     "RETURN_EXPECTED": ("tracking_no", "invoice_no"),
@@ -378,6 +421,8 @@ DATA_ROW_CORE_FIELDS = {
 @dataclass(frozen=True)
 class ParsedExcelRows:
     worksheet_name: str
+    header_row_no: int
+    total_read_rows: int
     headers: list[str]
     mapped_headers: dict[str, str]
     unmapped_headers: list[str]
@@ -528,6 +573,7 @@ def _apply_header_mapping(raw_json: dict, mapping: dict[str, str]) -> dict:
         target_field = mapping.get(source_header)
         if target_field:
             mapped[target_field] = value
+    mapped = _normalize_import_row(mapped)
     if "primary_barcode" in mapped and "barcode" not in mapped:
         mapped["barcode"] = mapped["primary_barcode"]
     if "barcode" in mapped and "primary_barcode" not in mapped:
@@ -535,27 +581,164 @@ def _apply_header_mapping(raw_json: dict, mapping: dict[str, str]) -> dict:
     return mapped
 
 
-def _clean_cell_value(value) -> str:
+def _normalize_cell_value(value) -> str:
     if value is None:
         return ""
-    text = str(value).strip()
+    text = str(value).replace("\u00a0", " ").replace("\u3000", " ").strip()
     if text.startswith("="):
         return ""
+    if re.fullmatch(r"-?\d+\.0+", text):
+        text = text.split(".", 1)[0]
     return text
 
 
+def _clean_cell_value(value) -> str:
+    return _normalize_cell_value(value)
+
+
 def _is_meaningful_value(value) -> bool:
-    text = _clean_cell_value(value)
+    text = _normalize_cell_value(value)
     if not text:
         return False
     return text.lower() not in MEANINGLESS_VALUE_TOKENS
 
 
 def _is_noise_only_value(value) -> bool:
-    text = _clean_cell_value(value).lower()
+    text = _normalize_cell_value(value).lower()
     if not text:
         return False
     return any(keyword in text for keyword in NOISE_ROW_KEYWORDS)
+
+
+def _normalize_tracking_no(value) -> str | None:
+    text = _normalize_cell_value(value)
+    if not _is_meaningful_value(text):
+        return None
+    normalized = re.sub(r"[\s.\-]", "", text)
+    return normalized or None
+
+
+def _normalize_barcode_import_value(value) -> str | None:
+    text = _normalize_cell_value(value)
+    if not _is_meaningful_value(text):
+        return None
+    if re.fullmatch(r"\d+(?:\.0+)?", text):
+        return text.split(".", 1)[0]
+    return text
+
+
+def _normalize_product_code(value) -> str | None:
+    text = _normalize_cell_value(value)
+    return text if _is_meaningful_value(text) else None
+
+
+def _normalize_qty(value) -> str | None:
+    text = _normalize_cell_value(value)
+    if not _is_meaningful_value(text):
+        return None
+    cleaned = re.sub(r"[,개EAea\s]", "", text)
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", cleaned):
+        number = float(cleaned)
+        return str(int(number)) if number.is_integer() else str(number)
+    return text
+
+
+def _normalize_bool(value) -> str | None:
+    text = _normalize_cell_value(value)
+    if not _is_meaningful_value(text):
+        return None
+    lowered = text.lower()
+    if lowered in {"y", "yes", "true", "1", "사용", "사용중", "활성", "active"}:
+        return "true"
+    if lowered in {"n", "no", "false", "0", "미사용", "사용중지", "비활성", "inactive"}:
+        return "false"
+    return text
+
+
+def _normalize_date_value(value) -> str | None:
+    text = _normalize_cell_value(value)
+    if not _is_meaningful_value(text):
+        return None
+    if re.fullmatch(r"\d+(?:\.0+)?", text):
+        serial = int(float(text))
+        if 1 <= serial <= 60000:
+            return (date(1899, 12, 30) + timedelta(days=serial)).isoformat()
+    for fmt in ("%Y-%m-%d", "%Y.%m.%d", "%Y/%m/%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return text
+
+
+def _normalize_judgment_code(value) -> str | None:
+    text = _normalize_cell_value(value)
+    if not _is_meaningful_value(text):
+        return None
+    lookup = {
+        "양품": "GOOD",
+        "정상": "GOOD",
+        "good": "GOOD",
+        "리퍼": "REFURB_A",
+        "리퍼a": "REFURB_A",
+        "refurb_a": "REFURB_A",
+        "리퍼b": "REFURB_B",
+        "refurb_b": "REFURB_B",
+        "리퍼c": "REFURB_C",
+        "refurb_c": "REFURB_C",
+        "제조사반품": "MANUFACTURER_RETURN",
+        "manufacturer_return": "MANUFACTURER_RETURN",
+        "샘플": "SAMPLE",
+        "sample": "SAMPLE",
+        "보류": "HOLD",
+        "hold": "HOLD",
+        "폐기": "DISPOSAL",
+        "disposal": "DISPOSAL",
+    }
+    return lookup.get(text.lower(), text.upper())
+
+
+def _normalize_import_row(data: dict) -> dict:
+    normalized = dict(data)
+    field_normalizers = {
+        "tracking_no": _normalize_tracking_no,
+        "return_tracking_no": _normalize_tracking_no,
+        "original_tracking_no": _normalize_tracking_no,
+        "primary_barcode": _normalize_barcode_import_value,
+        "barcode": _normalize_barcode_import_value,
+        "product_barcode": _normalize_barcode_import_value,
+        "additional_barcode": _normalize_barcode_import_value,
+        "carton_barcode": _normalize_barcode_import_value,
+        "product_code": _normalize_product_code,
+        "qty": _normalize_qty,
+        "unit_qty": _normalize_qty,
+        "inner_qty": _normalize_qty,
+        "expected_qty": _normalize_qty,
+        "is_active": _normalize_bool,
+        "is_default_inbound": _normalize_bool,
+        "is_default_outbound": _normalize_bool,
+        "is_default_return": _normalize_bool,
+        "delivery_date": _normalize_date_value,
+        "request_date": _normalize_date_value,
+        "judgment_code": _normalize_judgment_code,
+    }
+    for field_name, normalizer in field_normalizers.items():
+        if field_name not in normalized:
+            continue
+        original = normalized.get(field_name)
+        next_value = normalizer(original)
+        if next_value is None:
+            normalized[field_name] = ""
+            continue
+        if _normalize_cell_value(original) != next_value:
+            normalized[f"{field_name}_original"] = _normalize_cell_value(original)
+        normalized[field_name] = next_value
+    for field_name, value in list(normalized.items()):
+        if field_name.endswith("_original"):
+            continue
+        if field_name not in field_normalizers:
+            normalized[field_name] = _normalize_cell_value(value)
+    return normalized
 
 
 def _canonicalized_row_for_filter(import_type: str, row: dict) -> dict:
@@ -615,7 +798,18 @@ def _row_filter_summary(filtered: FilteredImportRows) -> dict:
     return {
         "skipped_empty_rows": filtered.skipped_empty_rows,
         "skipped_noise_rows": filtered.skipped_noise_rows,
+        "skipped_rows_total": filtered.skipped_empty_rows + filtered.skipped_noise_rows,
     }
+
+
+def _job_raw_metadata(job) -> dict:
+    return job.raw_json if isinstance(job.raw_json, dict) else {}
+
+
+def _job_row_filter_metadata(job) -> dict:
+    metadata = _job_raw_metadata(job)
+    row_filter = metadata.get("row_filter")
+    return row_filter if isinstance(row_filter, dict) else {}
 
 
 def _ensure_paste_source_type(source_type: str) -> None:
@@ -685,7 +879,32 @@ def _ensure_xlsx_file(file_name: str, file_bytes: bytes) -> None:
 
 
 def _normalize_excel_header(header: str, import_type: str) -> str | None:
-    return EXCEL_COMPAT_HEADER_MAP.get(_excel_header_lookup_key(header))
+    lookup_key = _excel_header_lookup_key(header)
+    return _header_alias_lookup(import_type).get(lookup_key) or EXCEL_COMPAT_HEADER_MAP.get(lookup_key)
+
+
+def _detect_excel_header_row(import_type: str, parsed_rows: list[tuple[int, list[str]]]) -> tuple[int, int, list[str]]:
+    best_index = 0
+    best_row_no = parsed_rows[0][0]
+    best_headers = [str(value).strip() for value in parsed_rows[0][1]]
+    best_score = -1
+    core_fields = set(DATA_ROW_CORE_FIELDS.get(import_type, tuple(_required_field_names(import_type))))
+    for index, (row_no, values) in enumerate(parsed_rows[:10]):
+        headers = [_normalize_cell_value(value) for value in values]
+        if not any(headers):
+            continue
+        mapped_fields = [_normalize_excel_header(header, import_type) for header in headers if header]
+        mapped_count = len([field for field in mapped_fields if field])
+        core_count = len({field for field in mapped_fields if field in core_fields})
+        score = mapped_count * 2 + core_count
+        if score > best_score:
+            best_index = index
+            best_row_no = row_no
+            best_headers = headers
+            best_score = score
+    if best_score <= 0 or not any(best_headers):
+        raise _business_error("IMPORT_JOB_EXCEL_HEADERS_REQUIRED", "Excel header row is required.")
+    return best_index, best_row_no, best_headers
 
 
 def _xml_text(element: ET.Element) -> str:
@@ -773,10 +992,7 @@ def _parse_xlsx_rows(file_bytes: bytes, import_type: str) -> ParsedExcelRows:
     if not parsed_rows:
         raise _business_error("IMPORT_JOB_EXCEL_HEADERS_REQUIRED", "Excel header row is required.")
 
-    _header_row_no, header_values = parsed_rows[0]
-    headers = [header.strip() for header in header_values]
-    if not any(headers):
-        raise _business_error("IMPORT_JOB_EXCEL_HEADERS_REQUIRED", "Excel header row is required.")
+    header_index, header_row_no, headers = _detect_excel_header_row(import_type, parsed_rows)
 
     mapped_headers: dict[str, str] = {}
     unmapped_headers: list[str] = []
@@ -794,7 +1010,7 @@ def _parse_xlsx_rows(file_bytes: bytes, import_type: str) -> ParsedExcelRows:
             header_mappings.append(None)
 
     rows: list[dict] = []
-    for row_no, values in parsed_rows[1:]:
+    for row_no, values in parsed_rows[header_index + 1:]:
         raw_json: dict[str, str] = {}
         normalized_json: dict[str, str] = {}
         for index, header in enumerate(headers):
@@ -805,6 +1021,7 @@ def _parse_xlsx_rows(file_bytes: bytes, import_type: str) -> ParsedExcelRows:
             normalized_key = header_mappings[index]
             if normalized_key:
                 normalized_json[normalized_key] = value
+        normalized_json = _normalize_import_row(normalized_json)
         if "primary_barcode" in normalized_json and "barcode" not in normalized_json:
             normalized_json["barcode"] = normalized_json["primary_barcode"]
         if "barcode" in normalized_json and "primary_barcode" not in normalized_json:
@@ -825,6 +1042,8 @@ def _parse_xlsx_rows(file_bytes: bytes, import_type: str) -> ParsedExcelRows:
 
     return ParsedExcelRows(
         worksheet_name=worksheet_name,
+        header_row_no=header_row_no,
+        total_read_rows=max(len(parsed_rows) - header_index - 1, 0),
         headers=headers,
         mapped_headers=mapped_headers,
         unmapped_headers=unmapped_headers,
@@ -853,6 +1072,8 @@ def _ensure_requested_warehouse(db: Session, warehouse_id: int):
 
 
 def _job_summary(job, client, warehouse) -> ImportJobSummaryResponse:
+    metadata = _job_raw_metadata(job)
+    row_filter = _job_row_filter_metadata(job)
     return ImportJobSummaryResponse(
         job_id=job.id,
         import_type=job.import_type,
@@ -868,6 +1089,11 @@ def _job_summary(job, client, warehouse) -> ImportJobSummaryResponse:
         invalid_rows=job.invalid_rows,
         error_rows=job.error_rows,
         progress_percent=job.progress_percent,
+        total_read_rows=int(row_filter.get("total_read_rows") or job.total_rows or 0),
+        skipped_empty_rows=int(row_filter.get("skipped_empty_rows") or 0),
+        skipped_noise_rows=int(row_filter.get("skipped_noise_rows") or 0),
+        skipped_rows_total=int(row_filter.get("skipped_rows_total") or 0),
+        header_row_no=metadata.get("header_row_no"),
         file_name=job.file_name,
         worksheet_name=job.worksheet_name,
         created_by=job.created_by,
@@ -1242,7 +1468,7 @@ def _normalize_paste_rows(request: ImportPasteRowsRequest) -> list[dict]:
             {
                 "row_no": row_no,
                 "raw_json": row.raw_json,
-                "normalized_json": row.normalized_json,
+                "normalized_json": _normalize_import_row(row.normalized_json) if isinstance(row.normalized_json, dict) else None,
                 "source_row_key": row.source_row_key,
             }
         )
@@ -1383,10 +1609,7 @@ def _bool_value_or_default(data: dict, field_name: str, default: bool) -> bool:
 
 
 def _normalize_barcode_value(value: str | None) -> str | None:
-    if value is None:
-        return None
-    value = value.strip()
-    return value or None
+    return _normalize_barcode_import_value(value)
 
 
 def _int_value_or_default(data: dict, field_name: str, default: int) -> int:
@@ -1549,6 +1772,13 @@ def _validate_return_reception(data: dict) -> list[dict]:
     return issues
 
 
+def _validate_return_intake_import(data: dict) -> list[dict]:
+    issues = []
+    issues.extend(_required_one_of(data, ("return_tracking_no", "tracking_no", "original_tracking_no")))
+    issues.extend(_number_min_if_present(data, "qty", min_value=1))
+    return issues
+
+
 def _validate_return_expected(data: dict) -> list[dict]:
     return _required_one_of(data, ("tracking_no", "invoice_no"))
 
@@ -1582,7 +1812,9 @@ def _validate_import_row(db: Session, *, import_type: str, client_id: int | None
     validators = {
         "PRODUCT_BARCODE": _validate_product_barcode,
         "RETURN_RECEPTION": _validate_return_reception,
-        "RETURN_INTAKE": _validate_return_reception,
+        "RETURN_INTAKE": _validate_return_intake_import,
+        "RETURN_WAYBILL_EXPECTED": _validate_return_intake_import,
+        "VENDOR_RETURN_DETAIL": _validate_return_intake_import,
         "RETURN_EXPECTED": _validate_return_expected,
         "INBOUND_EXPECTED": _validate_inbound_expected,
         "OUTBOUND_ORDER": _validate_outbound_order,
@@ -1671,6 +1903,10 @@ def save_paste_import_job_rows(
 
     normalized_rows = _normalize_paste_rows(request)
     filtered = _filter_actual_import_rows(job.import_type, normalized_rows)
+    filter_summary = {
+        **_row_filter_summary(filtered),
+        "total_read_rows": len(normalized_rows),
+    }
     rows = filtered.rows
     if not rows:
         raise _business_error("IMPORT_JOB_NO_DATA_ROWS", "실제 데이터 행이 없습니다.")
@@ -1693,7 +1929,7 @@ def save_paste_import_job_rows(
         )
         updated_job.raw_json = {
             **(updated_job.raw_json if isinstance(updated_job.raw_json, dict) else {}),
-            "row_filter": _row_filter_summary(filtered),
+            "row_filter": filter_summary,
         }
         db.flush()
         db.commit()
@@ -1709,6 +1945,8 @@ def save_paste_import_job_rows(
             progress_percent=updated_job.progress_percent,
             skipped_empty_rows=filtered.skipped_empty_rows,
             skipped_noise_rows=filtered.skipped_noise_rows,
+            skipped_rows_total=filter_summary["skipped_rows_total"],
+            total_read_rows=filter_summary["total_read_rows"],
         ).model_dump()
     except Exception:
         db.rollback()
@@ -1769,9 +2007,12 @@ def upload_excel_import_job_file(
             "mapped_headers": parsed.mapped_headers,
             "unmapped_headers": parsed.unmapped_headers,
             "worksheet_name": parsed.worksheet_name,
+            "header_row_no": parsed.header_row_no,
             "row_filter": {
                 "skipped_empty_rows": parsed.skipped_empty_rows,
                 "skipped_noise_rows": parsed.skipped_noise_rows,
+                "skipped_rows_total": parsed.skipped_empty_rows + parsed.skipped_noise_rows,
+                "total_read_rows": parsed.total_read_rows,
             },
         }
         db.flush()
@@ -1788,11 +2029,14 @@ def upload_excel_import_job_file(
             progress_percent=updated_job.progress_percent,
             file_name=file_name,
             worksheet_name=parsed.worksheet_name,
+            header_row_no=parsed.header_row_no,
+            total_read_rows=parsed.total_read_rows,
             headers=parsed.headers,
             mapped_headers=parsed.mapped_headers,
             unmapped_headers=parsed.unmapped_headers,
             skipped_empty_rows=parsed.skipped_empty_rows,
             skipped_noise_rows=parsed.skipped_noise_rows,
+            skipped_rows_total=parsed.skipped_empty_rows + parsed.skipped_noise_rows,
         ).model_dump()
     except Exception:
         db.rollback()

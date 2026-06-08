@@ -1,5 +1,5 @@
 import { CheckCircleOutlined, DownloadOutlined, FileExcelOutlined, InboxOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Input, Select, Space, Typography } from "antd";
+import { Alert, Button, Input, Select, Space, Spin, Statistic, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import {
   autoMapImportJob,
@@ -61,6 +61,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
   const [confirmSummary, setConfirmSummary] = useState<ImportConfirmResponse | null>(null);
   const [rowFilter, setRowFilter] = useState<ImportPreviewRowFilter>("ALL");
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [notice, setNotice] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -70,6 +71,8 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
   const filteredRows = useMemo(() => filterImportPreviewRows(rows, errors, rowFilter), [errors, rowFilter, rows]);
   const currentJobStatus = job?.status || "DRAFT";
   const skippedImportRows = (job?.skipped_empty_rows || 0) + (job?.skipped_noise_rows || 0);
+  const totalReadRows = job?.total_read_rows || job?.total_rows || 0;
+  const actualRows = job?.total_rows || rows.length || 0;
   const errorRows = useMemo(() => new Set(errors.filter((item) => item.severity === "ERROR").map((item) => item.row_id || item.row_no)).size, [errors]);
   const canCreatePreview = Boolean(clientId && !job && (sourceType === "EXCEL_FILE" ? excelFile : parsedRows.length > 0));
   const canValidate = Boolean(job && currentJobStatus === "READY_TO_VALIDATE" && rows.length > 0);
@@ -100,6 +103,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
     setRowFilter("ALL");
     setNotice("");
     setErrorMessage("");
+    setLoadingMessage("");
     setFileInputKey((value) => value + 1);
   }
 
@@ -123,6 +127,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       return;
     }
     setLoading(true);
+    setLoadingMessage(sourceType === "EXCEL_FILE" ? "파일을 읽는 중입니다..." : "붙여넣기 자료를 읽는 중입니다...");
     setNotice("");
     setErrorMessage("");
     try {
@@ -138,9 +143,12 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
         if (!excelFile) {
           return;
         }
+        setLoadingMessage("시트 목록을 불러오는 중입니다...");
         const upload = await uploadImportExcelFile(jobId, excelFile);
+        setLoadingMessage("헤더를 찾는 중입니다...");
         setJob({ ...createdJob, ...upload, id: createdJob.id, job_id: jobId, status: upload.status });
       } else {
+        setLoadingMessage("실제 데이터 행을 판별하는 중입니다...");
         const savedRows = await savePasteRows(jobId, {
           rows: parsedRows,
           replace_existing: false,
@@ -155,14 +163,17 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
           total_rows: savedRows.total_rows,
         });
       }
+      setLoadingMessage("컬럼을 자동매핑하는 중입니다...");
       const nextMapping = await autoMapImportJob(jobId);
       setMapping(nextMapping);
+      setLoadingMessage("미리보기를 생성하는 중입니다...");
       await refreshRowsAndErrors(jobId);
       setNotice("미리보기와 추천 매핑을 생성했습니다. 매핑 결과를 확인한 뒤 검증을 실행하세요.");
     } catch (error) {
       setErrorMessage(toUserMessage(error));
     } finally {
       setLoading(false);
+      setLoadingMessage("");
     }
   }
 
@@ -171,6 +182,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       return;
     }
     setLoading(true);
+    setLoadingMessage("검증 중입니다...");
     setNotice("");
     setErrorMessage("");
     try {
@@ -183,6 +195,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       setErrorMessage(toUserMessage(error));
     } finally {
       setLoading(false);
+      setLoadingMessage("");
     }
   }
 
@@ -191,11 +204,13 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       return;
     }
     setLoading(true);
+    setLoadingMessage("저장 중입니다...");
     setNotice("");
     setErrorMessage("");
     try {
       const jobId = getJobId(job);
       const summary = await confirmImportJob(jobId);
+      setLoadingMessage("저장 결과를 불러오는 중입니다...");
       setConfirmSummary(summary);
       setJob({ ...job, ...summary, id: job.id, job_id: jobId });
       await refreshRowsAndErrors(jobId);
@@ -205,6 +220,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       setErrorMessage(toUserMessage(error));
     } finally {
       setLoading(false);
+      setLoadingMessage("");
     }
   }
 
@@ -274,6 +290,9 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
           </section>
 
           <SmartErrorNotice message={errorMessage} />
+          {loading && loadingMessage ? (
+            <Alert type="info" showIcon message={<Spin size="small" />} description={loadingMessage} />
+          ) : null}
           {notice ? <Alert type={currentJobStatus === "HAS_ERRORS" ? "warning" : "success"} showIcon message={notice} /> : null}
           {skippedImportRows ? (
             <Alert
@@ -282,6 +301,20 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
               message={`빈 행 ${job?.skipped_empty_rows || 0}건, 무의미 행 ${job?.skipped_noise_rows || 0}건은 import 대상에서 제외했습니다.`}
               description="제외된 행은 오류가 아니며, 미리보기와 확정 반영 대상에 포함되지 않습니다."
             />
+          ) : null}
+
+          {job ? (
+            <SmartDataSection title="Import 요약">
+              <Space wrap>
+                <Statistic title="전체 읽은 행" value={totalReadRows} />
+                <Statistic title="실제 자료 행" value={actualRows} />
+                <Statistic title="제외 행" value={skippedImportRows} />
+                <Statistic title="정상 행" value={job.valid_rows || 0} />
+                <Statistic title="경고 행" value={job.warning_rows || 0} />
+                <Statistic title="오류 행" value={job.error_rows || 0} />
+              </Space>
+              {job.header_row_no ? <Typography.Text type="secondary">헤더 행: {job.header_row_no}행</Typography.Text> : null}
+            </SmartDataSection>
           ) : null}
           {confirmSummary ? (
             <Alert
@@ -371,23 +404,25 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
 }
 
 function parsePasteRows(text: string): ImportPasteRowItem[] {
-  const trimmed = text.trim();
-  if (!trimmed) {
+  if (!text.trim()) {
     return [];
   }
-  const lines = trimmed.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const headerIndex = lines.findIndex((line) => line.trim());
+  if (headerIndex < 0 || headerIndex >= lines.length - 1) {
     return [];
   }
-  const delimiter = lines[0].includes("\t") ? "\t" : ",";
-  const headers = lines[0].split(delimiter).map((header) => header.trim());
-  return lines.slice(1).map((line, index) => {
+  const headerLine = lines[headerIndex];
+  const delimiter = headerLine.includes("\t") ? "\t" : ",";
+  const headers = headerLine.split(delimiter).map((header) => header.trim());
+  return lines.slice(headerIndex + 1).map((line, index) => {
     const values = line.split(delimiter);
     const rawJson = headers.reduce<Record<string, string>>((acc, header, headerIndex) => {
       acc[header] = (values[headerIndex] || "").trim();
       return acc;
     }, {});
-    return { row_no: index + 1, raw_json: rawJson, source_row_key: `row-${index + 1}` };
+    const rowNo = headerIndex + index + 2;
+    return { row_no: rowNo, raw_json: rawJson, source_row_key: `row-${rowNo}` };
   });
 }
 
