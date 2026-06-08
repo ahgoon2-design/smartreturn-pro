@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
   createChannelAccount,
+  createReturnExpectedFromChannelAccount,
+  createReturnExpectedFromChannelCandidate,
   disableChannelAccount,
   listChannelAccounts,
   listChannelRawEvents,
@@ -192,6 +194,27 @@ export function ChannelAccountManagementScreen() {
       { key: "product_name", title: "상품명", dataIndex: "product_name", minWidth: 180, render: (value) => toDisplayText(value) },
       { key: "qty", title: "수량", dataIndex: "qty", width: 80, align: "right", render: (value) => toDisplayText(value) },
       { key: "risk_flags", title: "위험", dataIndex: "risk_flags", minWidth: 170, render: (_value, record) => record.risk_flags?.join(", ") || "-" },
+      {
+        key: "return_expected_create_status",
+        title: "반품예정",
+        dataIndex: "return_expected_create_status",
+        width: 130,
+        render: (value) => <SmartStatusBadge status={String(value)} label={returnExpectedCreateStatusLabel(String(value))} />,
+      },
+      {
+        key: "return_expected_id",
+        title: "연결 row",
+        dataIndex: "return_expected_id",
+        width: 100,
+        render: (value) => toDisplayText(value),
+      },
+      {
+        key: "return_expected_create_error",
+        title: "생성 사유",
+        dataIndex: "return_expected_create_error",
+        minWidth: 180,
+        render: (value) => toDisplayText(value),
+      },
       { key: "updated_at", title: "갱신시각", dataIndex: "updated_at", width: 150, render: formatDateTime },
     ],
     [],
@@ -206,7 +229,12 @@ export function ChannelAccountManagementScreen() {
         disabled: (record) => Boolean(record.reviewed_at),
         onClick: (record) => void handleMarkReviewed(record),
       },
-      { key: "create-return-expected", label: "반품예정 생성 예정", disabled: true, onClick: () => undefined },
+      {
+        key: "create-return-expected",
+        label: "반품예정 생성",
+        disabled: (record) => !canCreateReturnExpected(record),
+        onClick: (record) => void handleCreateReturnExpected(record),
+      },
     ],
     [],
   );
@@ -376,6 +404,35 @@ export function ChannelAccountManagementScreen() {
     }
   }
 
+  async function handleCreateReturnExpected(candidate: ChannelReturnCandidate) {
+    setActionLoadingId(candidate.channel_account_id);
+    try {
+      const result = await createReturnExpectedFromChannelCandidate(candidate.id);
+      message.success(result.message);
+      setNotice(result.message);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "반품예정자료를 생성하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleBulkCreateReturnExpected(account: ChannelAccount) {
+    setActionLoadingId(account.id);
+    try {
+      const result = await createReturnExpectedFromChannelAccount(account.id);
+      const summary = `생성 ${result.created_count}건, 중복 ${result.skipped_duplicate_count}건, 차단 ${result.blocked_count}건, 실패 ${result.failed_count}건`;
+      message.success(summary);
+      setNotice(summary);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "반품예정자료 일괄 생성을 실행하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
   async function handleDisable(account: ChannelAccount) {
     setActionLoadingId(account.id);
     try {
@@ -503,6 +560,14 @@ export function ChannelAccountManagementScreen() {
             >
               선택 계정 원본 변환
             </Button>
+            <Button
+              type="primary"
+              disabled={!selectedAccount || readyNotCreatedCount(selectedCandidates) === 0}
+              loading={actionLoadingId === selectedAccount?.id}
+              onClick={() => selectedAccount && void handleBulkCreateReturnExpected(selectedAccount)}
+            >
+              입고 준비 일괄 생성
+            </Button>
           </Space>
         }
       >
@@ -610,6 +675,28 @@ function candidateStatusLabel(value: string) {
       BLOCKED: "차단",
     }[value] || value
   );
+}
+
+function returnExpectedCreateStatusLabel(value: string) {
+  return (
+    {
+      NOT_CREATED: "미생성",
+      CREATED: "생성됨",
+      SKIPPED_DUPLICATE: "중복 연결",
+      FAILED: "생성 실패",
+    }[value] || value
+  );
+}
+
+function canCreateReturnExpected(candidate: ChannelReturnCandidate) {
+  return (
+    candidate.match_status === "READY_FOR_INTAKE" &&
+    !["CREATED", "SKIPPED_DUPLICATE"].includes(candidate.return_expected_create_status)
+  );
+}
+
+function readyNotCreatedCount(candidates: ChannelReturnCandidate[]) {
+  return candidates.filter((candidate) => canCreateReturnExpected(candidate)).length;
 }
 
 function toDisplayText(value: unknown, fallback = "-") {

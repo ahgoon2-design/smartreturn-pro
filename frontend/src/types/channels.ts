@@ -11,6 +11,7 @@ export type ChannelReturnCandidateStatus =
   | "RETURN_TRACKING_PENDING"
   | "NEEDS_REVIEW"
   | "BLOCKED";
+export type ChannelReturnExpectedCreateStatus = "NOT_CREATED" | "CREATED" | "SKIPPED_DUPLICATE" | "FAILED";
 
 export interface ChannelAccount {
   id: number;
@@ -150,6 +151,10 @@ export interface ChannelReturnCandidate {
   risk_flags: string[];
   reviewed_at?: string | null;
   reviewed_by?: number | null;
+  return_expected_id?: number | null;
+  return_expected_created_at?: string | null;
+  return_expected_create_status: ChannelReturnExpectedCreateStatus;
+  return_expected_create_error?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -177,4 +182,24 @@ export interface ChannelRawEventsBulkTransformResponse {
 export interface ChannelReturnCandidateActionResponse {
   candidate: ChannelReturnCandidate;
   message: string;
+}
+
+export interface ChannelReturnExpectedCreateResponse {
+  candidate: ChannelReturnCandidate;
+  return_expected_id?: number | null;
+  created: boolean;
+  skipped_duplicate: boolean;
+  message: string;
+}
+
+export interface ChannelReturnExpectedBulkCreateResponse {
+  total_requested: number;
+  created_count: number;
+  skipped_duplicate_count: number;
+  blocked_count: number;
+  failed_count: number;
+  created_candidate_ids: number[];
+  blocked_reasons: string[];
+  error_summary: string[];
+  candidates: ChannelReturnCandidate[];
 }

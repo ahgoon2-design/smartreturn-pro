@@ -197,6 +197,20 @@ def transform_channel_account_raw_events_api(
     )
 
 
+@router.post("/accounts/{account_id}/return-candidates/create-return-expected", response_model=ApiResult)
+def create_return_expected_from_channel_account_api(
+    account_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_EXPECTED_BULK_CREATED",
+        message="채널 반품 후보를 기존 반품처리 대기 row로 연결했습니다.",
+        data=transform_service.create_account_return_expected(db, auth, account_id=account_id),
+    )
+
+
 @router.get("/sync-jobs", response_model=ApiResult)
 def list_channel_sync_jobs_api(
     db: Session = Depends(get_db),
@@ -275,7 +289,7 @@ def create_return_expected_from_channel_candidate_api(
 ) -> ApiResult:
     _require_ready(auth)
     return api_success(
-        result_code="CHANNEL_RETURN_EXPECTED_DEFERRED",
-        message="반품예정자료 생성은 다음 단계에서 연결합니다.",
+        result_code="CHANNEL_RETURN_EXPECTED_CREATED",
+        message="채널 반품 후보를 기존 반품처리 대기 row로 연결했습니다.",
         data=transform_service.create_return_expected(db, auth, candidate_id=candidate_id),
     )

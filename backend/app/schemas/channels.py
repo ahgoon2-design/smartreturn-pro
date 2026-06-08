@@ -15,6 +15,7 @@ CHANNEL_RETURN_CANDIDATE_STATUSES = {
     "NEEDS_REVIEW",
     "BLOCKED",
 }
+CHANNEL_RETURN_EXPECTED_CREATE_STATUSES = {"NOT_CREATED", "CREATED", "SKIPPED_DUPLICATE", "FAILED"}
 
 
 class ChannelAccountCreateRequest(BaseModel):
@@ -231,6 +232,10 @@ class ChannelReturnCandidateResponse(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     reviewed_at: datetime | None = None
     reviewed_by: int | None = None
+    return_expected_id: int | None = None
+    return_expected_created_at: datetime | None = None
+    return_expected_create_status: str = "NOT_CREATED"
+    return_expected_create_error: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -262,3 +267,23 @@ class ChannelRawEventsBulkTransformResponse(BaseModel):
 class ChannelReturnCandidateActionResponse(BaseModel):
     candidate: ChannelReturnCandidateResponse
     message: str
+
+
+class ChannelReturnExpectedCreateResponse(BaseModel):
+    candidate: ChannelReturnCandidateResponse
+    return_expected_id: int | None = None
+    created: bool = False
+    skipped_duplicate: bool = False
+    message: str
+
+
+class ChannelReturnExpectedBulkCreateResponse(BaseModel):
+    total_requested: int
+    created_count: int
+    skipped_duplicate_count: int
+    blocked_count: int
+    failed_count: int
+    created_candidate_ids: list[int] = Field(default_factory=list)
+    blocked_reasons: list[str] = Field(default_factory=list)
+    error_summary: list[str] = Field(default_factory=list)
+    candidates: list[ChannelReturnCandidateResponse] = Field(default_factory=list)

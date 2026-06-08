@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelReturnCandidate, ChannelSyncJob
+from app.models.returns import ReturnIntakeRow
 
 
 def list_channel_accounts(
@@ -166,6 +167,72 @@ def list_channel_return_candidates(
     if match_status:
         query = query.filter(ChannelReturnCandidate.match_status == match_status)
     return query.order_by(ChannelReturnCandidate.updated_at.desc(), ChannelReturnCandidate.id.desc()).limit(limit).all()
+
+
+def list_ready_candidates_for_return_expected(
+    db: Session,
+    *,
+    account_id: int,
+    limit: int = 100,
+) -> list[ChannelReturnCandidate]:
+    return (
+        db.query(ChannelReturnCandidate)
+        .filter(
+            ChannelReturnCandidate.channel_account_id == account_id,
+            ChannelReturnCandidate.match_status == "READY_FOR_INTAKE",
+            ChannelReturnCandidate.return_expected_create_status.in_(("NOT_CREATED", "FAILED")),
+        )
+        .order_by(ChannelReturnCandidate.updated_at.desc(), ChannelReturnCandidate.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def update_channel_return_candidate(db: Session, candidate: ChannelReturnCandidate, values: dict) -> ChannelReturnCandidate:
+    for field, value in values.items():
+        setattr(candidate, field, value)
+    db.flush()
+    return candidate
+
+
+def find_created_candidate_by_external_claim(
+    db: Session,
+    *,
+    client_id: int,
+    external_product_order_id: str | None,
+    external_claim_id: str | None,
+    exclude_candidate_id: int | None = None,
+) -> ChannelReturnCandidate | None:
+    if not external_product_order_id or not external_claim_id:
+        return None
+    query = db.query(ChannelReturnCandidate).filter(
+        ChannelReturnCandidate.client_id == client_id,
+        ChannelReturnCandidate.external_product_order_id == external_product_order_id,
+        ChannelReturnCandidate.external_claim_id == external_claim_id,
+        ChannelReturnCandidate.return_expected_id.isnot(None),
+    )
+    if exclude_candidate_id is not None:
+        query = query.filter(ChannelReturnCandidate.id != exclude_candidate_id)
+    return query.order_by(ChannelReturnCandidate.id.desc()).first()
+
+
+def find_return_intake_row_by_tracking_and_product(
+    db: Session,
+    *,
+    client_id: int,
+    return_tracking_no: str,
+    product_code: str,
+) -> ReturnIntakeRow | None:
+    return (
+        db.query(ReturnIntakeRow)
+        .filter(
+            ReturnIntakeRow.client_id == client_id,
+            ReturnIntakeRow.return_tracking_no == return_tracking_no,
+            ReturnIntakeRow.product_code == product_code,
+        )
+        .order_by(ReturnIntakeRow.id.desc())
+        .first()
+    )
 
 
 def find_candidate_conflicts(

@@ -137,6 +137,15 @@ class ChannelReturnCandidate(Base):
     risk_flags_json: Mapped[list | None] = mapped_column(JSONB)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    return_expected_id: Mapped[int | None] = mapped_column(ForeignKey("return_intake_rows.id"))
+    return_expected_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    return_expected_create_status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="NOT_CREATED",
+        server_default="NOT_CREATED",
+    )
+    return_expected_create_error: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

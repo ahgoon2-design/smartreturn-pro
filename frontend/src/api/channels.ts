@@ -9,6 +9,8 @@ import type {
   ChannelRawEventTransformResponse,
   ChannelReturnCandidateActionResponse,
   ChannelReturnCandidateListResponse,
+  ChannelReturnExpectedBulkCreateResponse,
+  ChannelReturnExpectedCreateResponse,
   ChannelSyncDryRunPayload,
   ChannelSyncDryRunResponse,
   ChannelSyncJob,
@@ -119,4 +121,22 @@ export async function markChannelReturnCandidateReviewed(candidateId: number) {
   return apiRequest<ChannelReturnCandidateActionResponse>(`/api/channels/return-candidates/${candidateId}/mark-reviewed`, {
     method: "POST",
   });
+}
+
+export async function createReturnExpectedFromChannelCandidate(candidateId: number) {
+  return apiRequest<ChannelReturnExpectedCreateResponse>(
+    `/api/channels/return-candidates/${candidateId}/create-return-expected`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function createReturnExpectedFromChannelAccount(accountId: number) {
+  return apiRequest<ChannelReturnExpectedBulkCreateResponse>(
+    `/api/channels/accounts/${accountId}/return-candidates/create-return-expected`,
+    {
+      method: "POST",
+    },
+  );
 }

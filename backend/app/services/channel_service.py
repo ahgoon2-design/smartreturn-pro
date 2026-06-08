@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 from app.core.auth_context import resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError
 from app.core.permissions import require_permission, require_roles
+from app.models.returns import ReturnIntakeRow
 from app.repositories import channel_repository as repo
 from app.repositories import master_repository
+from app.repositories import return_intake_repository
 from app.schemas.auth import AuthContext
 from app.schemas.channels import (
     ChannelAccountCreateRequest,
@@ -28,6 +30,8 @@ from app.schemas.channels import (
     ChannelReturnCandidateDetailResponse,
     ChannelReturnCandidateResponse,
     ChannelReturnCandidatesResponse,
+    ChannelReturnExpectedBulkCreateResponse,
+    ChannelReturnExpectedCreateResponse,
     ChannelSyncDryRunRequest,
     ChannelSyncDryRunResponse,
     ChannelSyncJobResponse,
@@ -47,6 +51,15 @@ RETURN_CANDIDATE_STATUSES = (
     "NEEDS_REVIEW",
     "BLOCKED",
 )
+RETURN_EXPECTED_NOT_CREATED = "NOT_CREATED"
+RETURN_EXPECTED_CREATED = "CREATED"
+RETURN_EXPECTED_SKIPPED_DUPLICATE = "SKIPPED_DUPLICATE"
+RETURN_EXPECTED_FAILED = "FAILED"
+RETURN_INTAKE_SOURCE_TYPE_CHANNEL_API = "CHANNEL_API"
+RETURN_INTAKE_BATCH_STATUS_READY = "READY_FOR_PROCESSING"
+RETURN_INTAKE_ROW_STATUS_READY = "READY_FOR_PROCESSING"
+RETURN_INTAKE_ROW_VALID = "VALID"
+RETURN_INTAKE_TEAM_ASSIGNED = "ASSIGNED"
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -187,6 +200,10 @@ def _candidate_response(candidate) -> ChannelReturnCandidateResponse:
         risk_flags=list(candidate.risk_flags_json or []),
         reviewed_at=candidate.reviewed_at,
         reviewed_by=candidate.reviewed_by,
+        return_expected_id=candidate.return_expected_id,
+        return_expected_created_at=candidate.return_expected_created_at,
+        return_expected_create_status=candidate.return_expected_create_status,
+        return_expected_create_error=candidate.return_expected_create_error,
         created_at=candidate.created_at,
         updated_at=candidate.updated_at,
     )
@@ -837,10 +854,222 @@ class ChannelCanonicalTransformService:
     def create_return_expected(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
         _require_channel_manage(auth)
         candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
-        return ChannelReturnCandidateActionResponse(
+        candidate, created, skipped_duplicate, message = self._create_return_expected_from_candidate(
+            db,
+            auth,
+            candidate,
+        )
+        db.commit()
+        return ChannelReturnExpectedCreateResponse(
             candidate=_candidate_response(candidate),
-            message="반품예정자료 생성은 다음 단계에서 기존 반품접수 원장 계약에 맞춰 연결합니다.",
+            return_expected_id=candidate.return_expected_id,
+            created=created,
+            skipped_duplicate=skipped_duplicate,
+            message=message,
         ).model_dump()
+
+    def create_account_return_expected(self, db: Session, auth: AuthContext, *, account_id: int) -> dict:
+        _require_channel_manage(auth)
+        account = account_service._get_scoped_account(db, auth, account_id=account_id)
+        candidates = repo.list_ready_candidates_for_return_expected(db, account_id=account.id, limit=200)
+        created_count = 0
+        skipped_duplicate_count = 0
+        blocked_count = 0
+        failed_count = 0
+        created_candidate_ids: list[int] = []
+        blocked_reasons: list[str] = []
+        error_summary: list[str] = []
+        changed_candidates = []
+
+        for candidate in candidates:
+            try:
+                candidate, created, skipped_duplicate, message = self._create_return_expected_from_candidate(
+                    db,
+                    auth,
+                    candidate,
+                )
+                changed_candidates.append(candidate)
+                if created:
+                    created_count += 1
+                    created_candidate_ids.append(candidate.id)
+                elif skipped_duplicate:
+                    skipped_duplicate_count += 1
+                else:
+                    blocked_count += 1
+                    blocked_reasons.append(message)
+            except Exception as exc:
+                failed_count += 1
+                safe_message = _safe_error_message(str(exc)) or "반품예정자료 생성 실패"
+                error_summary.append(safe_message)
+                repo.update_channel_return_candidate(
+                    db,
+                    candidate,
+                    {
+                        "return_expected_create_status": RETURN_EXPECTED_FAILED,
+                        "return_expected_create_error": safe_message,
+                    },
+                )
+                changed_candidates.append(candidate)
+
+        db.commit()
+        return ChannelReturnExpectedBulkCreateResponse(
+            total_requested=len(candidates),
+            created_count=created_count,
+            skipped_duplicate_count=skipped_duplicate_count,
+            blocked_count=blocked_count,
+            failed_count=failed_count,
+            created_candidate_ids=created_candidate_ids,
+            blocked_reasons=blocked_reasons[:20],
+            error_summary=error_summary[:20],
+            candidates=[_candidate_response(candidate) for candidate in changed_candidates],
+        ).model_dump()
+
+    def _create_return_expected_from_candidate(self, db: Session, auth: AuthContext, candidate):
+        block_reason = self._return_expected_block_reason(candidate)
+        if block_reason:
+            candidate = repo.update_channel_return_candidate(
+                db,
+                candidate,
+                {
+                    "return_expected_create_status": RETURN_EXPECTED_FAILED,
+                    "return_expected_create_error": block_reason,
+                },
+            )
+            return candidate, False, False, block_reason
+
+        if candidate.return_expected_id and candidate.return_expected_create_status in {
+            RETURN_EXPECTED_CREATED,
+            RETURN_EXPECTED_SKIPPED_DUPLICATE,
+        }:
+            return candidate, False, True, "이미 기존 반품접수 row와 연결되어 있습니다."
+
+        duplicate_candidate = repo.find_created_candidate_by_external_claim(
+            db,
+            client_id=candidate.client_id,
+            external_product_order_id=candidate.external_product_order_id,
+            external_claim_id=candidate.external_claim_id,
+            exclude_candidate_id=candidate.id,
+        )
+        if duplicate_candidate is not None and duplicate_candidate.return_expected_id is not None:
+            return self._link_duplicate_return_expected(
+                db,
+                candidate,
+                duplicate_candidate.return_expected_id,
+                "같은 외부 상품주문/클레임이 이미 반품접수 row와 연결되어 있습니다.",
+            )
+
+        duplicate_row = repo.find_return_intake_row_by_tracking_and_product(
+            db,
+            client_id=candidate.client_id,
+            return_tracking_no=candidate.return_tracking_no,
+            product_code=candidate.product_code,
+        )
+        if duplicate_row is not None:
+            return self._link_duplicate_return_expected(
+                db,
+                candidate,
+                duplicate_row.id,
+                "같은 반품송장/상품코드 반품접수 row가 이미 있어 연결만 처리했습니다.",
+            )
+
+        now = datetime.now(timezone.utc)
+        batch = return_intake_repository.create_batch(
+            db,
+            client_id=candidate.client_id,
+            client_unit_id=candidate.client_unit_id,
+            source_type=RETURN_INTAKE_SOURCE_TYPE_CHANNEL_API,
+            source_name=f"{candidate.source_origin} 채널 자동수집",
+            status=RETURN_INTAKE_BATCH_STATUS_READY,
+            created_by=auth.user_id,
+            memo="채널 API 반품 후보에서 생성된 현장 처리 대기 batch입니다.",
+        )
+        row = ReturnIntakeRow(
+            batch_id=batch.id,
+            client_id=candidate.client_id,
+            client_unit_id=candidate.client_unit_id,
+            team_assign_status=RETURN_INTAKE_TEAM_ASSIGNED,
+            client_unit_assigned_at=now,
+            client_unit_assigned_by=auth.user_id,
+            row_no=1,
+            order_no=candidate.external_order_id,
+            return_tracking_no=candidate.return_tracking_no,
+            original_tracking_no=candidate.original_tracking_no,
+            product_code=candidate.product_code,
+            barcode=candidate.barcode,
+            product_name=candidate.product_name,
+            option_name=candidate.option_name,
+            qty=candidate.qty,
+            return_reason=candidate.claim_reason,
+            raw_data=self._return_expected_raw_data(candidate),
+            validation_status=RETURN_INTAKE_ROW_VALID,
+            validation_message=None,
+            status=RETURN_INTAKE_ROW_STATUS_READY,
+        )
+        return_intake_repository.create_rows(db, [row])
+        return_intake_repository.update_batch_counts(
+            db,
+            batch,
+            status=RETURN_INTAKE_BATCH_STATUS_READY,
+            total_rows=1,
+            valid_rows=1,
+            warning_rows=0,
+            error_rows=0,
+        )
+        candidate = repo.update_channel_return_candidate(
+            db,
+            candidate,
+            {
+                "return_expected_id": row.id,
+                "return_expected_created_at": now,
+                "return_expected_create_status": RETURN_EXPECTED_CREATED,
+                "return_expected_create_error": None,
+            },
+        )
+        return candidate, True, False, "반품처리 화면에서 스캔 조회 가능한 반품접수 row를 생성했습니다."
+
+    def _link_duplicate_return_expected(self, db: Session, candidate, return_expected_id: int, message: str):
+        candidate = repo.update_channel_return_candidate(
+            db,
+            candidate,
+            {
+                "return_expected_id": return_expected_id,
+                "return_expected_created_at": datetime.now(timezone.utc),
+                "return_expected_create_status": RETURN_EXPECTED_SKIPPED_DUPLICATE,
+                "return_expected_create_error": None,
+            },
+        )
+        return candidate, False, True, message
+
+    def _return_expected_block_reason(self, candidate) -> str | None:
+        if candidate.match_status != "READY_FOR_INTAKE":
+            return "READY_FOR_INTAKE 상태 후보만 반품예정자료를 생성할 수 있습니다."
+        if not candidate.return_tracking_no or candidate.tracking_no_for_scan != candidate.return_tracking_no:
+            return "반품 현장 스캔 기준 return_tracking_no가 확정되지 않았습니다."
+        if candidate.original_tracking_no and not candidate.return_tracking_no:
+            return "원송장만 있는 후보는 반품송장처럼 자동확정할 수 없습니다."
+        if candidate.client_unit_id is None:
+            return "팀/운영단위가 확정되지 않아 반품예정자료를 생성할 수 없습니다."
+        if candidate.product_id is None or not candidate.product_code:
+            return "상품마스터가 확정되지 않아 반품예정자료를 생성할 수 없습니다."
+        if candidate.qty is None or candidate.qty <= 0:
+            return "수량이 1 이상으로 확정되지 않아 반품예정자료를 생성할 수 없습니다."
+        return None
+
+    def _return_expected_raw_data(self, candidate) -> dict:
+        return {
+            "source_type": RETURN_INTAKE_SOURCE_TYPE_CHANNEL_API,
+            "source_origin": candidate.source_origin,
+            "channel_account_id": candidate.channel_account_id,
+            "channel_raw_event_id": candidate.channel_raw_event_id,
+            "channel_return_candidate_id": candidate.id,
+            "external_order_id": candidate.external_order_id,
+            "external_product_order_id": candidate.external_product_order_id,
+            "external_claim_id": candidate.external_claim_id,
+            "tracking_no_for_scan_source": "return_tracking_no",
+            "claim_status": candidate.claim_status,
+            "claim_reason": candidate.claim_reason,
+            "risk_flags": list(candidate.risk_flags_json or []),
+        }
 
     def _transform_and_save(self, db: Session, *, raw_event, account, reviewed_by: int | None):
         transformer = _transformer_for(raw_event)
