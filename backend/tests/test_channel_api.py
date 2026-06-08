@@ -1,4 +1,7 @@
 from collections.abc import Generator
+from datetime import datetime, timezone
+import hashlib
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,8 +15,8 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelSyncJob
-from app.models.master import Client, ClientUnit, Warehouse
+from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelReturnCandidate, ChannelSyncJob
+from app.models.master import Client, ClientUnit, Product, ProductBarcode, Warehouse
 
 
 TEST_PASSWORD = "DummyPass123!"
@@ -35,6 +38,8 @@ def db_session() -> Generator[Session, None, None]:
         Client.__table__,
         Warehouse.__table__,
         ClientUnit.__table__,
+        Product.__table__,
+        ProductBarcode.__table__,
         Role.__table__,
         Permission.__table__,
         User.__table__,
@@ -43,6 +48,7 @@ def db_session() -> Generator[Session, None, None]:
         ChannelAccount.__table__,
         ChannelSyncJob.__table__,
         ChannelRawEvent.__table__,
+        ChannelReturnCandidate.__table__,
     ):
         table.create(bind=engine)
 
@@ -79,6 +85,43 @@ def _create_unit(db: Session, client_id: int, code: str = "UNIT_A") -> ClientUni
     db.add(row)
     db.commit()
     return row
+
+
+def _create_product(db: Session, client_id: int, product_code: str = "P-READY", barcode: str | None = None) -> Product:
+    product = Product(
+        client_id=client_id,
+        product_code=product_code,
+        product_name=f"{product_code} 상품",
+        barcode=barcode,
+        active_yn=True,
+    )
+    db.add(product)
+    db.commit()
+    return product
+
+
+def _raw_hash(payload: dict) -> str:
+    text = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _create_raw_event(db: Session, account_id: int, raw_json: dict, *, channel_type: str = "NAVER_SMARTSTORE") -> ChannelRawEvent:
+    event = ChannelRawEvent(
+        channel_account_id=account_id,
+        channel_type=channel_type,
+        event_type=raw_json.get("eventType", "RETURN_CLAIM"),
+        external_order_id=raw_json.get("orderId"),
+        external_product_order_id=raw_json.get("productOrderId"),
+        external_claim_id=raw_json.get("claimId"),
+        external_tracking_no_hash=None,
+        raw_hash=_raw_hash(raw_json),
+        raw_json=raw_json,
+        process_status="RECEIVED",
+        collected_at=datetime.now(timezone.utc),
+    )
+    db.add(event)
+    db.commit()
+    return event
 
 
 def _create_user(
@@ -289,3 +332,279 @@ def test_channel_account_rejects_literal_secret_like_credential_ref(client: Test
 
     assert response.status_code == 400
     assert response.json()["result_code"] == "CHANNEL_CREDENTIAL_REF_UNSAFE"
+
+
+def test_channel_raw_event_transform_creates_ready_candidate(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-READY")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id)
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-READY",
+            "productOrderId": "PO-READY",
+            "claimId": "CLAIM-READY",
+            "returnTrackingNo": "RTN-READY",
+            "originalTrackingNo": "ORG-READY",
+            "sellerProductCode": product.product_code,
+            "productName": "테스트 상품",
+            "optionName": "기본",
+            "qty": 1,
+            "claimReason": "단순변심",
+            "claimStatus": "RETURN_REQUESTED",
+        },
+    )
+
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["candidate"]["match_status"] == "READY_FOR_INTAKE"
+    assert data["candidate"]["product_id"] == product.id
+    assert data["candidate"]["client_unit_id"] == unit.id
+    assert data["candidate"]["tracking_no_for_scan"] == "RTNREADY"
+    assert data["candidate"]["original_tracking_no"] == "ORGREADY"
+
+
+def test_channel_transform_original_tracking_only_goes_pending(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-ORIGINAL")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id)
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-ORIGINAL",
+            "productOrderId": "PO-ORIGINAL",
+            "claimId": "CLAIM-ORIGINAL",
+            "originalTrackingNo": "ORG-ONLY",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+
+    assert response.status_code == 200
+    candidate = response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "RETURN_TRACKING_PENDING"
+    assert candidate["tracking_no_for_scan"] is None
+    assert "RETURN_TRACKING_REQUIRED" in candidate["risk_flags"]
+
+
+def test_channel_transform_without_account_unit_goes_team_pending(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    product = _create_product(db_session, client_row.id, "P-TEAM")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id)
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-TEAM",
+            "productOrderId": "PO-TEAM",
+            "claimId": "CLAIM-TEAM",
+            "returnTrackingNo": "RTN-TEAM",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+
+    assert response.status_code == 200
+    candidate = response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "TEAM_ASSIGN_PENDING"
+    assert "TEAM_ASSIGN_REQUIRED" in candidate["risk_flags"]
+
+
+def test_channel_transform_unknown_product_goes_product_pending(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id)
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-PRODUCT",
+            "productOrderId": "PO-PRODUCT",
+            "claimId": "CLAIM-PRODUCT",
+            "returnTrackingNo": "RTN-PRODUCT",
+            "productName": "이름만 있는 상품",
+            "optionName": "단품",
+            "qty": 1,
+        },
+    )
+
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+
+    assert response.status_code == 200
+    candidate = response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "PRODUCT_MATCH_PENDING"
+    assert "PRODUCT_MATCH_REQUIRED" in candidate["risk_flags"]
+
+
+def test_channel_transform_return_tracking_conflict_goes_needs_review(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-CONFLICT")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id)
+    first = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-CONFLICT-1",
+            "productOrderId": "PO-CONFLICT-1",
+            "claimId": "CLAIM-CONFLICT-1",
+            "returnTrackingNo": "RTN-CONFLICT",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+    second = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-CONFLICT-2",
+            "productOrderId": "PO-CONFLICT-2",
+            "claimId": "CLAIM-CONFLICT-2",
+            "returnTrackingNo": "RTN-CONFLICT",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+
+    first_response = client.post(f"/api/channels/raw-events/{first.id}/transform", headers=headers)
+    second_response = client.post(f"/api/channels/raw-events/{second.id}/transform", headers=headers)
+
+    assert first_response.status_code == 200
+    assert first_response.json()["data"]["candidate"]["match_status"] == "READY_FOR_INTAKE"
+    assert second_response.status_code == 200
+    candidate = second_response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "NEEDS_REVIEW"
+    assert "RETURN_TRACKING_CONFLICT" in candidate["risk_flags"]
+
+
+def test_channel_transform_missing_identifiers_is_blocked(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id)
+    raw_event = _create_raw_event(db_session, account_id, {"eventType": "RETURN_CLAIM"})
+
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+
+    assert response.status_code == 200
+    candidate = response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "BLOCKED"
+    assert "MISSING_EXTERNAL_IDENTIFIER" in candidate["risk_flags"]
+
+
+def test_channel_candidate_list_hides_canonical_json_and_respects_scope(client: TestClient, db_session: Session):
+    client_a = _create_client(db_session, "CLIENT_A")
+    client_b = _create_client(db_session, "CLIENT_B")
+    unit_a = _create_unit(db_session, client_a.id, "UNIT_A")
+    unit_b = _create_unit(db_session, client_b.id, "UNIT_B")
+    product_a = _create_product(db_session, client_a.id, "P-SCOPE-A")
+    product_b = _create_product(db_session, client_b.id, "P-SCOPE-B")
+    admin_headers = _admin_headers(client, db_session)
+    account_a = _create_account(client, admin_headers, client_a.id, client_unit_id=unit_a.id, external_account_id="scope-a")
+    account_b = _create_account(client, admin_headers, client_b.id, client_unit_id=unit_b.id, external_account_id="scope-b")
+    event_a = _create_raw_event(
+        db_session,
+        account_a,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-SCOPE-A",
+            "productOrderId": "PO-SCOPE-A",
+            "claimId": "CLAIM-SCOPE-A",
+            "returnTrackingNo": "RTN-SCOPE-A",
+            "sellerProductCode": product_a.product_code,
+            "qty": 1,
+        },
+    )
+    event_b = _create_raw_event(
+        db_session,
+        account_b,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-SCOPE-B",
+            "productOrderId": "PO-SCOPE-B",
+            "claimId": "CLAIM-SCOPE-B",
+            "returnTrackingNo": "RTN-SCOPE-B",
+            "sellerProductCode": product_b.product_code,
+            "qty": 1,
+        },
+    )
+    client.post(f"/api/channels/raw-events/{event_a.id}/transform", headers=admin_headers)
+    client.post(f"/api/channels/raw-events/{event_b.id}/transform", headers=admin_headers)
+
+    _create_user(
+        db_session,
+        login_id="candidate_client_user",
+        role_code="CLIENT_ADMIN",
+        permissions=["RETURN_VIEW"],
+        client_id=client_a.id,
+    )
+    scoped_headers = _login(client, "candidate_client_user")
+
+    list_response = client.get("/api/channels/return-candidates", headers=scoped_headers)
+
+    assert list_response.status_code == 200
+    items = list_response.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["client_id"] == client_a.id
+    assert "canonical_json" not in items[0]
+    text = str(list_response.json()).lower()
+    assert "secret" not in text
+    assert "token" not in text
+    assert "password" not in text
+
+
+def test_channel_account_bulk_transform_and_mark_reviewed(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-BULK")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id)
+    _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-BULK",
+            "productOrderId": "PO-BULK",
+            "claimId": "CLAIM-BULK",
+            "returnTrackingNo": "RTN-BULK",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+
+    transform_response = client.post(f"/api/channels/accounts/{account_id}/raw-events/transform", headers=headers)
+
+    assert transform_response.status_code == 200
+    data = transform_response.json()["data"]
+    assert data["transformed_count"] == 1
+    assert data["created_count"] == 1
+    candidate_id = data["candidates"][0]["id"]
+    assert data["summary"]["READY_FOR_INTAKE"] == 1
+
+    reviewed_response = client.post(f"/api/channels/return-candidates/{candidate_id}/mark-reviewed", headers=headers)
+
+    assert reviewed_response.status_code == 200
+    reviewed = reviewed_response.json()["data"]["candidate"]
+    assert reviewed["reviewed_at"] is not None

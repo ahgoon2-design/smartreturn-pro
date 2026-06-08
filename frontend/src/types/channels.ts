@@ -4,6 +4,13 @@ export type ChannelAuthStatus = "NOT_CONNECTED" | "CONNECTED" | "EXPIRED" | "ERR
 export type ChannelSyncJobStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | "PARTIAL_SUCCESS";
 export type ChannelSyncJobType = "COLLECT_CHANGED_ORDERS" | "COLLECT_RETURN_CLAIMS" | "DRY_RUN";
 export type ChannelRawEventStatus = "RECEIVED" | "NORMALIZED" | "DUPLICATE_SKIPPED" | "NEEDS_REVIEW" | "FAILED";
+export type ChannelReturnCandidateStatus =
+  | "READY_FOR_INTAKE"
+  | "TEAM_ASSIGN_PENDING"
+  | "PRODUCT_MATCH_PENDING"
+  | "RETURN_TRACKING_PENDING"
+  | "NEEDS_REVIEW"
+  | "BLOCKED";
 
 export interface ChannelAccount {
   id: number;
@@ -114,4 +121,60 @@ export interface ChannelRawEventListItem {
   process_error_message?: string | null;
   collected_at: string;
   created_at: string;
+}
+
+export interface ChannelReturnCandidate {
+  id: number;
+  channel_raw_event_id: number;
+  channel_account_id: number;
+  client_id: number;
+  client_unit_id?: number | null;
+  source_type: string;
+  source_origin: string;
+  external_order_id?: string | null;
+  external_product_order_id?: string | null;
+  external_claim_id?: string | null;
+  return_tracking_no?: string | null;
+  original_tracking_no?: string | null;
+  tracking_no_for_scan?: string | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  product_id?: number | null;
+  product_name?: string | null;
+  option_name?: string | null;
+  qty?: number | null;
+  claim_reason?: string | null;
+  claim_status?: string | null;
+  match_status: ChannelReturnCandidateStatus;
+  match_reason: string;
+  risk_flags: string[];
+  reviewed_at?: string | null;
+  reviewed_by?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChannelReturnCandidateListResponse {
+  items: ChannelReturnCandidate[];
+  summary: Record<string, number>;
+}
+
+export interface ChannelRawEventTransformResponse {
+  candidate: ChannelReturnCandidate;
+  created: boolean;
+  message: string;
+}
+
+export interface ChannelRawEventsBulkTransformResponse {
+  transformed_count: number;
+  created_count: number;
+  updated_count: number;
+  failed_count: number;
+  candidates: ChannelReturnCandidate[];
+  summary: Record<string, number>;
+}
+
+export interface ChannelReturnCandidateActionResponse {
+  candidate: ChannelReturnCandidate;
+  message: string;
 }

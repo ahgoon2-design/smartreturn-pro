@@ -22,6 +22,12 @@ from app.schemas.channels import (
     ChannelRawEventDetailResponse,
     ChannelRawEventListItem,
     ChannelRawEventsResponse,
+    ChannelRawEventsBulkTransformResponse,
+    ChannelRawEventTransformResponse,
+    ChannelReturnCandidateActionResponse,
+    ChannelReturnCandidateDetailResponse,
+    ChannelReturnCandidateResponse,
+    ChannelReturnCandidatesResponse,
     ChannelSyncDryRunRequest,
     ChannelSyncDryRunResponse,
     ChannelSyncJobResponse,
@@ -33,6 +39,14 @@ CHANNEL_MANAGE_ROLES = {"SUPER_ADMIN", "INTERNAL_ADMIN"}
 CHANNEL_VIEW_PERMISSION = "RETURN_VIEW"
 CHANNEL_MANAGE_PERMISSION = "RETURN_MANAGE"
 SAFE_CREDENTIAL_PLACEHOLDER = "credential-ref-not-configured"
+RETURN_CANDIDATE_STATUSES = (
+    "READY_FOR_INTAKE",
+    "TEAM_ASSIGN_PENDING",
+    "PRODUCT_MATCH_PENDING",
+    "RETURN_TRACKING_PENDING",
+    "NEEDS_REVIEW",
+    "BLOCKED",
+)
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -145,6 +159,46 @@ def _raw_event_list_item(event) -> ChannelRawEventListItem:
     )
 
 
+def _candidate_response(candidate) -> ChannelReturnCandidateResponse:
+    return ChannelReturnCandidateResponse(
+        id=candidate.id,
+        channel_raw_event_id=candidate.channel_raw_event_id,
+        channel_account_id=candidate.channel_account_id,
+        client_id=candidate.client_id,
+        client_unit_id=candidate.client_unit_id,
+        source_type=candidate.source_type,
+        source_origin=candidate.source_origin,
+        external_order_id=candidate.external_order_id,
+        external_product_order_id=candidate.external_product_order_id,
+        external_claim_id=candidate.external_claim_id,
+        return_tracking_no=candidate.return_tracking_no,
+        original_tracking_no=candidate.original_tracking_no,
+        tracking_no_for_scan=candidate.tracking_no_for_scan,
+        product_code=candidate.product_code,
+        barcode=candidate.barcode,
+        product_id=candidate.product_id,
+        product_name=candidate.product_name,
+        option_name=candidate.option_name,
+        qty=candidate.qty,
+        claim_reason=candidate.claim_reason,
+        claim_status=candidate.claim_status,
+        match_status=candidate.match_status,
+        match_reason=candidate.match_reason,
+        risk_flags=list(candidate.risk_flags_json or []),
+        reviewed_at=candidate.reviewed_at,
+        reviewed_by=candidate.reviewed_by,
+        created_at=candidate.created_at,
+        updated_at=candidate.updated_at,
+    )
+
+
+def _candidate_summary(candidates: list) -> dict[str, int]:
+    summary = {status: 0 for status in RETURN_CANDIDATE_STATUSES}
+    for candidate in candidates:
+        summary[candidate.match_status] = summary.get(candidate.match_status, 0) + 1
+    return summary
+
+
 class ChannelProvider(Protocol):
     provider_name: str
 
@@ -203,10 +257,166 @@ class NaverSmartStoreProvider:
         ]
 
 
+class ChannelCanonicalTransformer(Protocol):
+    transformer_name: str
+
+    def transform(self, raw_event, account) -> dict:
+        ...
+
+
+class NaverReturnCanonicalTransformer:
+    transformer_name = "NAVER_RETURN_CANONICAL_TRANSFORMER"
+
+    def transform(self, raw_event, account) -> dict:
+        raw_json = raw_event.raw_json
+        if not isinstance(raw_json, dict):
+            return _blocked_payload(raw_event, account, "raw_json 구조가 올바르지 않습니다.", ["RAW_JSON_INVALID"])
+
+        external_order_id = _first_text(raw_event.external_order_id, raw_json.get("orderId"), raw_json.get("order_id"))
+        external_product_order_id = _first_text(
+            raw_event.external_product_order_id,
+            raw_json.get("productOrderId"),
+            raw_json.get("product_order_id"),
+        )
+        external_claim_id = _first_text(raw_event.external_claim_id, raw_json.get("claimId"), raw_json.get("claim_id"))
+        return_tracking_no = _normalize_tracking_no(
+            _first_text(
+                raw_json.get("returnTrackingNo"),
+                raw_json.get("return_tracking_no"),
+                raw_json.get("collectTrackingNo"),
+                raw_json.get("returnInvoiceNo"),
+            )
+        )
+        original_tracking_no = _normalize_tracking_no(
+            _first_text(
+                raw_json.get("originalTrackingNo"),
+                raw_json.get("original_tracking_no"),
+                raw_json.get("deliveryTrackingNo"),
+                raw_json.get("outboundTrackingNo"),
+            )
+        )
+        product_code = _first_text(
+            raw_json.get("sellerProductCode"),
+            raw_json.get("seller_product_code"),
+            raw_json.get("sku"),
+            raw_json.get("SKU"),
+            raw_json.get("productCode"),
+        )
+        barcode = _first_text(raw_json.get("barcode"), raw_json.get("productBarcode"))
+        qty = _normalize_qty(raw_json.get("qty") or raw_json.get("quantity") or raw_json.get("claimQty"))
+        product_name = _first_text(raw_json.get("productName"), raw_json.get("product_name"))
+        option_name = _first_text(raw_json.get("optionName"), raw_json.get("option_name"))
+        claim_reason = _first_text(raw_json.get("claimReason"), raw_json.get("claim_reason"))
+        claim_status = _first_text(raw_json.get("claimStatus"), raw_json.get("claim_status"))
+
+        canonical_json = {
+            "source_type": "CHANNEL_API",
+            "source_origin": account.channel_type,
+            "external_order_id": external_order_id,
+            "external_product_order_id": external_product_order_id,
+            "external_claim_id": external_claim_id,
+            "return_tracking_no_present": bool(return_tracking_no),
+            "original_tracking_no_present": bool(original_tracking_no),
+            "tracking_no_for_scan_present": bool(return_tracking_no),
+            "product_code": product_code,
+            "barcode_present": bool(barcode),
+            "product_name": product_name,
+            "option_name": option_name,
+            "qty": qty,
+            "claim_reason": claim_reason,
+            "claim_status": claim_status,
+        }
+        return {
+            "source_type": "CHANNEL_API",
+            "source_origin": account.channel_type,
+            "external_order_id": external_order_id,
+            "external_product_order_id": external_product_order_id,
+            "external_claim_id": external_claim_id,
+            "return_tracking_no": return_tracking_no,
+            "original_tracking_no": original_tracking_no,
+            "tracking_no_for_scan": return_tracking_no,
+            "product_code": product_code,
+            "barcode": barcode,
+            "product_id": None,
+            "product_name": product_name,
+            "option_name": option_name,
+            "qty": qty,
+            "claim_reason": claim_reason,
+            "claim_status": claim_status,
+            "canonical_json": canonical_json,
+            "risk_flags_json": [],
+        }
+
+
 def _provider_for(account) -> ChannelProvider:
     if account.channel_type == "NAVER_SMARTSTORE":
         return NaverSmartStoreProvider()
     return NaverSmartStoreProvider()
+
+
+def _transformer_for(raw_event) -> ChannelCanonicalTransformer:
+    if raw_event.channel_type == "NAVER_SMARTSTORE":
+        return NaverReturnCanonicalTransformer()
+    return NaverReturnCanonicalTransformer()
+
+
+def _blocked_payload(raw_event, account, reason: str, risk_flags: list[str]) -> dict:
+    return {
+        "source_type": "CHANNEL_API",
+        "source_origin": account.channel_type,
+        "external_order_id": raw_event.external_order_id,
+        "external_product_order_id": raw_event.external_product_order_id,
+        "external_claim_id": raw_event.external_claim_id,
+        "return_tracking_no": None,
+        "original_tracking_no": None,
+        "tracking_no_for_scan": None,
+        "product_code": None,
+        "barcode": None,
+        "product_id": None,
+        "product_name": None,
+        "option_name": None,
+        "qty": None,
+        "claim_reason": None,
+        "claim_status": None,
+        "canonical_json": {"source_type": "CHANNEL_API", "source_origin": account.channel_type, "blocked": True},
+        "match_status": "BLOCKED",
+        "match_reason": reason,
+        "risk_flags_json": risk_flags,
+    }
+
+
+def _first_text(*values) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text[:255]
+    return None
+
+
+def _normalize_tracking_no(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = "".join(ch for ch in str(value).strip() if ch.isalnum())
+    return normalized[:100] or None
+
+
+def _normalize_barcode(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = "".join(ch for ch in str(value).strip() if ch.isalnum()).upper()
+    return normalized[:100] or None
+
+
+def _normalize_qty(value) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        qty = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    return qty if qty > 0 else None
 
 
 class ChannelAccountService:
@@ -488,5 +698,271 @@ class ChannelSyncService:
         return ChannelRawEventDetailResponse(**item.model_dump(), raw_json=event.raw_json).model_dump()
 
 
+class ChannelCanonicalTransformService:
+    def transform_raw_event(self, db: Session, auth: AuthContext, *, raw_event_id: int) -> dict:
+        _require_channel_manage(auth)
+        raw_event = repo.get_channel_raw_event(db, raw_event_id)
+        if raw_event is None:
+            raise _business_error("CHANNEL_RAW_EVENT_NOT_FOUND", "채널 원본 이벤트를 찾을 수 없습니다.", 404)
+        account = account_service._get_scoped_account(db, auth, account_id=raw_event.channel_account_id)
+        candidate, created = self._transform_and_save(db, raw_event=raw_event, account=account, reviewed_by=None)
+        db.commit()
+        return ChannelRawEventTransformResponse(
+            candidate=_candidate_response(candidate),
+            created=created,
+            message="채널 원본 이벤트를 반품접수 후보로 변환했습니다.",
+        ).model_dump()
+
+    def transform_account_raw_events(self, db: Session, auth: AuthContext, *, account_id: int) -> dict:
+        _require_channel_manage(auth)
+        account = account_service._get_scoped_account(db, auth, account_id=account_id)
+        rows = repo.list_channel_raw_events(db, account_id=account.id, process_status=None, limit=200)
+        candidates = []
+        created_count = 0
+        updated_count = 0
+        failed_count = 0
+        for raw_event in rows:
+            try:
+                candidate, created = self._transform_and_save(db, raw_event=raw_event, account=account, reviewed_by=None)
+                candidates.append(candidate)
+                if created:
+                    created_count += 1
+                else:
+                    updated_count += 1
+            except Exception as exc:
+                failed_count += 1
+                repo.update_channel_raw_event(
+                    db,
+                    raw_event,
+                    {
+                        "process_status": "FAILED",
+                        "process_error_code": "CHANNEL_TRANSFORM_FAILED",
+                        "process_error_message": _safe_error_message(str(exc)),
+                    },
+                )
+        db.commit()
+        return ChannelRawEventsBulkTransformResponse(
+            transformed_count=len(candidates),
+            created_count=created_count,
+            updated_count=updated_count,
+            failed_count=failed_count,
+            candidates=[_candidate_response(candidate) for candidate in candidates],
+            summary=_candidate_summary(candidates),
+        ).model_dump()
+
+    def list_candidates(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        account_id: int | None = None,
+        match_status: str | None = None,
+    ) -> dict:
+        _require_channel_view(auth)
+        effective_client_id = resolve_effective_client_id(auth, None, allow_all_clients=True)
+        if account_id is not None:
+            account_service._get_scoped_account(db, auth, account_id=account_id)
+        rows = repo.list_channel_return_candidates(
+            db,
+            client_id=effective_client_id,
+            account_id=account_id,
+            match_status=match_status,
+            limit=200,
+        )
+        return ChannelReturnCandidatesResponse(
+            items=[_candidate_response(candidate) for candidate in rows],
+            summary=_candidate_summary(rows),
+        ).model_dump()
+
+    def get_candidate(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
+        _require_channel_view(auth)
+        candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        item = _candidate_response(candidate)
+        return ChannelReturnCandidateDetailResponse(**item.model_dump(), canonical_json=candidate.canonical_json).model_dump()
+
+    def reprocess_candidate(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
+        _require_channel_manage(auth)
+        candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        raw_event = repo.get_channel_raw_event(db, candidate.channel_raw_event_id)
+        if raw_event is None:
+            raise _business_error("CHANNEL_RAW_EVENT_NOT_FOUND", "채널 원본 이벤트를 찾을 수 없습니다.", 404)
+        account = account_service._get_scoped_account(db, auth, account_id=candidate.channel_account_id)
+        new_candidate, _created = self._transform_and_save(db, raw_event=raw_event, account=account, reviewed_by=None)
+        db.commit()
+        return ChannelReturnCandidateActionResponse(
+            candidate=_candidate_response(new_candidate),
+            message="반품접수 후보를 재처리했습니다.",
+        ).model_dump()
+
+    def mark_reviewed(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
+        _require_channel_manage(auth)
+        candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        now = datetime.now(timezone.utc)
+        candidate = repo.upsert_channel_return_candidate(
+            db,
+            raw_event=repo.get_channel_raw_event(db, candidate.channel_raw_event_id),
+            account=account_service._get_scoped_account(db, auth, account_id=candidate.channel_account_id),
+            values={
+                "client_unit_id": candidate.client_unit_id,
+                "source_type": candidate.source_type,
+                "source_origin": candidate.source_origin,
+                "external_order_id": candidate.external_order_id,
+                "external_product_order_id": candidate.external_product_order_id,
+                "external_claim_id": candidate.external_claim_id,
+                "return_tracking_no": candidate.return_tracking_no,
+                "original_tracking_no": candidate.original_tracking_no,
+                "tracking_no_for_scan": candidate.tracking_no_for_scan,
+                "product_code": candidate.product_code,
+                "barcode": candidate.barcode,
+                "product_id": candidate.product_id,
+                "product_name": candidate.product_name,
+                "option_name": candidate.option_name,
+                "qty": candidate.qty,
+                "claim_reason": candidate.claim_reason,
+                "claim_status": candidate.claim_status,
+                "canonical_json": candidate.canonical_json,
+                "match_status": candidate.match_status,
+                "match_reason": candidate.match_reason,
+                "risk_flags_json": candidate.risk_flags_json,
+                "reviewed_at": now,
+                "reviewed_by": auth.user_id,
+            },
+        )[0]
+        db.commit()
+        return ChannelReturnCandidateActionResponse(
+            candidate=_candidate_response(candidate),
+            message="반품접수 후보를 확인 처리했습니다.",
+        ).model_dump()
+
+    def create_return_expected(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
+        _require_channel_manage(auth)
+        candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        return ChannelReturnCandidateActionResponse(
+            candidate=_candidate_response(candidate),
+            message="반품예정자료 생성은 다음 단계에서 기존 반품접수 원장 계약에 맞춰 연결합니다.",
+        ).model_dump()
+
+    def _transform_and_save(self, db: Session, *, raw_event, account, reviewed_by: int | None):
+        transformer = _transformer_for(raw_event)
+        values = transformer.transform(raw_event, account)
+        values = self._apply_matching_and_status(db, raw_event=raw_event, account=account, values=values)
+        existing = repo.get_channel_return_candidate_by_raw_event(db, raw_event.id)
+        conflicts = repo.find_candidate_conflicts(
+            db,
+            client_id=account.client_id,
+            return_tracking_no=values.get("return_tracking_no"),
+            external_product_order_id=values.get("external_product_order_id"),
+            external_claim_id=values.get("external_claim_id"),
+            exclude_candidate_id=existing.id if existing else None,
+        )
+        if conflicts and values["match_status"] != "BLOCKED":
+            risks = list(values.get("risk_flags_json") or [])
+            risks.append("RETURN_TRACKING_CONFLICT")
+            values["match_status"] = "NEEDS_REVIEW"
+            values["match_reason"] = "같은 반품송장이 다른 외부 주문/클레임 후보와 충돌합니다."
+            values["risk_flags_json"] = sorted(set(risks))
+        if reviewed_by is not None:
+            values["reviewed_at"] = datetime.now(timezone.utc)
+            values["reviewed_by"] = reviewed_by
+        candidate, created = repo.upsert_channel_return_candidate(db, raw_event=raw_event, account=account, values=values)
+        repo.update_channel_raw_event(
+            db,
+            raw_event,
+            {
+                "process_status": "FAILED" if candidate.match_status == "BLOCKED" else "NORMALIZED",
+                "process_error_code": "CHANNEL_CANDIDATE_BLOCKED" if candidate.match_status == "BLOCKED" else None,
+                "process_error_message": candidate.match_reason if candidate.match_status == "BLOCKED" else None,
+            },
+        )
+        return candidate, created
+
+    def _apply_matching_and_status(self, db: Session, *, raw_event, account, values: dict) -> dict:
+        if values.get("match_status") == "BLOCKED":
+            return values
+        risks: list[str] = list(values.get("risk_flags_json") or [])
+        reasons: list[str] = []
+
+        if not values.get("external_product_order_id") and not values.get("external_claim_id") and not values.get("return_tracking_no") and not values.get("original_tracking_no"):
+            values["match_status"] = "BLOCKED"
+            values["match_reason"] = "외부 식별자와 송장 후보가 없어 추적할 수 없습니다."
+            values["risk_flags_json"] = ["MISSING_EXTERNAL_IDENTIFIER"]
+            return values
+
+        product = self._match_product(db, account.client_id, values)
+        if product is not None:
+            values["product_id"] = product.id
+            values["product_code"] = product.product_code
+        else:
+            risks.append("PRODUCT_MATCH_REQUIRED")
+            reasons.append("상품마스터 매칭이 필요합니다.")
+
+        if account.client_unit_id:
+            values["client_unit_id"] = account.client_unit_id
+        else:
+            values["client_unit_id"] = None
+            risks.append("TEAM_ASSIGN_REQUIRED")
+            reasons.append("팀/운영단위 배정이 필요합니다.")
+
+        if values.get("return_tracking_no"):
+            values["tracking_no_for_scan"] = values["return_tracking_no"]
+        elif values.get("original_tracking_no"):
+            values["tracking_no_for_scan"] = None
+            risks.append("RETURN_TRACKING_REQUIRED")
+            reasons.append("반품송장이 없어 원송장은 보조 조회 후보로만 둡니다.")
+        else:
+            values["tracking_no_for_scan"] = None
+            risks.append("RETURN_TRACKING_REQUIRED")
+            reasons.append("반품 현장 스캔 기준 송장이 없습니다.")
+
+        if values.get("qty") is None:
+            risks.append("QTY_REQUIRED")
+            reasons.append("수량 확인이 필요합니다.")
+
+        if "RETURN_TRACKING_REQUIRED" in risks:
+            status = "RETURN_TRACKING_PENDING"
+            reason = "반품송장 확인이 필요합니다."
+        elif "TEAM_ASSIGN_REQUIRED" in risks:
+            status = "TEAM_ASSIGN_PENDING"
+            reason = "팀/운영단위 배정이 필요합니다."
+        elif "PRODUCT_MATCH_REQUIRED" in risks:
+            status = "PRODUCT_MATCH_PENDING"
+            reason = "상품마스터 매칭이 필요합니다."
+        elif "QTY_REQUIRED" in risks:
+            status = "NEEDS_REVIEW"
+            reason = "수량 확인이 필요합니다."
+        else:
+            status = "READY_FOR_INTAKE"
+            reason = "고객사, 팀, 상품, 반품송장 기준이 확인되어 현장 스캔 처리 후보입니다."
+
+        values["match_status"] = status
+        values["match_reason"] = reason if not reasons else reason
+        values["risk_flags_json"] = sorted(set(risks))
+        return values
+
+    def _match_product(self, db: Session, client_id: int, values: dict):
+        product_code = _first_text(values.get("product_code"))
+        if product_code:
+            product = master_repository.find_product_by_code(db, client_id, product_code)
+            if product is not None:
+                return product
+        barcode_norm = _normalize_barcode(values.get("barcode"))
+        if barcode_norm:
+            product = master_repository.find_product_by_barcode(db, client_id, barcode_norm)
+            if product is not None:
+                return product
+            product_barcode = master_repository.find_product_barcode_by_norm(db, client_id, barcode_norm)
+            if product_barcode is not None:
+                return master_repository.get_product_by_id(db, product_barcode.product_id)
+        return None
+
+    def _get_scoped_candidate(self, db: Session, auth: AuthContext, *, candidate_id: int):
+        candidate = repo.get_channel_return_candidate(db, candidate_id)
+        if candidate is None:
+            raise _business_error("CHANNEL_RETURN_CANDIDATE_NOT_FOUND", "채널 반품 후보를 찾을 수 없습니다.", 404)
+        resolve_effective_client_id(auth, candidate.client_id)
+        return candidate
+
+
 account_service = ChannelAccountService()
 sync_service = ChannelSyncService()
+transform_service = ChannelCanonicalTransformService()

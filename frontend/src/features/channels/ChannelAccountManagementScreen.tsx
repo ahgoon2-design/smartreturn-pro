@@ -7,9 +7,13 @@ import {
   disableChannelAccount,
   listChannelAccounts,
   listChannelRawEvents,
+  listChannelReturnCandidates,
   listChannelSyncJobs,
+  markChannelReturnCandidateReviewed,
+  reprocessChannelReturnCandidate,
   runChannelDryRunSync,
   testChannelConnection,
+  transformChannelAccountRawEvents,
   updateChannelAccount,
 } from "../../api/channels";
 import { listClients, listClientUnits } from "../../api/master";
@@ -19,12 +23,15 @@ import { SmartModalShell } from "../../components/common/SmartModalShell";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
+import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
 import { SmartDataGrid } from "../../components/grid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid";
 import type {
   ChannelAccount,
   ChannelAccountCreatePayload,
   ChannelRawEventListItem,
+  ChannelReturnCandidate,
+  ChannelReturnCandidateStatus,
   ChannelSyncJob,
   ChannelType,
 } from "../../types/channels";
@@ -49,12 +56,25 @@ const CHANNEL_OPTIONS: Array<{ value: ChannelType; label: string }> = [
   { value: "COURIER", label: "택배사 준비" },
 ];
 
+const CANDIDATE_STATUS_OPTIONS: Array<{ value: ChannelReturnCandidateStatus | "ALL"; label: string }> = [
+  { value: "ALL", label: "전체" },
+  { value: "READY_FOR_INTAKE", label: "입고 준비" },
+  { value: "TEAM_ASSIGN_PENDING", label: "팀 배정 필요" },
+  { value: "PRODUCT_MATCH_PENDING", label: "상품 매칭 필요" },
+  { value: "RETURN_TRACKING_PENDING", label: "반품송장 필요" },
+  { value: "NEEDS_REVIEW", label: "확인 필요" },
+  { value: "BLOCKED", label: "차단" },
+];
+
 export function ChannelAccountManagementScreen() {
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [clientUnits, setClientUnits] = useState<ClientUnit[]>([]);
   const [syncJobs, setSyncJobs] = useState<ChannelSyncJob[]>([]);
   const [rawEvents, setRawEvents] = useState<ChannelRawEventListItem[]>([]);
+  const [candidates, setCandidates] = useState<ChannelReturnCandidate[]>([]);
+  const [candidateSummary, setCandidateSummary] = useState<Record<string, number>>({});
+  const [candidateStatusFilter, setCandidateStatusFilter] = useState<ChannelReturnCandidateStatus | "ALL">("ALL");
   const [selectedAccount, setSelectedAccount] = useState<ChannelAccount | null>(null);
   const [editingAccount, setEditingAccount] = useState<ChannelAccount | null>(null);
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -69,7 +89,7 @@ export function ChannelAccountManagementScreen() {
 
   useEffect(() => {
     void loadInitialData();
-  }, [includeInactive]);
+  }, [includeInactive, candidateStatusFilter]);
 
   useEffect(() => {
     if (selectedClientId) {
@@ -118,6 +138,7 @@ export function ChannelAccountManagementScreen() {
       { key: "edit", label: "수정", onClick: openEditModal },
       { key: "test", label: "연결 테스트", icon: <ApiOutlined />, onClick: (record) => void handleConnectionTest(record) },
       { key: "dry-run", label: "Dry-run 수집", icon: <SyncOutlined />, onClick: (record) => void handleDryRun(record) },
+      { key: "transform", label: "원본 변환", icon: <SyncOutlined />, onClick: (record) => void handleTransformAccount(record) },
       {
         key: "disable",
         label: "비활성화",
@@ -154,20 +175,59 @@ export function ChannelAccountManagementScreen() {
     [],
   );
 
+  const candidateColumns = useMemo<SmartDataGridColumn<ChannelReturnCandidate>[]>(
+    () => [
+      {
+        key: "match_status",
+        title: "상태",
+        dataIndex: "match_status",
+        width: 150,
+        render: (value) => <SmartStatusBadge status={String(value)} label={candidateStatusLabel(String(value))} />,
+      },
+      { key: "match_reason", title: "사유", dataIndex: "match_reason", minWidth: 240 },
+      { key: "external_product_order_id", title: "상품주문 ID", dataIndex: "external_product_order_id", minWidth: 160, copyable: true },
+      { key: "external_claim_id", title: "클레임 ID", dataIndex: "external_claim_id", minWidth: 140, copyable: true },
+      { key: "tracking_no_for_scan", title: "스캔 송장", dataIndex: "tracking_no_for_scan", width: 140, copyable: true, render: (value) => toDisplayText(value) },
+      { key: "product_code", title: "상품코드", dataIndex: "product_code", width: 130, copyable: true, render: (value) => toDisplayText(value) },
+      { key: "product_name", title: "상품명", dataIndex: "product_name", minWidth: 180, render: (value) => toDisplayText(value) },
+      { key: "qty", title: "수량", dataIndex: "qty", width: 80, align: "right", render: (value) => toDisplayText(value) },
+      { key: "risk_flags", title: "위험", dataIndex: "risk_flags", minWidth: 170, render: (_value, record) => record.risk_flags?.join(", ") || "-" },
+      { key: "updated_at", title: "갱신시각", dataIndex: "updated_at", width: 150, render: formatDateTime },
+    ],
+    [],
+  );
+
+  const candidateActions = useMemo<SmartGridRowAction<ChannelReturnCandidate>[]>(
+    () => [
+      { key: "reprocess", label: "재처리", icon: <SyncOutlined />, onClick: (record) => void handleReprocessCandidate(record) },
+      {
+        key: "reviewed",
+        label: "확인 처리",
+        disabled: (record) => Boolean(record.reviewed_at),
+        onClick: (record) => void handleMarkReviewed(record),
+      },
+      { key: "create-return-expected", label: "반품예정 생성 예정", disabled: true, onClick: () => undefined },
+    ],
+    [],
+  );
+
   async function loadInitialData() {
     setLoading(true);
     setErrorMessage("");
     try {
-      const [clientItems, accountResult, jobResult, rawEventResult] = await Promise.all([
+      const [clientItems, accountResult, jobResult, rawEventResult, candidateResult] = await Promise.all([
         listClients(),
         listChannelAccounts({ includeInactive }),
         listChannelSyncJobs(),
         listChannelRawEvents(),
+        listChannelReturnCandidates(),
       ]);
       setClients(clientItems);
       setAccounts(accountResult.items);
       setSyncJobs(jobResult.items);
       setRawEvents(rawEventResult.items);
+      setCandidates(candidateResult.items);
+      setCandidateSummary(candidateResult.summary);
       setNotice("채널 연동 관리 정보를 불러왔습니다.");
     } catch (error) {
       setErrorMessage(toUserMessage(error, "채널 연동 관리 정보를 불러오지 못했습니다."));
@@ -276,6 +336,46 @@ export function ChannelAccountManagementScreen() {
     }
   }
 
+  async function handleTransformAccount(account: ChannelAccount) {
+    setActionLoadingId(account.id);
+    try {
+      const result = await transformChannelAccountRawEvents(account.id);
+      message.success(`원본 ${result.transformed_count}건을 반품접수 후보로 변환했습니다.`);
+      setSelectedAccount(account);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "원본 이벤트 변환을 실행하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleReprocessCandidate(candidate: ChannelReturnCandidate) {
+    setActionLoadingId(candidate.channel_account_id);
+    try {
+      const result = await reprocessChannelReturnCandidate(candidate.id);
+      message.success(result.message);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "후보 재처리를 실행하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleMarkReviewed(candidate: ChannelReturnCandidate) {
+    setActionLoadingId(candidate.channel_account_id);
+    try {
+      const result = await markChannelReturnCandidateReviewed(candidate.id);
+      message.success(result.message);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "후보 확인 처리를 실행하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
   async function handleDisable(account: ChannelAccount) {
     setActionLoadingId(account.id);
     try {
@@ -304,6 +404,12 @@ export function ChannelAccountManagementScreen() {
 
   const selectedJobs = selectedAccount ? syncJobs.filter((job) => job.channel_account_id === selectedAccount.id) : syncJobs;
   const selectedEvents = selectedAccount ? rawEvents.filter((event) => event.channel_account_id === selectedAccount.id) : rawEvents;
+  const filteredCandidates = candidates.filter(
+    (candidate) => candidateStatusFilter === "ALL" || candidate.match_status === candidateStatusFilter,
+  );
+  const selectedCandidates = selectedAccount
+    ? filteredCandidates.filter((candidate) => candidate.channel_account_id === selectedAccount.id)
+    : filteredCandidates;
 
   return (
     <SmartPage>
@@ -366,6 +472,48 @@ export function ChannelAccountManagementScreen() {
           loading={loading}
           emptyText="수집된 원본 이벤트 요약이 없습니다."
           maxHeight={260}
+          enableCopy
+        />
+      </SmartDataSection>
+
+      <section className="smart-summary-grid" aria-label="채널 반품 후보 요약">
+        <SmartSummaryCard label="입고 준비" value={`${candidateSummary.READY_FOR_INTAKE || 0}건`} />
+        <SmartSummaryCard label="팀 배정 필요" value={`${candidateSummary.TEAM_ASSIGN_PENDING || 0}건`} />
+        <SmartSummaryCard label="상품 매칭 필요" value={`${candidateSummary.PRODUCT_MATCH_PENDING || 0}건`} />
+        <SmartSummaryCard label="반품송장 필요" value={`${candidateSummary.RETURN_TRACKING_PENDING || 0}건`} />
+        <SmartSummaryCard label="확인 필요" value={`${candidateSummary.NEEDS_REVIEW || 0}건`} />
+        <SmartSummaryCard label="차단" value={`${candidateSummary.BLOCKED || 0}건`} />
+      </section>
+
+      <SmartDataSection
+        title={selectedAccount ? `${selectedAccount.store_name} 반품접수 후보` : "반품접수 후보"}
+        extra={
+          <Space>
+            <Select
+              style={{ width: 180 }}
+              value={candidateStatusFilter}
+              options={CANDIDATE_STATUS_OPTIONS}
+              onChange={setCandidateStatusFilter}
+            />
+            <Button
+              icon={<SyncOutlined />}
+              disabled={!selectedAccount}
+              loading={actionLoadingId === selectedAccount?.id}
+              onClick={() => selectedAccount && void handleTransformAccount(selectedAccount)}
+            >
+              선택 계정 원본 변환
+            </Button>
+          </Space>
+        }
+      >
+        <SmartDataGrid<ChannelReturnCandidate>
+          rows={selectedCandidates}
+          rowKey="id"
+          columns={candidateColumns}
+          loading={loading || actionLoadingId !== null}
+          emptyText="변환된 반품접수 후보가 없습니다."
+          rowActions={candidateActions}
+          maxHeight={360}
           enableCopy
         />
       </SmartDataSection>
@@ -447,6 +595,19 @@ function authStatusLabel(value: string) {
       CONNECTED: "연결됨",
       EXPIRED: "만료",
       ERROR: "오류",
+    }[value] || value
+  );
+}
+
+function candidateStatusLabel(value: string) {
+  return (
+    {
+      READY_FOR_INTAKE: "입고 준비",
+      TEAM_ASSIGN_PENDING: "팀 배정 필요",
+      PRODUCT_MATCH_PENDING: "상품 매칭 필요",
+      RETURN_TRACKING_PENDING: "반품송장 필요",
+      NEEDS_REVIEW: "확인 필요",
+      BLOCKED: "차단",
     }[value] || value
   );
 }

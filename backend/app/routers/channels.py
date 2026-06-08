@@ -8,7 +8,7 @@ from app.core.permissions import require_password_change_completed
 from app.schemas.auth import AuthContext
 from app.schemas.channels import ChannelAccountCreateRequest, ChannelAccountUpdateRequest, ChannelSyncDryRunRequest
 from app.schemas.common import ApiResult, api_success
-from app.services.channel_service import account_service, sync_service
+from app.services.channel_service import account_service, sync_service, transform_service
 
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
@@ -169,6 +169,34 @@ def get_channel_raw_event_api(
     )
 
 
+@router.post("/raw-events/{event_id}/transform", response_model=ApiResult)
+def transform_channel_raw_event_api(
+    event_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RAW_EVENT_TRANSFORMED",
+        message="채널 원본 이벤트를 반품접수 후보로 변환했습니다.",
+        data=transform_service.transform_raw_event(db, auth, raw_event_id=event_id),
+    )
+
+
+@router.post("/accounts/{account_id}/raw-events/transform", response_model=ApiResult)
+def transform_channel_account_raw_events_api(
+    account_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RAW_EVENTS_TRANSFORMED",
+        message="채널 계정의 원본 이벤트를 반품접수 후보로 변환했습니다.",
+        data=transform_service.transform_account_raw_events(db, auth, account_id=account_id),
+    )
+
+
 @router.get("/sync-jobs", response_model=ApiResult)
 def list_channel_sync_jobs_api(
     db: Session = Depends(get_db),
@@ -179,4 +207,75 @@ def list_channel_sync_jobs_api(
         result_code="CHANNEL_SYNC_JOBS_FOUND",
         message="채널 수집 job 목록을 조회했습니다.",
         data=sync_service.list_sync_jobs(db, auth),
+    )
+
+
+@router.get("/return-candidates", response_model=ApiResult)
+def list_channel_return_candidates_api(
+    account_id: int | None = None,
+    match_status: str | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_CANDIDATES_FOUND",
+        message="채널 반품접수 후보 목록을 조회했습니다.",
+        data=transform_service.list_candidates(db, auth, account_id=account_id, match_status=match_status),
+    )
+
+
+@router.get("/return-candidates/{candidate_id}", response_model=ApiResult)
+def get_channel_return_candidate_api(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_CANDIDATE_FOUND",
+        message="채널 반품접수 후보를 조회했습니다.",
+        data=transform_service.get_candidate(db, auth, candidate_id=candidate_id),
+    )
+
+
+@router.post("/return-candidates/{candidate_id}/reprocess", response_model=ApiResult)
+def reprocess_channel_return_candidate_api(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_CANDIDATE_REPROCESSED",
+        message="채널 반품접수 후보를 재처리했습니다.",
+        data=transform_service.reprocess_candidate(db, auth, candidate_id=candidate_id),
+    )
+
+
+@router.post("/return-candidates/{candidate_id}/mark-reviewed", response_model=ApiResult)
+def mark_channel_return_candidate_reviewed_api(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_CANDIDATE_REVIEWED",
+        message="채널 반품접수 후보를 확인 처리했습니다.",
+        data=transform_service.mark_reviewed(db, auth, candidate_id=candidate_id),
+    )
+
+
+@router.post("/return-candidates/{candidate_id}/create-return-expected", response_model=ApiResult)
+def create_return_expected_from_channel_candidate_api(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_EXPECTED_DEFERRED",
+        message="반품예정자료 생성은 다음 단계에서 연결합니다.",
+        data=transform_service.create_return_expected(db, auth, candidate_id=candidate_id),
     )

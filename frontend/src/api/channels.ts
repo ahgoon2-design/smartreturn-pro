@@ -5,6 +5,10 @@ import type {
   ChannelAccountUpdatePayload,
   ChannelConnectionTestResponse,
   ChannelRawEventListItem,
+  ChannelRawEventsBulkTransformResponse,
+  ChannelRawEventTransformResponse,
+  ChannelReturnCandidateActionResponse,
+  ChannelReturnCandidateListResponse,
   ChannelSyncDryRunPayload,
   ChannelSyncDryRunResponse,
   ChannelSyncJob,
@@ -79,4 +83,40 @@ export async function listChannelRawEvents(options: { accountId?: number; proces
   }
   const query = params.toString();
   return apiRequest<{ items: ChannelRawEventListItem[] }>(`/api/channels/raw-events${query ? `?${query}` : ""}`);
+}
+
+export async function transformChannelRawEvent(rawEventId: number) {
+  return apiRequest<ChannelRawEventTransformResponse>(`/api/channels/raw-events/${rawEventId}/transform`, {
+    method: "POST",
+  });
+}
+
+export async function transformChannelAccountRawEvents(accountId: number) {
+  return apiRequest<ChannelRawEventsBulkTransformResponse>(`/api/channels/accounts/${accountId}/raw-events/transform`, {
+    method: "POST",
+  });
+}
+
+export async function listChannelReturnCandidates(options: { accountId?: number; matchStatus?: string } = {}) {
+  const params = new URLSearchParams();
+  if (options.accountId) {
+    params.set("account_id", String(options.accountId));
+  }
+  if (options.matchStatus && options.matchStatus !== "ALL") {
+    params.set("match_status", options.matchStatus);
+  }
+  const query = params.toString();
+  return apiRequest<ChannelReturnCandidateListResponse>(`/api/channels/return-candidates${query ? `?${query}` : ""}`);
+}
+
+export async function reprocessChannelReturnCandidate(candidateId: number) {
+  return apiRequest<ChannelReturnCandidateActionResponse>(`/api/channels/return-candidates/${candidateId}/reprocess`, {
+    method: "POST",
+  });
+}
+
+export async function markChannelReturnCandidateReviewed(candidateId: number) {
+  return apiRequest<ChannelReturnCandidateActionResponse>(`/api/channels/return-candidates/${candidateId}/mark-reviewed`, {
+    method: "POST",
+  });
 }

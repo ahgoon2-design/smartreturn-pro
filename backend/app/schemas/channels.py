@@ -7,6 +7,14 @@ CHANNEL_TYPES = {"NAVER_SMARTSTORE", "COUPANG", "CAFE24", "EASYADMIN", "COURIER"
 CHANNEL_ACCOUNT_STATUSES = {"ACTIVE", "INACTIVE", "AUTH_REQUIRED", "ERROR"}
 CHANNEL_AUTH_STATUSES = {"NOT_CONNECTED", "CONNECTED", "EXPIRED", "ERROR"}
 CHANNEL_SYNC_JOB_TYPES = {"COLLECT_CHANGED_ORDERS", "COLLECT_RETURN_CLAIMS", "DRY_RUN"}
+CHANNEL_RETURN_CANDIDATE_STATUSES = {
+    "READY_FOR_INTAKE",
+    "TEAM_ASSIGN_PENDING",
+    "PRODUCT_MATCH_PENDING",
+    "RETURN_TRACKING_PENDING",
+    "NEEDS_REVIEW",
+    "BLOCKED",
+}
 
 
 class ChannelAccountCreateRequest(BaseModel):
@@ -194,3 +202,63 @@ class ChannelRawEventDetailResponse(ChannelRawEventListItem):
 
 class ChannelRawEventsResponse(BaseModel):
     items: list[ChannelRawEventListItem]
+
+
+class ChannelReturnCandidateResponse(BaseModel):
+    id: int
+    channel_raw_event_id: int
+    channel_account_id: int
+    client_id: int
+    client_unit_id: int | None = None
+    source_type: str
+    source_origin: str
+    external_order_id: str | None = None
+    external_product_order_id: str | None = None
+    external_claim_id: str | None = None
+    return_tracking_no: str | None = None
+    original_tracking_no: str | None = None
+    tracking_no_for_scan: str | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    product_id: int | None = None
+    product_name: str | None = None
+    option_name: str | None = None
+    qty: int | None = None
+    claim_reason: str | None = None
+    claim_status: str | None = None
+    match_status: str
+    match_reason: str
+    risk_flags: list[str] = Field(default_factory=list)
+    reviewed_at: datetime | None = None
+    reviewed_by: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChannelReturnCandidateDetailResponse(ChannelReturnCandidateResponse):
+    canonical_json: dict = Field(default_factory=dict)
+
+
+class ChannelReturnCandidatesResponse(BaseModel):
+    items: list[ChannelReturnCandidateResponse]
+    summary: dict[str, int] = Field(default_factory=dict)
+
+
+class ChannelRawEventTransformResponse(BaseModel):
+    candidate: ChannelReturnCandidateResponse
+    created: bool
+    message: str
+
+
+class ChannelRawEventsBulkTransformResponse(BaseModel):
+    transformed_count: int
+    created_count: int
+    updated_count: int
+    failed_count: int
+    candidates: list[ChannelReturnCandidateResponse]
+    summary: dict[str, int] = Field(default_factory=dict)
+
+
+class ChannelReturnCandidateActionResponse(BaseModel):
+    candidate: ChannelReturnCandidateResponse
+    message: str

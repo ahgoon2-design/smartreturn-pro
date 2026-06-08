@@ -97,3 +97,50 @@ class ChannelRawEvent(Base):
     process_error_message: Mapped[str | None] = mapped_column(String(500))
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ChannelReturnCandidate(Base):
+    __tablename__ = "channel_return_candidates"
+    __table_args__ = (
+        UniqueConstraint("channel_raw_event_id", name="uq_channel_return_candidates_raw_event"),
+        Index("ix_channel_return_candidates_account_status", "channel_account_id", "match_status"),
+        Index("ix_channel_return_candidates_client_status", "client_id", "match_status"),
+        Index("ix_channel_return_candidates_external_claim", "client_id", "external_product_order_id", "external_claim_id"),
+        Index("ix_channel_return_candidates_return_tracking", "client_id", "return_tracking_no"),
+        Index("ix_channel_return_candidates_scan_tracking", "client_id", "tracking_no_for_scan"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel_raw_event_id: Mapped[int] = mapped_column(ForeignKey("channel_raw_events.id"), nullable=False)
+    channel_account_id: Mapped[int] = mapped_column(ForeignKey("channel_accounts.id"), nullable=False)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
+    source_type: Mapped[str] = mapped_column(String(80), nullable=False, default="CHANNEL_API", server_default="CHANNEL_API")
+    source_origin: Mapped[str] = mapped_column(String(80), nullable=False)
+    external_order_id: Mapped[str | None] = mapped_column(String(255))
+    external_product_order_id: Mapped[str | None] = mapped_column(String(255))
+    external_claim_id: Mapped[str | None] = mapped_column(String(255))
+    return_tracking_no: Mapped[str | None] = mapped_column(String(100))
+    original_tracking_no: Mapped[str | None] = mapped_column(String(100))
+    tracking_no_for_scan: Mapped[str | None] = mapped_column(String(100))
+    product_code: Mapped[str | None] = mapped_column(String(80))
+    barcode: Mapped[str | None] = mapped_column(String(100))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    product_name: Mapped[str | None] = mapped_column(String(255))
+    option_name: Mapped[str | None] = mapped_column(String(255))
+    qty: Mapped[int | None] = mapped_column(Integer)
+    claim_reason: Mapped[str | None] = mapped_column(String(255))
+    claim_status: Mapped[str | None] = mapped_column(String(80))
+    canonical_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    match_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    match_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    risk_flags_json: Mapped[list | None] = mapped_column(JSONB)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
