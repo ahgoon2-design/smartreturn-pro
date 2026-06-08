@@ -89,8 +89,10 @@ CANONICAL_FIELDS: dict[str, list[dict]] = {
         {"field_name": "product_code", "label": "상품코드", "required": True},
         {"field_name": "product_name", "label": "상품명", "required": True},
         {"field_name": "option_name", "label": "옵션명", "required": False},
+        {"field_name": "original_product_name", "label": "원상품명", "required": False},
         {"field_name": "primary_barcode", "label": "대표바코드", "required": False},
         {"field_name": "additional_barcode", "label": "추가바코드", "required": False},
+        {"field_name": "channel_code", "label": "채널코드", "required": False},
         {"field_name": "carton_barcode", "label": "카톤바코드", "required": False},
         {"field_name": "unit_qty", "label": "카톤입수", "required": False},
         {"field_name": "inner_qty", "label": "입수수량", "required": False},
@@ -245,7 +247,8 @@ HEADER_ALIASES = {
         "상품명/옵션명",
         "옵션명",
     ),
-    "option_name": ("option_name", "옵션명", "옵션", "규격", "색상/사이즈", "사이즈", "색상", "품목명(원명)"),
+    "option_name": ("option_name", "옵션명", "옵션", "규격", "색상/사이즈", "사이즈", "색상"),
+    "original_product_name": ("original_product_name", "품목명(원명)", "상품명(원명)", "원상품명", "원 품목명"),
     "primary_barcode": (
         "primary_barcode",
         "barcode",
@@ -271,9 +274,20 @@ HEADER_ALIASES = {
         "대표바코드",
         "대표 바코드",
     ),
-    "additional_barcode": ("additional_barcode", "추가바코드", "추가 바코드", "보조바코드", "별도바코드", "쿠팡바코드"),
+    "additional_barcode": (
+        "additional_barcode",
+        "추가바코드",
+        "추가 바코드",
+        "보조바코드",
+        "별도바코드",
+        "쿠팡바코드",
+        "쿠팡 바코드",
+        "쿠팡바코드/G-Code",
+        "쿠팡 바코드/G-Code",
+    ),
+    "channel_code": ("channel_code", "G-Code", "G Code", "G코드", "G 코드", "채널코드", "채널 코드"),
     "carton_barcode": ("carton_barcode", "카톤바코드", "카톤 바코드", "박스바코드", "박스코드", "carton barcode"),
-    "inner_qty": ("inner_qty", "Inner Qty", "inner qty", "입수수량", "이너수량"),
+    "inner_qty": ("inner_qty", "Inner Qty", "inner qty", "Inner Qty(입수수량)", "입수수량", "이너수량"),
     "barcode_type": (
         "barcode_type",
         "barcode type",
@@ -289,6 +303,7 @@ HEADER_ALIASES = {
         "단위수량",
         "단위 수량",
         "입수",
+        "Packing Unit(카톤입수)",
         "Packing Unit",
         "packing unit",
         "구성수량",
@@ -334,6 +349,33 @@ HEADER_ALIASES = {
     "request_date": ("request_date", "요청일", "발주일"),
     "item_name": ("item_name", "단품명", "품목명"),
     "delivery_status": ("delivery_status", "최종상태", "배송상태"),
+}
+
+SOURCE_TYPE_HEADER_ALIAS_OVERRIDES = {
+    "RETURN_INTAKE": {
+        "반품송장": "return_tracking_no",
+        "반품송장번호": "return_tracking_no",
+        "반품송장 번호": "return_tracking_no",
+        "반품운송장": "return_tracking_no",
+        "반품운송장번호": "return_tracking_no",
+        "반품운송장 번호": "return_tracking_no",
+        "원송장번호": "original_tracking_no",
+        "원 송장번호": "original_tracking_no",
+        "원운송장번호": "original_tracking_no",
+        "원 운송장번호": "original_tracking_no",
+    },
+    "VENDOR_RETURN_DETAIL": {
+        "반품송장": "return_tracking_no",
+        "반품송장번호": "return_tracking_no",
+        "반품송장 번호": "return_tracking_no",
+        "반품운송장": "return_tracking_no",
+        "반품운송장번호": "return_tracking_no",
+        "반품운송장 번호": "return_tracking_no",
+        "원송장번호": "original_tracking_no",
+        "원 송장번호": "original_tracking_no",
+        "원운송장번호": "original_tracking_no",
+        "원 운송장번호": "original_tracking_no",
+    },
 }
 
 EXCEL_COMPAT_HEADER_ALIASES = {
@@ -489,6 +531,9 @@ def _header_alias_lookup(import_type: str) -> dict[str, str]:
         for alias in aliases:
             lookup[_excel_header_lookup_key(alias)] = field_name
         lookup[_excel_header_lookup_key(field_name)] = field_name
+    for alias, field_name in SOURCE_TYPE_HEADER_ALIAS_OVERRIDES.get(import_type, {}).items():
+        if field_name in field_names:
+            lookup[_excel_header_lookup_key(alias)] = field_name
     return lookup
 
 

@@ -360,7 +360,7 @@ def test_excel_upload_detects_header_row_and_maps_esp_product_headers(client: Te
     assert data["mapped_headers"]["product_code"] == "품목코드"
     assert data["mapped_headers"]["primary_barcode"] == "바코드"
     assert data["mapped_headers"]["product_name"] == "품목명"
-    assert data["mapped_headers"]["option_name"] == "품목명(원명)"
+    assert data["mapped_headers"]["original_product_name"] == "품목명(원명)"
     assert data["mapped_headers"]["additional_barcode"] == "쿠팡바코드"
     assert data["mapped_headers"]["unit_qty"] == "Packing Unit"
     assert data["mapped_headers"]["inner_qty"] == "Inner Qty"
@@ -372,6 +372,44 @@ def test_excel_upload_detects_header_row_and_maps_esp_product_headers(client: Te
     assert row["normalized_json"]["product_code"] == "ESP-001"
     assert row["normalized_json"]["primary_barcode"] == "8801234567890"
     assert row["normalized_json"]["unit_qty"] == "12"
+    assert row["normalized_json"]["inner_qty"] == "6"
+    assert row["normalized_json"]["is_active"] == "true"
+
+
+def test_excel_upload_maps_real_esp_product_sample_headers(client: TestClient, db_session: Session):
+    job = _create_job(db_session)
+    headers = _admin_headers(client, db_session, "excel_real_esp_product_admin")
+    content = _xlsx_bytes(
+        [
+            "품목코드",
+            "바코드",
+            "품목명",
+            "품목명(원명)",
+            "쿠팡바코드/G-Code",
+            "Packing Unit(카톤입수)",
+            "Inner Qty(입수수량)",
+            "사용",
+        ],
+        [["ESP-REAL-001", "8801234567890", "샘플 상품", "샘플 원명", "C-8801234567890", "24.0", "6.0", "사용"]],
+    )
+
+    response = _upload(client, job.id, headers=headers, content=content)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["mapped_headers"]["product_code"] == "품목코드"
+    assert data["mapped_headers"]["primary_barcode"] == "바코드"
+    assert data["mapped_headers"]["product_name"] == "품목명"
+    assert data["mapped_headers"]["original_product_name"] == "품목명(원명)"
+    assert data["mapped_headers"]["additional_barcode"] == "쿠팡바코드/G-Code"
+    assert data["mapped_headers"]["unit_qty"] == "Packing Unit(카톤입수)"
+    assert data["mapped_headers"]["inner_qty"] == "Inner Qty(입수수량)"
+
+    rows_response = client.get(f"/api/import-jobs/{job.id}/rows", headers=headers)
+    row = rows_response.json()["data"]["items"][0]
+    assert row["normalized_json"]["primary_barcode"] == "8801234567890"
+    assert row["normalized_json"]["additional_barcode"] == "C-8801234567890"
+    assert row["normalized_json"]["unit_qty"] == "24"
     assert row["normalized_json"]["inner_qty"] == "6"
     assert row["normalized_json"]["is_active"] == "true"
 
@@ -413,6 +451,47 @@ def test_excel_upload_normalizes_return_tracking_date_and_qty(client: TestClient
     assert normalized["return_tracking_no_original"] == "9999 8888 7777"
     assert normalized["product_code"] == "ERP-001"
     assert normalized["qty"] == "1"
+
+
+def test_excel_upload_splits_vendor_original_and_return_tracking_headers(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_VENDOR_RETURN")
+    owner = _create_user(
+        db_session,
+        login_id="vendor_return_owner",
+        role_code="INTERNAL_ADMIN",
+        permissions=["IMPORT_VIEW"],
+    )
+    job = _create_job(
+        db_session,
+        import_type="VENDOR_RETURN_DETAIL",
+        source_type="EXCEL_FILE",
+        client_row=client_row,
+        created_by=owner,
+    )
+    headers = _admin_headers(client, db_session, "excel_vendor_return_admin")
+    content = _xlsx_bytes(
+        ["요청일", "원송장번호", "반품송장 번호", "ERP코드", "상품명", "수량"],
+        [["2026.06.08", "1111-2222-3333", "9999 8888 7777", "ERP-001", "반품 상품", "1"]],
+        leading_rows=[["반품리스트 안내"], ["담당자 메모"]],
+    )
+
+    response = _upload(client, job.id, headers=headers, content=content)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["header_row_no"] == 3
+    assert data["mapped_headers"]["request_date"] == "요청일"
+    assert data["mapped_headers"]["original_tracking_no"] == "원송장번호"
+    assert data["mapped_headers"]["return_tracking_no"] == "반품송장 번호"
+    assert data["mapped_headers"]["product_code"] == "ERP코드"
+    assert data["mapped_headers"]["qty"] == "수량"
+
+    rows_response = client.get(f"/api/import-jobs/{job.id}/rows", headers=headers)
+    row = rows_response.json()["data"]["items"][0]
+    assert row["row_no"] == 4
+    assert row["normalized_json"]["original_tracking_no"] == "111122223333"
+    assert row["normalized_json"]["return_tracking_no"] == "999988887777"
+    assert row["normalized_json"]["request_date"] == "2026-06-08"
 
 
 def test_excel_upload_maps_common_field_aliases(client: TestClient, db_session: Session):
