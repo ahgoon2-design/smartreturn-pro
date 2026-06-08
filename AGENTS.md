@@ -68,6 +68,7 @@
 - 현장 스캔 중 Google Sheets API를 직접 호출하지 않는다.
 - 반품 예정자료의 상품정보는 후보/참고값이며, 실제 상품/수량/판정은 반품처리 작업에서 확정한다.
 - 내부 반품입고예정 화면에는 구글시트 동기화, 업체 반품접수, 판정, 재고처리를 넣지 않는다.
+- 네이버/쿠팡/카페24/이지어드민/택배사 API 등 외부 채널 반품 자동수집은 화면별 개별 저장 로직으로 만들지 말고 `docs/skills/channel-return-auto-collection.md`를 따른다. 외부 채널 자료는 원본 이벤트 보존, canonical 정규화, 중복 upsert, 고객사/팀/상품/송장 매칭, 예외상태 분리, 반품예정자료 생성, 현장 운송장 스캔 연결 순서로 처리한다. `return_tracking_no`는 반품 현장 스캔 기준이고 `original_tracking_no`는 보조 조회 후보이다. 채널 역전송은 수집, 후보 생성, 관리자 확인 전송, 안전조건 자동전송 순서로 단계화한다.
 
 ## 작업 원칙
 - 신규 기능 구현 전 반드시 관련 `docs` 문서를 먼저 읽는다.
@@ -108,3 +109,5 @@
   - `docs/skills/ui-design-system.md`
 - 반품/재고/창고 설계 또는 기준정보 작업:
   - `docs/skills/return-client-unit-routing.md`
+- 네이버/쿠팡/카페24/이지어드민/택배사 API 반품 자동수집 작업:
+  - `docs/skills/channel-return-auto-collection.md`

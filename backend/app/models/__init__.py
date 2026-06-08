@@ -1,4 +1,5 @@
 from app.models.auth import AuthLoginLog, Permission, Role, RolePermission, User, UserRole
+from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelSyncJob
 from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportMappingProfile, ImportValidationError
 from app.models.inventory import CurrentInventory, InventoryEvent
 from app.models.master import (
@@ -17,6 +18,9 @@ from app.models.returns import ReturnExternalOutboundBatch, ReturnIntakeBatch, R
 
 __all__ = [
     "AuthLoginLog",
+    "ChannelAccount",
+    "ChannelRawEvent",
+    "ChannelSyncJob",
     "Client",
     "ClientUnit",
     "ClientWarehouseSetting",

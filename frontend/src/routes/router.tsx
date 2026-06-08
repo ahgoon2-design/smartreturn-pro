@@ -3,6 +3,7 @@ import { MainLayout } from "../layouts/MainLayout";
 import { LoginPage } from "../pages/auth/LoginPage";
 import { PasswordChangeRequiredPage } from "../pages/auth/PasswordChangeRequiredPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
+import { ChannelAccountManagementScreen } from "../features/channels/ChannelAccountManagementScreen";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
 import { CurrentInventoryPage } from "../features/inventory/CurrentInventoryPage";
 import { InventoryEventsPage } from "../features/inventory/InventoryEventsPage";
@@ -35,6 +36,14 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Navigate to={ROUTE_PATHS.dashboard} replace /> },
+      {
+        path: "channels/accounts",
+        element: (
+          <ProtectedRoute requiredPermissions={["RETURN_VIEW"]}>
+            <ChannelAccountManagementScreen />
+          </ProtectedRoute>
+        ),
+      },
       {
         path: "imports/preview",
         element: (

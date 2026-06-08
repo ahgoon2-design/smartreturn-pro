@@ -21,6 +21,7 @@
 | `ui-grid.md` | grid/table/preview 화면 작업 시 | SmartDataGrid wrapper, row 순서, 상태 표시, copyable 셀 기준을 정리한다. |
 | `worker-screen-ux.md` | 스캔/검수/작업자 화면 작업 시 | SmartScanPanel, 정확도, 속도, 자동화 중심의 작업자 UX 기준을 정리한다. |
 | `import-preview.md` | import preview, paste rows, validation 화면 작업 시 | import job 생성, rows 저장, validate, rows/errors 표시 계약을 정리한다. |
+| `channel-return-auto-collection.md` | 네이버/쿠팡/카페24/이지어드민/택배사 API 반품 자동수집 작업 시 | 외부 채널 원본 수집, canonical 정규화, 중복 upsert, 예외상태 분리, 현장 스캔 연결, 채널 역전송 단계화 기준을 정리한다. |
 | `return-client-unit-routing.md` | 반품/재고/창고/기준정보 작업 시 | 고객사 운영단위/팀 기준 반품·창고·재고 라우팅 규칙을 정리한다. |
 
 ## 사용 원칙
@@ -30,4 +31,5 @@
 - 문서가 여러 개 해당되면 공통 문서부터 읽고 도메인 문서를 읽는다.
 - 기존 SmartReturn 기준과 SmartReturn Pro 기준이 다르면 SmartReturn Pro 기준을 우선한다.
 - 반품 접수, 반품처리, 창고설정, 재고반영, 기준정보 작업은 `return-client-unit-routing.md`를 함께 읽는다.
+- 네이버/쿠팡/카페24/이지어드민/택배사 API 등 외부 채널 반품 자동수집 작업은 `channel-return-auto-collection.md`를 함께 읽는다.
 - 실제 secret, token, password, password_hash 값은 어떤 문서에도 쓰지 않는다.

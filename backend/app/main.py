@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
 from app.core.logging import configure_logging
 from app.routers.auth import router as auth_router
+from app.routers.channels import router as channels_router
 from app.routers.health import APP_VERSION, router as health_router
 from app.routers.imports import router as imports_router
 from app.routers.inventory import router as inventory_router
@@ -32,6 +33,7 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(password_router)
 app.include_router(master_router)
+app.include_router(channels_router)
 app.include_router(imports_router)
 app.include_router(returns_router)
 app.include_router(inventory_router)

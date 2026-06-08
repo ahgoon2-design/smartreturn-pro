@@ -1,4 +1,5 @@
 import {
+  ApiOutlined,
   AppstoreOutlined,
   CheckCircleOutlined,
   CloudUploadOutlined,
@@ -47,6 +48,8 @@ export function MainLayout() {
         ? ROUTE_PATHS.inventoryEvents
       : location.pathname.startsWith(ROUTE_PATHS.inventoryCurrent)
         ? ROUTE_PATHS.inventoryCurrent
+      : location.pathname.startsWith(ROUTE_PATHS.channelAccounts)
+        ? ROUTE_PATHS.channelAccounts
       : location.pathname.startsWith(ROUTE_PATHS.returnClosing)
         ? ROUTE_PATHS.returnClosing
       : location.pathname.startsWith(ROUTE_PATHS.returnProcessing)
@@ -101,6 +104,12 @@ export function MainLayout() {
       label: "반품 관리",
       type: "group",
       children: [
+        {
+          key: ROUTE_PATHS.channelAccounts,
+          icon: <ApiOutlined />,
+          label: "채널 연동 관리",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
         {
           key: ROUTE_PATHS.returnIntake,
           icon: <RollbackOutlined />,

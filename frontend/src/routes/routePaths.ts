@@ -4,6 +4,7 @@ export const ROUTE_PATHS = {
   login: "/login",
   passwordChange: "/auth/password-change",
   importPreview: "/imports/preview",
+  channelAccounts: "/channels/accounts",
   masterClients: "/master/clients",
   masterProducts: "/master/products",
   masterCommonCodes: "/master/common-codes",
