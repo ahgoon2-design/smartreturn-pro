@@ -69,6 +69,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
   const columns = useMemo(() => createImportPreviewColumns(errors), [errors]);
   const filteredRows = useMemo(() => filterImportPreviewRows(rows, errors, rowFilter), [errors, rowFilter, rows]);
   const currentJobStatus = job?.status || "DRAFT";
+  const skippedImportRows = (job?.skipped_empty_rows || 0) + (job?.skipped_noise_rows || 0);
   const errorRows = useMemo(() => new Set(errors.filter((item) => item.severity === "ERROR").map((item) => item.row_id || item.row_no)).size, [errors]);
   const canCreatePreview = Boolean(clientId && !job && (sourceType === "EXCEL_FILE" ? excelFile : parsedRows.length > 0));
   const canValidate = Boolean(job && currentJobStatus === "READY_TO_VALIDATE" && rows.length > 0);
@@ -140,12 +141,19 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
         const upload = await uploadImportExcelFile(jobId, excelFile);
         setJob({ ...createdJob, ...upload, id: createdJob.id, job_id: jobId, status: upload.status });
       } else {
-        await savePasteRows(jobId, {
+        const savedRows = await savePasteRows(jobId, {
           rows: parsedRows,
           replace_existing: false,
           source_name: "product-master-paste",
         });
-        setJob({ ...createdJob, job_id: jobId, status: "READY_TO_VALIDATE", total_rows: parsedRows.length });
+        setJob({
+          ...createdJob,
+          ...savedRows,
+          id: createdJob.id,
+          job_id: jobId,
+          status: savedRows.status,
+          total_rows: savedRows.total_rows,
+        });
       }
       const nextMapping = await autoMapImportJob(jobId);
       setMapping(nextMapping);
@@ -267,6 +275,14 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
 
           <SmartErrorNotice message={errorMessage} />
           {notice ? <Alert type={currentJobStatus === "HAS_ERRORS" ? "warning" : "success"} showIcon message={notice} /> : null}
+          {skippedImportRows ? (
+            <Alert
+              type="info"
+              showIcon
+              message={`빈 행 ${job?.skipped_empty_rows || 0}건, 무의미 행 ${job?.skipped_noise_rows || 0}건은 import 대상에서 제외했습니다.`}
+              description="제외된 행은 오류가 아니며, 미리보기와 확정 반영 대상에 포함되지 않습니다."
+            />
+          ) : null}
           {confirmSummary ? (
             <Alert
               type={confirmSummary.failed_rows ? "warning" : "success"}

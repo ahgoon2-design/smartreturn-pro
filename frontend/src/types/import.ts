@@ -34,6 +34,8 @@ export interface ImportJob {
   inserted_rows?: number;
   updated_rows?: number;
   skipped_rows?: number;
+  skipped_empty_rows?: number;
+  skipped_noise_rows?: number;
   applied_rows?: number;
   failed_rows?: number;
   progress_percent?: number;
@@ -66,6 +68,22 @@ export interface ImportExcelUploadResponse {
   headers: string[];
   mapped_headers?: Record<string, string>;
   unmapped_headers?: string[];
+  skipped_empty_rows?: number;
+  skipped_noise_rows?: number;
+}
+
+export interface ImportPasteRowsResponse {
+  job_id: number;
+  saved_row_count: number;
+  status: string;
+  total_rows: number;
+  parsed_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  error_rows: number;
+  progress_percent: number;
+  skipped_empty_rows?: number;
+  skipped_noise_rows?: number;
 }
 
 export interface ImportPasteRowItem {

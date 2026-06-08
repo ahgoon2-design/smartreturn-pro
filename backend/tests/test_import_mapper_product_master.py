@@ -227,6 +227,49 @@ def test_product_master_auto_map_validate_confirm_and_profile_reuse():
         assert any(item["status"] == "PROFILE" for item in second_map_response.json()["data"]["suggestions"])
 
 
+def test_product_master_paste_skips_empty_and_noise_rows_without_errors():
+    for client, db in _client_with_db():
+        client_row = _create_client(db)
+        _create_user(db, "import_mapper_row_filter_admin")
+        headers = _login(client, "import_mapper_row_filter_admin")
+        job_id = _create_import_job(client, headers, client_row.id)
+
+        response = client.post(
+            f"/api/import-jobs/{job_id}/rows/paste",
+            headers=headers,
+            json={
+                "replace_existing": False,
+                "rows": [
+                    {"row_no": 1, "raw_json": {"상품코드": "", "상품명": "", "대표바코드": "", "메모": ""}, "source_row_key": "row-1"},
+                    {"row_no": 2, "raw_json": {"상품코드": "-", "상품명": "--", "대표바코드": "없음", "메모": ""}, "source_row_key": "row-2"},
+                    {"row_no": 3, "raw_json": {"상품코드": "합계", "상품명": "", "대표바코드": "", "메모": ""}, "source_row_key": "row-3"},
+                    {"row_no": 4, "raw_json": {"상품코드": "", "상품명": "", "대표바코드": "", "메모": "확인 필요"}, "source_row_key": "row-4"},
+                    {
+                        "row_no": 5,
+                        "raw_json": {
+                            "상품코드": "PM-F001",
+                            "상품명": "실제 상품",
+                            "대표바코드": "880000000091",
+                            "메모": "",
+                        },
+                        "source_row_key": "row-5",
+                    },
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["saved_row_count"] == 1
+        assert data["skipped_empty_rows"] == 1
+        assert data["skipped_noise_rows"] == 3
+
+        rows_response = client.get(f"/api/import-jobs/{job_id}/rows", headers=headers)
+        rows = rows_response.json()["data"]["items"]
+        assert [row["row_no"] for row in rows] == [5]
+        assert rows[0]["raw_json"]["상품코드"] == "PM-F001"
+
+
 def test_product_master_error_rows_block_confirm():
     for client, db in _client_with_db():
         client_row = _create_client(db)

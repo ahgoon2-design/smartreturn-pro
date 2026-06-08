@@ -75,6 +75,8 @@ class ImportPasteRowsResponse(BaseModel):
     invalid_rows: int
     error_rows: int
     progress_percent: int
+    skipped_empty_rows: int = 0
+    skipped_noise_rows: int = 0
 
 
 class ImportExcelUploadResponse(BaseModel):
@@ -92,6 +94,8 @@ class ImportExcelUploadResponse(BaseModel):
     headers: list[str]
     mapped_headers: dict[str, str] = Field(default_factory=dict)
     unmapped_headers: list[str] = Field(default_factory=list)
+    skipped_empty_rows: int = 0
+    skipped_noise_rows: int = 0
 
 
 class ImportValidationRunRequest(BaseModel):

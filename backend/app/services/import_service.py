@@ -326,6 +326,54 @@ EXCEL_COMPAT_HEADER_MAP = {
     for alias in aliases
 }
 
+MEANINGLESS_VALUE_TOKENS = {
+    "",
+    "-",
+    "--",
+    "---",
+    "―",
+    "—",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "없음",
+    "해당없음",
+    "해당 없음",
+}
+
+NOISE_ROW_KEYWORDS = {
+    "합계",
+    "총계",
+    "소계",
+    "total",
+    "subtotal",
+    "grand total",
+    "메모",
+    "비고",
+    "주의",
+    "주의사항",
+    "안내",
+    "설명",
+    "note",
+    "remark",
+}
+
+DATA_ROW_CORE_FIELDS = {
+    "PRODUCT_MASTER": ("product_code", "product_name", "primary_barcode", "barcode", "additional_barcode", "carton_barcode"),
+    "CLIENT_MASTER": ("client_name", "client_code", "business_no"),
+    "COMMON_CODE": ("group_code", "code", "code_name"),
+    "CLIENT_WAREHOUSE": ("warehouse_name", "warehouse_code", "client_name", "client_code"),
+    "CLIENT_UNIT": ("unit_name", "unit_code", "client_name", "client_code"),
+    "RETURN_WAREHOUSE_ROUTE": ("judgment_code", "warehouse_name", "warehouse_code", "client_name", "client_code"),
+    "RETURN_INTAKE": ("tracking_no", "order_no", "product_code", "product_barcode", "product_name"),
+    "PRODUCT_BARCODE": ("product_code", "barcode"),
+    "RETURN_RECEPTION": ("tracking_no", "invoice_no", "product_code", "barcode"),
+    "RETURN_EXPECTED": ("tracking_no", "invoice_no"),
+    "INBOUND_EXPECTED": ("product_code", "expected_qty"),
+    "OUTBOUND_ORDER": ("order_no", "tracking_no", "product_code"),
+}
+
 
 @dataclass(frozen=True)
 class ParsedExcelRows:
@@ -334,6 +382,15 @@ class ParsedExcelRows:
     mapped_headers: dict[str, str]
     unmapped_headers: list[str]
     rows: list[dict]
+    skipped_empty_rows: int = 0
+    skipped_noise_rows: int = 0
+
+
+@dataclass(frozen=True)
+class FilteredImportRows:
+    rows: list[dict]
+    skipped_empty_rows: int
+    skipped_noise_rows: int
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -476,6 +533,89 @@ def _apply_header_mapping(raw_json: dict, mapping: dict[str, str]) -> dict:
     if "barcode" in mapped and "primary_barcode" not in mapped:
         mapped["primary_barcode"] = mapped["barcode"]
     return mapped
+
+
+def _clean_cell_value(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if text.startswith("="):
+        return ""
+    return text
+
+
+def _is_meaningful_value(value) -> bool:
+    text = _clean_cell_value(value)
+    if not text:
+        return False
+    return text.lower() not in MEANINGLESS_VALUE_TOKENS
+
+
+def _is_noise_only_value(value) -> bool:
+    text = _clean_cell_value(value).lower()
+    if not text:
+        return False
+    return any(keyword in text for keyword in NOISE_ROW_KEYWORDS)
+
+
+def _canonicalized_row_for_filter(import_type: str, row: dict) -> dict:
+    raw_json = row.get("raw_json")
+    normalized_json = row.get("normalized_json")
+    if isinstance(normalized_json, dict) and normalized_json:
+        data = dict(normalized_json)
+    elif isinstance(raw_json, dict):
+        headers = list(raw_json)
+        mapping, _suggestions = _build_mapping_suggestions(import_type, headers)
+        data = _apply_header_mapping(raw_json, mapping)
+    else:
+        data = {}
+    if "barcode" in data and "primary_barcode" not in data:
+        data["primary_barcode"] = data["barcode"]
+    if "primary_barcode" in data and "barcode" not in data:
+        data["barcode"] = data["primary_barcode"]
+    return data
+
+
+def _is_empty_import_row(row: dict) -> bool:
+    raw_json = row.get("raw_json")
+    if not isinstance(raw_json, dict) or not raw_json:
+        return True
+    return not any(_clean_cell_value(value) for value in raw_json.values())
+
+
+def _is_noise_import_row(import_type: str, row: dict) -> bool:
+    data = _canonicalized_row_for_filter(import_type, row)
+    core_fields = DATA_ROW_CORE_FIELDS.get(import_type, tuple(_required_field_names(import_type)))
+    core_values = [_clean_cell_value(data.get(field_name)) for field_name in core_fields if _is_meaningful_value(data.get(field_name))]
+    if not core_values:
+        return True
+    return all(_is_noise_only_value(value) for value in core_values)
+
+
+def _filter_actual_import_rows(import_type: str, rows: list[dict]) -> FilteredImportRows:
+    kept_rows: list[dict] = []
+    skipped_empty_rows = 0
+    skipped_noise_rows = 0
+    for row in rows:
+        if _is_empty_import_row(row):
+            skipped_empty_rows += 1
+            continue
+        if _is_noise_import_row(import_type, row):
+            skipped_noise_rows += 1
+            continue
+        kept_rows.append(row)
+    return FilteredImportRows(
+        rows=kept_rows,
+        skipped_empty_rows=skipped_empty_rows,
+        skipped_noise_rows=skipped_noise_rows,
+    )
+
+
+def _row_filter_summary(filtered: FilteredImportRows) -> dict:
+    return {
+        "skipped_empty_rows": filtered.skipped_empty_rows,
+        "skipped_noise_rows": filtered.skipped_noise_rows,
+    }
 
 
 def _ensure_paste_source_type(source_type: str) -> None:
@@ -655,8 +795,6 @@ def _parse_xlsx_rows(file_bytes: bytes, import_type: str) -> ParsedExcelRows:
 
     rows: list[dict] = []
     for row_no, values in parsed_rows[1:]:
-        if not any(value.strip() for value in values):
-            continue
         raw_json: dict[str, str] = {}
         normalized_json: dict[str, str] = {}
         for index, header in enumerate(headers):
@@ -680,7 +818,9 @@ def _parse_xlsx_rows(file_bytes: bytes, import_type: str) -> ParsedExcelRows:
             }
         )
 
-    if not rows:
+    filtered = _filter_actual_import_rows(import_type, rows)
+
+    if not filtered.rows:
         raise _business_error("IMPORT_JOB_EXCEL_NO_ROWS", "Excel file has no data rows.")
 
     return ParsedExcelRows(
@@ -688,7 +828,9 @@ def _parse_xlsx_rows(file_bytes: bytes, import_type: str) -> ParsedExcelRows:
         headers=headers,
         mapped_headers=mapped_headers,
         unmapped_headers=unmapped_headers,
-        rows=rows,
+        rows=filtered.rows,
+        skipped_empty_rows=filtered.skipped_empty_rows,
+        skipped_noise_rows=filtered.skipped_noise_rows,
     )
 
 
@@ -1527,7 +1669,11 @@ def save_paste_import_job_rows(
     _ensure_job_access(auth, job)
     _ensure_paste_source_type(job.source_type)
 
-    rows = _normalize_paste_rows(request)
+    normalized_rows = _normalize_paste_rows(request)
+    filtered = _filter_actual_import_rows(job.import_type, normalized_rows)
+    rows = filtered.rows
+    if not rows:
+        raise _business_error("IMPORT_JOB_NO_DATA_ROWS", "실제 데이터 행이 없습니다.")
     if repo.count_import_job_rows(db, job_id=job.id) > 0:
         raise _business_error("IMPORT_JOB_ROWS_ALREADY_EXISTS", "湲곗〈 row媛 ?덈뒗 import job?먮뒗 paste row瑜????????놁뒿?덈떎.")
 
@@ -1545,6 +1691,11 @@ def save_paste_import_job_rows(
             source_name=request.source_name,
             worksheet_name=request.worksheet_name,
         )
+        updated_job.raw_json = {
+            **(updated_job.raw_json if isinstance(updated_job.raw_json, dict) else {}),
+            "row_filter": _row_filter_summary(filtered),
+        }
+        db.flush()
         db.commit()
         return ImportPasteRowsResponse(
             job_id=updated_job.id,
@@ -1556,6 +1707,8 @@ def save_paste_import_job_rows(
             invalid_rows=updated_job.invalid_rows,
             error_rows=updated_job.error_rows,
             progress_percent=updated_job.progress_percent,
+            skipped_empty_rows=filtered.skipped_empty_rows,
+            skipped_noise_rows=filtered.skipped_noise_rows,
         ).model_dump()
     except Exception:
         db.rollback()
@@ -1616,6 +1769,10 @@ def upload_excel_import_job_file(
             "mapped_headers": parsed.mapped_headers,
             "unmapped_headers": parsed.unmapped_headers,
             "worksheet_name": parsed.worksheet_name,
+            "row_filter": {
+                "skipped_empty_rows": parsed.skipped_empty_rows,
+                "skipped_noise_rows": parsed.skipped_noise_rows,
+            },
         }
         db.flush()
         db.commit()
@@ -1634,6 +1791,8 @@ def upload_excel_import_job_file(
             headers=parsed.headers,
             mapped_headers=parsed.mapped_headers,
             unmapped_headers=parsed.unmapped_headers,
+            skipped_empty_rows=parsed.skipped_empty_rows,
+            skipped_noise_rows=parsed.skipped_noise_rows,
         ).model_dump()
     except Exception:
         db.rollback()

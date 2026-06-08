@@ -9,6 +9,7 @@ import type {
   ImportJobErrorsResponse,
   ImportJobRowsResponse,
   ImportPasteRowsRequest,
+  ImportPasteRowsResponse,
   ImportSourceTypeFieldsResponse,
   ImportSourceTypesResponse,
   ImportValidationRunResponse,
@@ -22,7 +23,7 @@ export function createImportJob(request: ImportJobCreateRequest) {
 }
 
 export function savePasteRows(jobId: number, request: ImportPasteRowsRequest) {
-  return apiRequest<ImportValidationRunResponse | ImportJob>(`/api/import-jobs/${jobId}/rows/paste`, {
+  return apiRequest<ImportPasteRowsResponse>(`/api/import-jobs/${jobId}/rows/paste`, {
     method: "POST",
     body: JSON.stringify(request),
   });

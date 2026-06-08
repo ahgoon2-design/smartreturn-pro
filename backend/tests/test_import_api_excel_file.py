@@ -313,6 +313,35 @@ def test_excel_upload_saves_rows_and_preserves_excel_row_numbers(client: TestCli
     _assert_no_sensitive_values(body)
 
 
+def test_excel_upload_skips_empty_and_noise_rows_without_errors(client: TestClient, db_session: Session):
+    job = _create_job(db_session)
+    headers = _admin_headers(client, db_session, "excel_row_filter_admin")
+    content = _xlsx_bytes(
+        ["상품코드", "상품명", "대표바코드", "메모"],
+        [
+            ["", "", "", ""],
+            ["-", "--", "없음", ""],
+            ["합계", "", "", "주의사항"],
+            ["", "", "", "메모만 있는 행"],
+            ["P100", "실제 상품", "B100", ""],
+        ],
+    )
+
+    response = _upload(client, job.id, headers=headers, content=content)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["saved_row_count"] == 1
+    assert data["skipped_empty_rows"] == 1
+    assert data["skipped_noise_rows"] == 3
+
+    rows_response = client.get(f"/api/import-jobs/{job.id}/rows", headers=headers)
+    rows = rows_response.json()["data"]["items"]
+    assert [row["row_no"] for row in rows] == [6]
+    assert rows[0]["raw_json"]["상품코드"] == "P100"
+    assert rows[0]["normalized_json"]["product_code"] == "P100"
+
+
 def test_excel_upload_maps_common_field_aliases(client: TestClient, db_session: Session):
     job = _create_job(db_session)
     headers = _admin_headers(client, db_session, "excel_alias_admin")

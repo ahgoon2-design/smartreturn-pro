@@ -297,7 +297,7 @@ def test_manual_job_saves_rows(client: TestClient, db_session: Session):
 
     response = client.post(
         f"/api/import-jobs/{job.id}/rows/paste",
-        json=_paste_payload(rows=[{"raw_json": {"manual": True}}]),
+        json=_paste_payload(rows=[{"raw_json": {"product_code": "P-MANUAL"}}]),
         headers=_login(client, "manual_paste_admin"),
     )
 
@@ -318,8 +318,8 @@ def test_paste_rows_preserves_given_row_numbers(client: TestClient, db_session: 
         f"/api/import-jobs/{job.id}/rows/paste",
         json=_paste_payload(
             rows=[
-                {"row_no": 20, "raw_json": {"row": 20}},
-                {"row_no": 10, "raw_json": {"row": 10}},
+                {"row_no": 20, "raw_json": {"product_code": "P020"}},
+                {"row_no": 10, "raw_json": {"product_code": "P010"}},
             ]
         ),
         headers=_login(client, "row_no_admin"),
@@ -408,7 +408,13 @@ def test_paste_rows_updates_job_counts_and_creates_no_validation_errors(client: 
 
     response = client.post(
         f"/api/import-jobs/{job.id}/rows/paste",
-        json=_paste_payload(rows=[{"raw_json": {"a": 1}}, {"raw_json": {"a": 2}}, {"raw_json": {"a": 3}}]),
+        json=_paste_payload(
+            rows=[
+                {"raw_json": {"product_code": "P001"}},
+                {"raw_json": {"product_code": "P002"}},
+                {"raw_json": {"product_code": "P003"}},
+            ]
+        ),
         headers=_login(client, "counter_admin"),
     )
 
