@@ -48,6 +48,24 @@ export function createImportPreviewColumns(errors: ImportValidationError[]): Sma
       copyable: true,
     },
     {
+      key: "primary_barcode",
+      title: "primary_barcode",
+      render: (_value, row) => readImportRowValue(row, "primary_barcode"),
+      copyable: true,
+    },
+    {
+      key: "additional_barcode",
+      title: "additional_barcode",
+      render: (_value, row) => readImportRowValue(row, "additional_barcode"),
+      copyable: true,
+    },
+    {
+      key: "carton_barcode",
+      title: "carton_barcode",
+      render: (_value, row) => readImportRowValue(row, "carton_barcode"),
+      copyable: true,
+    },
+    {
       key: "barcode_type",
       title: "barcode_type",
       render: (_value, row) => readImportRowValue(row, "barcode_type"),

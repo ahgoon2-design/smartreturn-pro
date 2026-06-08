@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -116,3 +116,37 @@ class ImportValidationError(Base):
     error_message: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String(50), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ImportMappingProfile(Base):
+    __tablename__ = "import_mapping_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_id",
+            "import_type",
+            "source_type",
+            "profile_name",
+            name="uq_import_mapping_profiles_client_type_name",
+        ),
+        Index("ix_import_mapping_profiles_client_type", "client_id", "import_type", "source_type"),
+        Index("ix_import_mapping_profiles_signature", "header_signature"),
+        Index("ix_import_mapping_profiles_active", "active_yn"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
+    import_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    profile_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    header_signature: Mapped[str] = mapped_column(String(500), nullable=False)
+    mapping_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

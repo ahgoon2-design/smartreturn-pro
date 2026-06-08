@@ -286,7 +286,7 @@ def test_import_job_create_blocks_invalid_source_type(client: TestClient, db_ses
 
     response = client.post(
         "/api/import-jobs",
-        json=_payload(requested_client_id=client_row.id, source_type="GOOGLE_SHEET"),
+        json=_payload(requested_client_id=client_row.id, source_type="FTP_FILE"),
         headers=_login(client, "invalid_source_type_admin"),
     )
 

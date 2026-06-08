@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportValidationError
+from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportMappingProfile, ImportValidationError
 from app.models.master import Client, Warehouse
 
 
@@ -133,6 +134,23 @@ def update_import_job_after_rows_saved(
     return job
 
 
+def update_import_job_mapping_metadata(db: Session, *, job: ImportJob, raw_json: dict | None) -> ImportJob:
+    job.raw_json = raw_json
+    db.flush()
+    return job
+
+
+def update_import_job_row_mapping(db: Session, *, row: ImportJobRow, normalized_json: dict | None) -> ImportJobRow:
+    row.normalized_json = normalized_json
+    row.validation_status = "NOT_VALIDATED"
+    row.validation_message = None
+    row.target_action = None
+    row.target_table = None
+    row.target_id = None
+    db.flush()
+    return row
+
+
 def list_import_job_rows_for_validation(db: Session, *, job_id: int) -> list[ImportJobRow]:
     return (
         db.query(ImportJobRow)
@@ -168,6 +186,18 @@ def update_import_job_row_validation(
     validation_status: str,
     validation_message: str | None,
 ) -> ImportJobRow:
+    db.execute(
+        text(
+            "UPDATE import_job_rows "
+            "SET validation_status = :validation_status, validation_message = :validation_message "
+            "WHERE id = :row_id"
+        ),
+        {
+            "validation_status": validation_status,
+            "validation_message": validation_message,
+            "row_id": row.id,
+        },
+    )
     row.validation_status = validation_status
     row.validation_message = validation_message
     db.flush()
@@ -199,6 +229,30 @@ def update_import_job_after_validation(
     job.message = message
     db.flush()
     return job
+
+
+def force_import_job_row_validation_statuses(
+    db: Session,
+    *,
+    statuses: list[tuple[int, str, str | None]],
+) -> None:
+    for row_id, validation_status, validation_message in statuses:
+        db.execute(
+            text(
+                "UPDATE import_job_rows "
+                "SET validation_status = :validation_status, validation_message = :validation_message "
+                "WHERE id = :row_id"
+            ),
+            {
+                "validation_status": validation_status,
+                "validation_message": validation_message,
+                "row_id": row_id,
+            },
+        )
+    db.flush()
+    db.expire_all()
+
+
 
 
 def update_import_job_after_confirm(
@@ -320,7 +374,7 @@ def _import_job_rows_query(
     job_id: int,
     validation_status: str | None = None,
 ):
-    query = db.query(ImportJobRow).filter(ImportJobRow.job_id == job_id)
+    query = db.query(ImportJobRow).populate_existing().filter(ImportJobRow.job_id == job_id)
     if validation_status:
         query = query.filter(ImportJobRow.validation_status == validation_status)
     return query
@@ -411,3 +465,93 @@ def count_import_validation_errors(
         severity=severity,
         row_no=row_no,
     ).count()
+
+
+def list_import_mapping_profiles(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    import_type: str | None = None,
+    source_type: str | None = None,
+    header_signature: str | None = None,
+    active_only: bool = True,
+) -> list[ImportMappingProfile]:
+    query = db.query(ImportMappingProfile)
+    if client_id is not None:
+        query = query.filter(ImportMappingProfile.client_id == client_id)
+    if import_type:
+        query = query.filter(ImportMappingProfile.import_type == import_type)
+    if source_type:
+        query = query.filter(ImportMappingProfile.source_type == source_type)
+    if header_signature:
+        query = query.filter(ImportMappingProfile.header_signature == header_signature)
+    if active_only:
+        query = query.filter(ImportMappingProfile.active_yn.is_(True))
+    return query.order_by(ImportMappingProfile.last_used_at.desc().nullslast(), ImportMappingProfile.id.desc()).all()
+
+
+def find_import_mapping_profile(
+    db: Session,
+    *,
+    client_id: int | None,
+    import_type: str,
+    source_type: str,
+    profile_name: str,
+) -> ImportMappingProfile | None:
+    return (
+        db.query(ImportMappingProfile)
+        .filter(
+            ImportMappingProfile.client_id == client_id,
+            ImportMappingProfile.import_type == import_type,
+            ImportMappingProfile.source_type == source_type,
+            ImportMappingProfile.profile_name == profile_name,
+        )
+        .one_or_none()
+    )
+
+
+def create_or_update_import_mapping_profile(
+    db: Session,
+    *,
+    client_id: int | None,
+    import_type: str,
+    source_type: str,
+    profile_name: str,
+    header_signature: str,
+    mapping_json: dict,
+    created_by: int,
+) -> ImportMappingProfile:
+    profile = find_import_mapping_profile(
+        db,
+        client_id=client_id,
+        import_type=import_type,
+        source_type=source_type,
+        profile_name=profile_name,
+    )
+    now = datetime.now(timezone.utc)
+    if profile is None:
+        profile = ImportMappingProfile(
+            client_id=client_id,
+            import_type=import_type,
+            source_type=source_type,
+            profile_name=profile_name,
+            header_signature=header_signature,
+            mapping_json=mapping_json,
+            active_yn=True,
+            last_used_at=now,
+            created_by=created_by,
+        )
+        db.add(profile)
+    else:
+        profile.header_signature = header_signature
+        profile.mapping_json = mapping_json
+        profile.active_yn = True
+        profile.last_used_at = now
+    db.flush()
+    return profile
+
+
+def touch_import_mapping_profile(db: Session, *, profile: ImportMappingProfile) -> ImportMappingProfile:
+    profile.last_used_at = datetime.now(timezone.utc)
+    db.flush()
+    return profile

@@ -12,6 +12,7 @@ P0_TABLES = {
     "import_job_files",
     "import_job_rows",
     "import_jobs",
+    "import_mapping_profiles",
     "import_validation_errors",
     "inventory_events",
     "locations",

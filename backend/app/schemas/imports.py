@@ -98,6 +98,95 @@ class ImportValidationRunRequest(BaseModel):
     force: bool = False
 
 
+class ImportCanonicalFieldResponse(BaseModel):
+    field_name: str
+    label: str
+    required: bool = False
+    aliases: list[str] = Field(default_factory=list)
+
+
+class ImportSourceTypeResponse(BaseModel):
+    import_types: list[str]
+    source_types: list[str]
+
+
+class ImportMappingSuggestionItem(BaseModel):
+    source_header: str
+    target_field: str | None = None
+    confidence: float = 0
+    status: str
+
+
+class ImportAutoMapRequest(BaseModel):
+    save_profile: bool = False
+    profile_name: str | None = None
+
+
+class ImportMappingApplyRequest(BaseModel):
+    mapping_json: dict[str, str]
+    save_profile: bool = False
+    profile_name: str | None = None
+
+    @field_validator("profile_name")
+    @classmethod
+    def _optional_profile_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class ImportMappingResponse(BaseModel):
+    job_id: int
+    import_type: str
+    source_type: str
+    header_signature: str
+    applied_mapping: dict[str, str]
+    suggestions: list[ImportMappingSuggestionItem]
+    mapped_rows: int
+    confirmation_required: bool
+    low_confidence_headers: list[str] = Field(default_factory=list)
+    ambiguous_headers: list[str] = Field(default_factory=list)
+    unmapped_headers: list[str] = Field(default_factory=list)
+    required_missing_fields: list[str] = Field(default_factory=list)
+
+
+class ImportMappingProfileCreateRequest(BaseModel):
+    client_id: int | None = None
+    import_type: str
+    source_type: str
+    profile_name: str
+    header_signature: str
+    mapping_json: dict[str, str]
+
+    @field_validator("import_type", "source_type", "profile_name", "header_signature")
+    @classmethod
+    def _required_profile_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+
+class ImportMappingProfileResponse(BaseModel):
+    profile_id: int
+    client_id: int | None = None
+    import_type: str
+    source_type: str
+    profile_name: str
+    header_signature: str
+    mapping_json: dict[str, str]
+    active_yn: bool
+    last_used_at: datetime | None = None
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ImportMappingProfilesResponse(BaseModel):
+    items: list[ImportMappingProfileResponse]
+
+
 class ImportValidationRunResponse(BaseModel):
     job_id: int
     status: str

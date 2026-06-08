@@ -9,6 +9,7 @@ import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
+import { SmartImportLauncher } from "../import/SmartImportLauncher";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid/SmartDataGrid.types";
 import type { ProductSummary } from "../../types/master";
 
@@ -171,9 +172,12 @@ export function ProductListPage() {
         title="상품/바코드"
         description="현재 상품 목록 API 기준으로 상품코드, 상품명, 대표 바코드, 사용 여부를 표시하는 기준정보 skeleton 화면입니다."
         extra={
-          <Button icon={<PlusOutlined />} disabled>
-            신규 상품 준비중
-          </Button>
+          <div className="smart-inline-actions">
+            <SmartImportLauncher importType="PRODUCT_MASTER" buttonLabel="엑셀/붙여넣기 등록" onConfirmed={loadProducts} />
+            <Button icon={<PlusOutlined />} disabled>
+              신규 상품 준비중
+            </Button>
+          </div>
         }
       />
 

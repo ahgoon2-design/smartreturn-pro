@@ -1,7 +1,19 @@
 import type { PageResponse } from "./api";
 
-export type ImportType = "PRODUCT_MASTER" | "PRODUCT_BARCODE";
-export type SourceType = "PASTE" | "EXCEL_FILE" | "MANUAL";
+export type ImportType =
+  | "PRODUCT_MASTER"
+  | "PRODUCT_BARCODE"
+  | "CLIENT_MASTER"
+  | "COMMON_CODE"
+  | "CLIENT_WAREHOUSE"
+  | "CLIENT_UNIT"
+  | "RETURN_WAREHOUSE_ROUTE"
+  | "RETURN_INTAKE"
+  | "RETURN_EXPECTED"
+  | "RETURN_RECEPTION"
+  | "INBOUND_EXPECTED"
+  | "OUTBOUND_ORDER";
+export type SourceType = "PASTE" | "EXCEL_FILE" | "CSV_FILE" | "MANUAL" | "GOOGLE_SHEET" | "API";
 export type JobStatus = "DRAFT" | "READY_TO_VALIDATE" | "VALIDATING" | "VALIDATED" | "HAS_ERRORS" | "FAILED" | "APPLIED";
 export type ValidationStatus = "NOT_VALIDATED" | "VALID" | "WARNING" | "INVALID";
 export type ValidationSeverity = "ERROR" | "WARNING";
@@ -122,7 +134,62 @@ export interface ImportConfirmResponse {
   message: string;
 }
 
+export interface ImportCanonicalField {
+  field_name: string;
+  label: string;
+  required: boolean;
+  aliases: string[];
+}
+
+export interface ImportSourceTypesResponse {
+  import_types: string[];
+  source_types: string[];
+}
+
+export interface ImportSourceTypeFieldsResponse {
+  import_type: string;
+  fields: ImportCanonicalField[];
+}
+
+export interface ImportMappingSuggestionItem {
+  source_header: string;
+  target_field?: string | null;
+  confidence: number;
+  status: string;
+}
+
+export interface ImportMappingResponse {
+  job_id: number;
+  import_type: string;
+  source_type: string;
+  header_signature: string;
+  applied_mapping: Record<string, string>;
+  suggestions: ImportMappingSuggestionItem[];
+  mapped_rows: number;
+  confirmation_required: boolean;
+  low_confidence_headers: string[];
+  ambiguous_headers: string[];
+  unmapped_headers: string[];
+  required_missing_fields: string[];
+}
+
+export interface ImportMappingProfile {
+  profile_id: number;
+  client_id?: number | null;
+  import_type: string;
+  source_type: string;
+  profile_name: string;
+  header_signature: string;
+  mapping_json: Record<string, string>;
+  active_yn: boolean;
+  last_used_at?: string | null;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type ImportConfirmResult = ImportConfirmResponse;
 
 export type ImportJobRowsResponse = PageResponse<ImportJobRow>;
 export type ImportJobErrorsResponse = PageResponse<ImportValidationError>;
+export type ImportMappingProfilesResponse = { items: ImportMappingProfile[] };

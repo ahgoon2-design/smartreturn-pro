@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_auth_context, get_db
 from app.core.permissions import require_password_change_completed, require_permission, require_roles
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
-from app.schemas.imports import ImportJobCreateRequest, ImportPasteRowsRequest, ImportValidationRunRequest
+from app.schemas.imports import (
+    ImportAutoMapRequest,
+    ImportJobCreateRequest,
+    ImportMappingApplyRequest,
+    ImportMappingProfileCreateRequest,
+    ImportPasteRowsRequest,
+    ImportValidationRunRequest,
+)
 from app.services import import_service
 
 
@@ -78,6 +85,119 @@ async def upload_excel_import_job_file_api(
             mime_type=mime_type,
             file_bytes=file_bytes,
         ),
+    )
+
+
+@router.get("/source-types", response_model=ApiResult)
+def list_import_source_types_api(
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_view(auth)
+    return api_success(
+        result_code="IMPORT_SOURCE_TYPES_FOUND",
+        message="Import source type 목록을 조회했습니다.",
+        data=import_service.list_import_source_types(db, auth),
+    )
+
+
+@router.get("/source-types/{import_type}/fields", response_model=ApiResult)
+def get_import_source_type_fields_api(
+    import_type: str,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_view(auth)
+    return api_success(
+        result_code="IMPORT_SOURCE_TYPE_FIELDS_FOUND",
+        message="Import field 목록을 조회했습니다.",
+        data=import_service.get_import_source_type_fields(db, auth, import_type),
+    )
+
+
+@router.get("/mapping-profiles", response_model=ApiResult)
+def list_import_mapping_profiles_api(
+    client_id: int | None = None,
+    import_type: str | None = None,
+    source_type: str | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_view(auth)
+    return api_success(
+        result_code="IMPORT_MAPPING_PROFILES_FOUND",
+        message="Import mapping profile 목록을 조회했습니다.",
+        data=import_service.list_mapping_profiles(
+            db,
+            auth,
+            client_id=client_id,
+            import_type=import_type,
+            source_type=source_type,
+        ),
+    )
+
+
+@router.post("/mapping-profiles", response_model=ApiResult)
+def create_import_mapping_profile_api(
+    request: ImportMappingProfileCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_MAPPING_PROFILE_SAVED",
+        message="Import mapping profile을 저장했습니다.",
+        data=import_service.create_mapping_profile(db, auth, request),
+    )
+
+
+@router.get("/templates/{import_type}")
+def download_import_template_api(
+    import_type: str,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> Response:
+    _require_import_view(auth)
+    file_name, content = import_service.build_import_template(db, auth, import_type)
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+    )
+
+
+@router.post("/{job_id}/auto-map", response_model=ApiResult)
+def auto_map_import_job_api(
+    job_id: int,
+    request: ImportAutoMapRequest | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_JOB_AUTO_MAPPED",
+        message="Import job 컬럼 매핑 추천을 적용했습니다.",
+        data=import_service.auto_map_import_job(
+            db,
+            auth,
+            job_id=job_id,
+            request=request or ImportAutoMapRequest(),
+        ),
+    )
+
+
+@router.put("/{job_id}/mapping", response_model=ApiResult)
+def apply_import_job_mapping_api(
+    job_id: int,
+    request: ImportMappingApplyRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_JOB_MAPPING_APPLIED",
+        message="Import job 컬럼 매핑을 적용했습니다.",
+        data=import_service.apply_import_job_mapping(db, auth, job_id=job_id, request=request),
     )
 
 
