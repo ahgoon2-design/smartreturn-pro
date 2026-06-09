@@ -40,6 +40,7 @@
 - 샘플 디자인은 느낌만 흉내 내지 말고, 페이지 템플릿과 레이아웃 계약으로 강제한다.
 
 ## 공통 UI 원칙
+- SmartReturn Pro 화면은 `docs/skills/smartreturn-screen-design-system.md` 기준을 따른다. 화면은 은은한 빛이 도는 현대적인 물류 운영 SaaS 디자인을 목표로 하며, 진한 원색 배경을 피하고 푸른빛/연두빛/주황빛 계열의 부드러운 상태 표현을 사용한다.
 - AG Grid를 직접 쓰지 말고 `SmartDataGrid`/`SmartEditableDataGrid` 같은 공통 래퍼를 만든 뒤 사용한다.
 - 엑셀 원본 preview는 `SmartExcelPreviewGrid` 기준으로 한다.
 - 고객사/상품/창고/공통코드 선택은 화면별 Select가 아니라 `SmartLookupModal`/`SmartCommonCodeSelect` 기준으로 한다.
@@ -50,6 +51,7 @@
 - 그리드가 화면의 주인공이어야 하며, 안내문과 카드가 그리드를 밀어내면 실패다.
 - 1366x768 기준 핵심 입력, 그리드 첫 5행, 우측 정보패널, 하단 액션바가 보여야 한다.
 - 화면별 디자인 문제가 반복되면 개별 화면 CSS보다 공통 컴포넌트와 공통 `sr-*`/`smart-*` class를 먼저 보정한다.
+- 작은 기능 아이콘은 PNG/JPG 이미지 파일이 아니라 `lucide-react` 또는 `@ant-design/icons` 같은 SVG 아이콘 라이브러리를 우선 사용한다.
 
 ## DB/업무 원장 원칙
 - import job과 업무 테이블을 분리한다.
@@ -93,9 +95,11 @@
   - `docs/skills/frontend-app.md`
   - `docs/skills/ui-design-system.md`
 - 화면 디자인 또는 공통 UI 작업:
+  - `docs/skills/smartreturn-screen-design-system.md`
   - `docs/skills/ui-design-system.md`
   - `docs/skills/frontend-app.md`
 - grid/table/UI 작업:
+  - `docs/skills/smartreturn-screen-design-system.md`
   - `docs/skills/ui-grid.md`
   - `docs/skills/ui-design-system.md`
   - `docs/skills/frontend-app.md`
