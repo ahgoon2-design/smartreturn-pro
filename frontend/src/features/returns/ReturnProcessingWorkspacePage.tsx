@@ -4,6 +4,7 @@ import type { InputRef } from "antd";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClientError } from "../../api/client";
+import { listReturnWarehouseRoutes } from "../../api/master";
 import {
   disableReturnProcessingAttachment,
   judgeReturnProcessingTask,
@@ -18,7 +19,10 @@ import { SmartScanPanel } from "../../components/common/SmartScanPanel";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.types";
+import { ROUTE_PATHS } from "../../routes/routePaths";
+import type { ReturnWarehouseRoute } from "../../types/master";
 import type { ReturnJudgementStatus, ReturnProcessingAttachment, ReturnProcessingTask } from "../../types/returns";
+import { useNavigate } from "react-router-dom";
 
 type ScanFeedback = {
   type: "info" | "success" | "warning" | "error";
@@ -27,6 +31,7 @@ type ScanFeedback = {
 };
 
 type ProductCheckStatus = "NO_TARGET" | "PENDING" | "NEEDS_INPUT" | "MATCHED" | "MISMATCHED";
+type ProcessingMethod = "SCAN" | "GRID_SELECT";
 
 type ProductCheckFeedback = {
   status: ProductCheckStatus;
@@ -69,6 +74,7 @@ const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
 ]);
 
 export function ReturnProcessingWorkspacePage() {
+  const navigate = useNavigate();
   const scanInputRef = useRef<InputRef>(null);
   const productScanInputRef = useRef<InputRef>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
@@ -90,11 +96,20 @@ export function ReturnProcessingWorkspacePage() {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentNote, setAttachmentNote] = useState("");
   const [attachmentFeedback, setAttachmentFeedback] = useState<ScanFeedback | null>(null);
+  const [selectedProcessingMethod, setSelectedProcessingMethod] = useState<ProcessingMethod | null>(null);
+  const [noDetailTrackingNo, setNoDetailTrackingNo] = useState("");
+  const [returnWarehouseRoutes, setReturnWarehouseRoutes] = useState<ReturnWarehouseRoute[]>([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [routesErrorMessage, setRoutesErrorMessage] = useState("");
 
   useEffect(() => {
     focusScanInput(scanInputRef);
     void loadTasks();
   }, []);
+
+  useEffect(() => {
+    void loadReturnWarehouseRoutesForTask(selectedTask);
+  }, [selectedTask?.client_id]);
 
   const columns = useMemo<SmartDataGridColumn<ReturnProcessingTask>[]>(
     () => [
@@ -186,6 +201,14 @@ export function ReturnProcessingWorkspacePage() {
   const summaryText = `${tasks.length}건 표시`;
   const warningCount = tasks.filter((item) => item.validation_status === "WARNING").length;
   const isSelectedTaskCompleted = selectedTask?.status === "COMPLETED";
+  const judgementOptions = useMemo(
+    () => buildJudgementOptions(returnWarehouseRoutes),
+    [returnWarehouseRoutes],
+  );
+  const selectedWarehouseRoute = useMemo(
+    () => findWarehouseRoute(returnWarehouseRoutes, selectedTask, selectedJudgement),
+    [returnWarehouseRoutes, selectedJudgement, selectedTask],
+  );
   const canSaveJudgement =
     Boolean(selectedTask) &&
     !isSelectedTaskCompleted &&
@@ -207,6 +230,7 @@ export function ReturnProcessingWorkspacePage() {
       const nextItems = page.items || [];
       const nextSelectedTask = pickPreferredProcessingTask(nextItems);
       setTasks(nextItems);
+      setNoDetailTrackingNo(normalizedTrackingNo && nextItems.length === 0 ? normalizedTrackingNo : "");
       selectProcessingTask(nextSelectedTask, { focusProduct: Boolean(normalizedTrackingNo && nextSelectedTask) });
       setScanFeedback(buildScanFeedback(normalizedTrackingNo, nextItems.length, nextSelectedTask));
       if (!nextSelectedTask || !normalizedTrackingNo) {
@@ -225,6 +249,24 @@ export function ReturnProcessingWorkspacePage() {
       focusScanInput(scanInputRef, { select: true });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadReturnWarehouseRoutesForTask(task: ReturnProcessingTask | null) {
+    setRoutesErrorMessage("");
+    setReturnWarehouseRoutes([]);
+    if (!task?.client_id) {
+      return;
+    }
+    setRoutesLoading(true);
+    try {
+      const routes = await listReturnWarehouseRoutes(task.client_id);
+      setReturnWarehouseRoutes(routes.filter((route) => route.active_yn));
+    } catch (error) {
+      setRoutesErrorMessage(toUserMessage(error, "고객사별 판정/창고 라우팅을 불러오지 못했습니다."));
+      setReturnWarehouseRoutes([]);
+    } finally {
+      setRoutesLoading(false);
     }
   }
 
@@ -251,6 +293,7 @@ export function ReturnProcessingWorkspacePage() {
 
   function handleReset() {
     setTrackingNo("");
+    setNoDetailTrackingNo("");
     selectProcessingTask(null);
     setScanFeedback(INITIAL_SCAN_FEEDBACK);
     void loadTasks("");
@@ -266,6 +309,7 @@ export function ReturnProcessingWorkspacePage() {
     setAttachmentNote("");
     setAttachmentFeedback(null);
     setAttachments([]);
+    setSelectedProcessingMethod(null);
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = "";
     }
@@ -314,8 +358,9 @@ export function ReturnProcessingWorkspacePage() {
         status: "MATCHED",
         type: "success",
         message: "상품 확인 완료",
-        description: "스캔한 바코드가 선택된 상품과 일치합니다.",
+        description: "스캔한 바코드/상품코드가 선택된 상품과 일치합니다. 처리방식은 SCAN으로 기록됩니다.",
       });
+      setSelectedProcessingMethod("SCAN");
       setProductScanValue("");
       focusScanInput(productScanInputRef);
       return;
@@ -328,6 +373,48 @@ export function ReturnProcessingWorkspacePage() {
       description: "선택된 row의 바코드 또는 상품코드와 다른 값입니다. 상품을 다시 확인하세요.",
     });
     focusScanInput(productScanInputRef, { select: true });
+  }
+
+  function handleGridSelectConfirm() {
+    if (!selectedTask) {
+      setProductCheckFeedback(NO_TARGET_PRODUCT_FEEDBACK);
+      focusScanInput(scanInputRef, { select: true });
+      return;
+    }
+    if (selectedTask.status === "COMPLETED") {
+      setProductCheckFeedback({
+        status: "MATCHED",
+        type: "success",
+        message: "이미 처리 완료된 항목입니다.",
+        description: "저장된 판정과 처리 이력을 확인하세요.",
+      });
+      return;
+    }
+    if (selectedTask.validation_status === "INVALID") {
+      setProductCheckFeedback({
+        status: "MISMATCHED",
+        type: "error",
+        message: "오류 row는 선택 처리할 수 없습니다.",
+        description: "반품 자료 화면에서 오류/누락을 먼저 보정하세요.",
+      });
+      return;
+    }
+    if (!hasAnyProductHint(selectedTask)) {
+      setProductCheckFeedback({
+        status: "MISMATCHED",
+        type: "warning",
+        message: "상품 정보가 없어 선택 처리할 수 없습니다.",
+        description: "상품마스터에 있는 상품코드/바코드/상품명 중 하나를 반품 자료에 보강한 뒤 처리하세요.",
+      });
+      return;
+    }
+    setProductCheckFeedback({
+      status: "MATCHED",
+      type: "success",
+      message: "그리드 선택 확인 완료",
+      description: "실물 확인 후 선택 row를 처리 대상으로 지정했습니다. 처리방식은 GRID_SELECT로 기록됩니다.",
+    });
+    setSelectedProcessingMethod("GRID_SELECT");
   }
 
   async function handleJudgementSave() {
@@ -368,7 +455,7 @@ export function ReturnProcessingWorkspacePage() {
     try {
       const response = await judgeReturnProcessingTask(selectedTask.task_id, {
         judgement_status: selectedJudgement,
-        judgement_memo: judgementMemo,
+        judgement_memo: buildJudgementMemoForSave(judgementMemo, selectedProcessingMethod || "GRID_SELECT"),
         print_label: isLabelRequiredJudgement(selectedJudgement),
       });
       const updatedTask: ReturnProcessingTask = { ...selectedTask, ...response };
@@ -376,6 +463,7 @@ export function ReturnProcessingWorkspacePage() {
       setSelectedTask(updatedTask);
       setSelectedJudgement(toJudgementStatus(updatedTask.judgement_status));
       setJudgementMemo(updatedTask.judgement_memo || "");
+      setSelectedProcessingMethod(null);
       setJudgementFeedback({
         type: "success",
         message: "판정을 저장했습니다.",
@@ -475,8 +563,8 @@ export function ReturnProcessingWorkspacePage() {
   return (
     <SmartPage>
       <SmartPageHeader
-        title="반품처리 작업"
-        description="운송장 스캔으로 READY_FOR_PROCESSING 대상을 조회하고 작업 row를 확인하는 1차 skeleton 화면입니다."
+        title="반품 처리 센터"
+        description="운송장 스캔 또는 그리드 선택으로 상품을 확인하고 판정합니다. 처리완료는 현장 판정 완료이며, 재고는 일마감 또는 반출/폐기 확정 후 반영됩니다."
         extra={
           <Space>
             <Button icon={<ClearOutlined />} onClick={handleReset}>
@@ -517,6 +605,20 @@ export function ReturnProcessingWorkspacePage() {
         />
       </SmartScanPanel>
 
+      {noDetailTrackingNo ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="세부항목 없는 반품입니다."
+          description="해당 return_tracking_no로 처리 대기 row를 찾지 못했습니다. 반품 자료에서 상품마스터 기준 상품코드/바코드와 수량을 수동 등록한 뒤 처리대상을 생성하세요. original_tracking_no는 보조 조회 후보이며 현장 스캔 기준으로 자동확정하지 않습니다."
+          action={
+            <Button size="small" onClick={() => navigate(ROUTE_PATHS.returnIntake)}>
+              반품 자료 등록
+            </Button>
+          }
+        />
+      ) : null}
+
       <SmartErrorNotice message={errorMessage} />
 
       <div className="return-processing-workspace">
@@ -554,6 +656,9 @@ export function ReturnProcessingWorkspacePage() {
             <Space align="center" wrap>
               <Typography.Text strong>상품 바코드 스캔</Typography.Text>
               <SmartStatusBadge status={toProductCheckBadgeStatus(productCheckFeedback.status)} label={toProductCheckLabel(productCheckFeedback.status)} />
+              {selectedProcessingMethod ? (
+                <SmartStatusBadge status="INFO" label={toProcessingMethodLabel(selectedProcessingMethod)} />
+              ) : null}
             </Space>
             <Input
               ref={productScanInputRef}
@@ -579,6 +684,17 @@ export function ReturnProcessingWorkspacePage() {
               message={productCheckFeedback.message}
               description={productCheckFeedback.description}
             />
+            <Space wrap>
+              <Button
+                onClick={handleGridSelectConfirm}
+                disabled={!selectedTask || selectedTask.status === "COMPLETED"}
+              >
+                선택 row 실물 확인
+              </Button>
+              <Typography.Text type="secondary">
+                스캔이 어려운 소량/예외 건은 그리드에서 row를 선택한 뒤 실물 확인으로 처리할 수 있습니다.
+              </Typography.Text>
+            </Space>
           </div>
           {selectedTask ? (
             <>
@@ -596,6 +712,9 @@ export function ReturnProcessingWorkspacePage() {
                 </Descriptions.Item>
                 <Descriptions.Item label="작업상태">
                   <SmartStatusBadge status={selectedTask.status} label={toRowStatusLabel(selectedTask.status)} />
+                </Descriptions.Item>
+                <Descriptions.Item label="처리방식">
+                  {selectedProcessingMethod ? toProcessingMethodLabel(selectedProcessingMethod) : "상품 스캔 또는 선택 확인 전"}
                 </Descriptions.Item>
                 <Descriptions.Item label="판정">
                   {selectedTask.judgement_status ? (
@@ -669,9 +788,14 @@ export function ReturnProcessingWorkspacePage() {
                   ) : (
                     <SmartStatusBadge status="WAITING" label="미선택" />
                   )}
+                  {returnWarehouseRoutes.length > 0 ? (
+                    <SmartStatusBadge status="INFO" label="고객사 라우팅 기준" />
+                  ) : (
+                    <SmartStatusBadge status="WARNING" label="기본 판정 세트" />
+                  )}
                 </Space>
                 <Space wrap className="return-processing-judgement-buttons">
-                  {JUDGEMENT_OPTIONS.map((option) => (
+                  {judgementOptions.map((option) => (
                     <Button
                       key={option.value}
                       type={selectedJudgement === option.value ? "primary" : "default"}
@@ -701,7 +825,10 @@ export function ReturnProcessingWorkspacePage() {
                   type={judgementFeedback?.type || "info"}
                   showIcon
                   message={judgementFeedback?.message || getJudgementHelpMessage(selectedTask, productCheckFeedback.status, selectedJudgement)}
-                  description={judgementFeedback?.description || buildSelectedJudgementDescription(selectedJudgement)}
+                  description={
+                    judgementFeedback?.description ||
+                    buildSelectedJudgementDescription(selectedJudgement, selectedWarehouseRoute, returnWarehouseRoutes.length, routesErrorMessage, routesLoading)
+                  }
                 />
                 <Button type="primary" onClick={handleJudgementSave} disabled={!canSaveJudgement} loading={judging}>
                   판정 저장
@@ -785,8 +912,8 @@ export function ReturnProcessingWorkspacePage() {
                 className="return-processing-placeholder"
                 type="info"
                 showIcon
-                message="후속 구현 범위"
-                description="사진 등록, 실제 Local Agent 라벨 출력, 재고 반영은 다음 단계에서 연결합니다."
+                message="재고반영 시점"
+                description="판정 저장은 현장 처리완료입니다. 현재고는 즉시 변경하지 않고, 반품 일마감 또는 반출/폐기 확정 단계에서 확정된 고객사/팀/창고/상품/판정 기준으로 반영합니다."
               />
             </>
           ) : (
@@ -938,17 +1065,35 @@ function toFileSizeLabel(size: number) {
 
 function buildLabelPolicyDescription(judgementStatus: ReturnJudgementStatus) {
   if (isLabelRequiredJudgement(judgementStatus)) {
-    return "추적 대상 판정입니다. 저장 시 반품관리번호/라벨번호를 생성하고 Local Agent 출력 연결을 시도할 수 있는 상태로 표시합니다.";
+    return "추적 대상 판정입니다. 저장 시 반품관리번호/라벨번호를 생성하고, 고객사별 판정-창고 라우팅 기준의 추천 창고를 함께 반영합니다.";
   }
   if (judgementStatus === "DISPOSAL") {
     return "폐기는 1차 정책에서 기본 라벨 미출력 대상입니다. 필요 시 후속 정책으로 선택 출력 여부를 정합니다.";
   }
-  return "양품은 기본 라벨 미출력 대상입니다.";
+  return "양품은 기본 라벨 미출력 대상입니다. 재고는 판정 저장 즉시가 아니라 일마감 확정 후 반영됩니다.";
 }
 
-function buildSelectedJudgementDescription(judgementStatus: ReturnJudgementStatus | null) {
+function buildSelectedJudgementDescription(
+  judgementStatus: ReturnJudgementStatus | null,
+  route: ReturnWarehouseRoute | null,
+  routeCount: number,
+  routeErrorMessage: string,
+  routesLoading: boolean,
+) {
   if (!judgementStatus) {
-    return "상품 확인 후 판정을 선택하고 저장하세요.";
+    return "상품 스캔 또는 그리드 선택 확인 후 판정을 선택하고 저장하세요.";
+  }
+  if (routesLoading) {
+    return "고객사별 판정-창고 라우팅 설정을 확인하는 중입니다.";
+  }
+  if (routeErrorMessage) {
+    return `${routeErrorMessage} 현재는 기본 판정 세트를 표시합니다. 일마감 시 최종 창고가 없으면 재고반영이 차단됩니다.`;
+  }
+  if (route) {
+    return `${buildLabelPolicyDescription(judgementStatus)} 추천 창고: ${route.warehouse_name || route.warehouse_code || route.warehouse_id}.`;
+  }
+  if (routeCount > 0) {
+    return "이 판정은 선택 고객사/팀의 활성 판정-창고 라우팅에 없습니다. 저장 전 고객사 기준정보의 판정 라우팅을 확인하세요.";
   }
   return buildLabelPolicyDescription(judgementStatus);
 }
@@ -965,22 +1110,23 @@ function getJudgementHelpMessage(
     return "이미 처리 완료된 항목입니다.";
   }
   if (productCheckStatus !== "MATCHED") {
-    return "상품 확인 후 판정할 수 있습니다.";
+    return "상품 스캔 또는 그리드 선택 확인 후 판정할 수 있습니다.";
   }
   if (!judgementStatus) {
     return "판정을 선택하세요.";
   }
-  return "판정을 저장할 수 있습니다.";
+  return "판정을 저장할 수 있습니다. 저장 후에도 현재고는 즉시 변경되지 않습니다.";
 }
 
 function buildJudgementSavedDescription(task: ReturnProcessingTask) {
   const labelNo = task.return_label_no || task.return_management_no;
+  const inventoryNotice = "현재고는 즉시 변경하지 않고 일마감/반출 확정 단계에서 반영합니다.";
   if (task.label_print_required) {
     return labelNo
-      ? `반품관리번호/라벨번호 ${labelNo}가 생성되었습니다. ${toLabelStatusLabel(task)} 상태입니다.`
-      : `${toLabelStatusLabel(task)} 상태입니다.`;
+      ? `반품관리번호/라벨번호 ${labelNo}가 생성되었습니다. ${toLabelStatusLabel(task)} 상태입니다. ${inventoryNotice}`
+      : `${toLabelStatusLabel(task)} 상태입니다. ${inventoryNotice}`;
   }
-  return "라벨 출력 대상이 아니며 처리 완료로 표시했습니다.";
+  return `라벨 출력 대상이 아니며 처리 완료로 표시했습니다. ${inventoryNotice}`;
 }
 
 function buildPendingProductFeedback(task: ReturnProcessingTask): ProductCheckFeedback {
@@ -998,7 +1144,7 @@ function buildPendingProductFeedback(task: ReturnProcessingTask): ProductCheckFe
       status: "PENDING",
       type: "warning",
       message: "선택된 상품을 확인하세요.",
-      description: "선택 row에 비교할 바코드/상품코드가 없어 접수 자료 확인이 필요합니다.",
+      description: "선택 row에 비교할 바코드/상품코드가 없습니다. 실물과 접수 자료를 확인한 뒤 그리드 선택 확인으로 처리할 수 있습니다.",
     };
   }
 
@@ -1008,6 +1154,51 @@ function buildPendingProductFeedback(task: ReturnProcessingTask): ProductCheckFe
     message: "선택된 상품을 확인하세요.",
     description: "선택된 반품 상품의 바코드 또는 상품코드를 스캔하세요.",
   };
+}
+
+function buildJudgementOptions(routes: ReturnWarehouseRoute[]) {
+  const activeCodes = Array.from(
+    new Set(routes.filter((route) => route.active_yn).map((route) => route.judgment_code.trim().toUpperCase())),
+  );
+  const routeOptions = activeCodes
+    .map((code) => JUDGEMENT_OPTIONS.find((option) => option.value === code))
+    .filter((option): option is { value: ReturnJudgementStatus; label: string } => Boolean(option));
+  return routeOptions.length > 0 ? routeOptions : JUDGEMENT_OPTIONS;
+}
+
+function findWarehouseRoute(
+  routes: ReturnWarehouseRoute[],
+  task: ReturnProcessingTask | null,
+  judgementStatus: ReturnJudgementStatus | null,
+) {
+  if (!task || !judgementStatus) {
+    return null;
+  }
+  const matched = routes.filter(
+    (route) =>
+      route.active_yn &&
+      route.judgment_code.trim().toUpperCase() === judgementStatus &&
+      (!route.client_unit_id || route.client_unit_id === task.client_unit_id),
+  );
+  return matched.find((route) => route.client_unit_id === task.client_unit_id) || matched[0] || null;
+}
+
+function hasAnyProductHint(task: ReturnProcessingTask) {
+  return Boolean(task.product_code || task.barcode || task.product_name);
+}
+
+function toProcessingMethodLabel(method: ProcessingMethod) {
+  const labels: Record<ProcessingMethod, string> = {
+    SCAN: "스캔 처리",
+    GRID_SELECT: "그리드 선택 처리",
+  };
+  return labels[method];
+}
+
+function buildJudgementMemoForSave(memo: string, method: ProcessingMethod) {
+  const cleanMemo = memo.replace(/\[처리방식: (SCAN|GRID_SELECT)\]/g, "").trim();
+  const methodTag = `[처리방식: ${method}]`;
+  return cleanMemo ? `${cleanMemo}\n${methodTag}` : methodTag;
 }
 
 function getExpectedProductScanValues(task: ReturnProcessingTask) {
@@ -1051,8 +1242,9 @@ function buildScanFeedback(trackingNo: string, resultCount: number, selectedTask
   if (trackingNo && resultCount === 0) {
     return {
       type: "warning",
-      message: "해당 운송장번호의 반품처리 대기 대상이 없습니다.",
-      description: "운송장번호를 확인한 뒤 다시 스캔하세요.",
+      message: "세부항목 없는 반품입니다.",
+      description:
+        "이 return_tracking_no로 처리 대기 row를 찾지 못했습니다. 운송장만 도착했거나 세부자료가 없으면 반품 자료에서 상품을 수동 등록한 뒤 처리하세요.",
     };
   }
 

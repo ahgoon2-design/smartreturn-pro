@@ -158,7 +158,8 @@ export function ReturnClosingPage() {
     }
     Modal.confirm({
       title: "마감 확정",
-      content: "선택한 row를 기준으로 GOOD/양품만 정상재고에 반영합니다. 이미 반영된 row는 중복 반영되지 않습니다.",
+      content:
+        "선택한 처리완료 row를 확정된 고객사/팀/창고/상품/판정 기준으로 재고반영합니다. 기본은 GOOD/양품만 반영하며, 라우팅 설정된 판정 포함 옵션을 켠 경우 해당 판정도 지정 창고로 반영합니다. 이미 반영된 row는 중복 반영되지 않습니다.",
       okText: "마감 확정",
       cancelText: "취소",
       onOk: () => confirmSelectedRows(),
@@ -189,7 +190,7 @@ export function ReturnClosingPage() {
     <SmartPage>
       <SmartPageHeader
         title="반품 일마감"
-        description="판정 완료 row 중 미반영 자료를 확인하고, GOOD/양품만 정상재고에 반영합니다."
+        description="처리완료 row의 판정별 수량을 확인한 뒤 일마감을 확정합니다. 일마감 전에는 현재고가 바뀌지 않고, 확정 후 고객사/팀/창고/상품/판정 기준으로 재고가 반영됩니다."
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => void loadCandidates()} loading={loading}>
@@ -232,7 +233,9 @@ export function ReturnClosingPage() {
         <Button icon={<SearchOutlined />} onClick={() => void loadCandidates()} loading={loading}>
           후보 조회
         </Button>
-        <Typography.Text type="secondary">GOOD/양품만 정상재고에 반영되고, 다른 판정은 후속 처리 대상입니다.</Typography.Text>
+        <Typography.Text type="secondary">
+          기본은 GOOD/양품만 반영합니다. 리퍼/샘플/제조사반품/폐기는 고객사별 판정-창고 라우팅을 확인한 뒤 포함하세요.
+        </Typography.Text>
       </Space>
 
       {errorMessage ? <SmartErrorNotice message={errorMessage} /> : null}

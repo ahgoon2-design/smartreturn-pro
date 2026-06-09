@@ -352,8 +352,8 @@ export function ReturnIntakeHubPage() {
   return (
     <SmartPage>
       <SmartPageHeader
-        title="반품 접수 허브"
-        description="업체/셀러 반품 접수 자료를 batch로 저장하고, 운영자가 검증 결과를 확인하는 1차 skeleton 화면입니다."
+        title="반품 자료"
+        description="업체 반품 세부정보와 CJ 반품 운송장 자료를 저장·검증하고 현장 반품처리 대상을 만듭니다. 업체 세부정보는 참고자료이고, return_tracking_no는 현장 스캔 기준입니다."
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={loadBatches} loading={loading}>
@@ -410,6 +410,13 @@ export function ReturnIntakeHubPage() {
         placeholder="첫 행은 header로 입력합니다. order_no, return_tracking_no, product_code, barcode, product_name, qty, return_reason을 지원합니다."
       />
 
+      <Alert
+        type="info"
+        showIcon
+        message="세부항목 없는 반품 등록"
+        description="운송장은 도착했지만 업체 세부 row가 없으면 return_tracking_no, 상품코드/바코드, 수량을 수동 등록한 뒤 검증과 처리대상 생성을 진행하세요. original_tracking_no는 원주문 보조 조회용이며 반품 현장 스캔 기준으로 자동확정하지 않습니다."
+      />
+
       <SmartErrorNotice message={errorMessage} />
       {prepareSummary ? <Alert type="success" showIcon message="처리대상 생성 완료" description={prepareSummary} /> : null}
 
@@ -423,8 +430,8 @@ export function ReturnIntakeHubPage() {
       <Alert
         type="info"
         showIcon
-        message="1차 범위"
-        description="반품 접수 자료 등록/조회/검증까지만 처리합니다. 판정, 사진, 라벨, 재고 반영은 후속 작업에서 분리합니다."
+        message="자료 역할"
+        description="업체 반품 세부정보와 CJ 배송상태는 반품처리 참고자료입니다. 실제 상품/수량/판정은 반품 처리 센터에서 확정하고, 재고반영은 반품 일마감 또는 반출/폐기 확정 후 진행합니다."
       />
 
       <section className="smart-toolbar" aria-label="반품 접수 batch 필터">

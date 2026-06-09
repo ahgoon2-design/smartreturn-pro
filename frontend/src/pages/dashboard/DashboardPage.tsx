@@ -1,67 +1,80 @@
-import { Card, Col, Row, Space, Tag, Typography } from "antd";
+import { CheckCircleOutlined, ExclamationCircleOutlined, ExportOutlined, RollbackOutlined, ScanOutlined } from "@ant-design/icons";
+import { Button, Card, Col, Row, Space, Tag, Typography } from "antd";
+import { useNavigate } from "react-router-dom";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
 import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
+import { ROUTE_PATHS } from "../../routes/routePaths";
 
 export function DashboardPage() {
-  const modules = [
+  const navigate = useNavigate();
+  const workCards = [
     {
-      title: "OMS 관리",
-      tag: "준비중",
-      description: "주문관리, 출고지시, 피킹리스트, 출고검수를 연결할 운영 영역입니다.",
+      title: "반품 자료",
+      tag: "등록/검증",
+      description: "업체 세부정보, CJ 반품 운송장, 자동수집 후보를 처리대상으로 준비합니다.",
+      path: ROUTE_PATHS.returnIntake,
     },
     {
-      title: "WMS 관리",
-      tag: "일부 연결",
-      description: "재고현황과 재고 이벤트를 기준으로 입고, 이동, 조정 흐름을 확장합니다.",
+      title: "반품 처리",
+      tag: "현장 작업",
+      description: "운송장 스캔 또는 그리드 선택으로 상품 확인, 판정, 증빙 기록을 진행합니다.",
+      path: ROUTE_PATHS.returnProcessing,
     },
     {
-      title: "반품 관리",
-      tag: "1차 흐름",
-      description: "반품접수, 팀배정, 처리, 일마감, 외부반출, 보류, 폐기, 이력조회까지 확인합니다.",
+      title: "반품 마감",
+      tag: "재고반영",
+      description: "처리완료 자료를 고객사/상품/창고/판정 기준으로 확인한 뒤 일마감합니다.",
+      path: ROUTE_PATHS.returnClosing,
     },
     {
-      title: "기준 정보",
-      tag: "운영 기준",
-      description: "고객사, 상품/바코드, 창고, 운영단위/팀, 판정별 창고 라우팅을 관리합니다.",
+      title: "반출/폐기",
+      tag: "후속 처리",
+      description: "제조사반출, 보류, 폐기 대상은 일마감과 분리된 후속 흐름으로 관리합니다.",
+      path: ROUTE_PATHS.returnExternalOutbound,
     },
   ];
 
   return (
     <SmartPage>
       <SmartPageHeader
-        title="SmartReturn Pro 대시보드"
-        description="반품 전문성을 중심에 두되 OMS, WMS, 기준정보를 함께 운영하는 통합 플랫폼 홈입니다."
+        title="오늘 작업"
+        description="실무 테스트는 반품 자료 준비, 현장 처리, 일마감, 반출/폐기 순서로 진행합니다. 처리완료는 재고반영이 아니며 일마감 또는 반출/폐기 확정 후 재고에 반영됩니다."
       />
 
       <div className="smart-summary-grid">
-        <SmartSummaryCard label="반품 처리" value="접수 → 판정 → 후속" />
-        <SmartSummaryCard label="재고 기준" value="current_inventory" />
-        <SmartSummaryCard label="운영 단위" value="고객사 + 팀" />
-        <SmartSummaryCard label="화면 성격" value="운영 허브" />
+        <SmartSummaryCard label="오늘 입고 예정" value="자료 확인" tone="info" />
+        <SmartSummaryCard label="처리 대기" value="스캔/선택" tone="warning" />
+        <SmartSummaryCard label="일마감 대기" value="수량 체크" tone="success" />
+        <SmartSummaryCard label="확인 필요" value="보류/오류" tone="danger" />
       </div>
 
       <Row gutter={[12, 12]}>
-        {modules.map((module) => (
+        {workCards.map((module) => (
           <Col xs={24} md={12} xl={6} key={module.title}>
-            <Card size="small" title={module.title} extra={<Tag color="blue">{module.tag}</Tag>}>
+            <Card
+              size="small"
+              title={module.title}
+              extra={<Tag color={module.tag === "후속 처리" ? "orange" : "blue"}>{module.tag}</Tag>}
+            >
               <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                 {module.description}
               </Typography.Paragraph>
+              <Button type="link" onClick={() => navigate(module.path)}>
+                바로가기
+              </Button>
             </Card>
           </Col>
         ))}
       </Row>
 
-      <Card size="small" title="브라우저 테스트 권장 순서">
+      <Card size="small" title="오늘 작업 상태 기준">
         <Space size={[8, 8]} wrap>
-          <Tag>기준정보 확인</Tag>
-          <Tag>반품 접수</Tag>
-          <Tag>팀배정</Tag>
-          <Tag>반품처리</Tag>
-          <Tag>일마감</Tag>
-          <Tag>재고현황</Tag>
-          <Tag>반품 이력조회</Tag>
+          <Tag icon={<RollbackOutlined />}>CJ 배송완료 반품</Tag>
+          <Tag icon={<ScanOutlined />} color="blue">처리중</Tag>
+          <Tag icon={<ExclamationCircleOutlined />} color="orange">보류/확인필요</Tag>
+          <Tag icon={<CheckCircleOutlined />} color="green">일마감 대기</Tag>
+          <Tag icon={<ExportOutlined />} color="purple">반출 대기</Tag>
         </Space>
       </Card>
     </SmartPage>
