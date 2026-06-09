@@ -6,6 +6,7 @@
 - 운영사: 동현물류
 - 고객사/화주: `client`
 - 내부 운영자와 고객사 사용자는 `role` 기준으로 구분한다.
+- SmartReturn Pro의 최종 목표는 반품 전용 프로그램이 아니라 CJ대한통운 대리점과 함께 운영 가능한 OMS + WMS + Returns 통합 SaaS 플랫폼이다. 초기 MVP는 반품 자동화 중심으로 시작하지만, 신규 기능/DB/권한/메뉴/화면/정산/채널연동은 향후 본사 관리자, 대리점 관리자, 고객사/셀러, 현장 작업자가 함께 사용하는 플랫폼으로 확장 가능하게 설계한다. 데이터 계층은 `client_id`, `client_unit_id`를 기본으로 하며, 대리점 SaaS 확장을 위해 `agency_id` 추가 가능성을 막지 않는다. 자세한 기준은 `docs/skills/smartreturn-platform-business-architecture.md`를 따른다.
 
 ## 문서 작성 언어 규칙
 - SmartReturn Pro의 모든 기준 문서, 설계 문서, 운영 문서, Codex 지시문으로 생성되는 문서는 한글로 작성한다.
@@ -86,6 +87,8 @@
 - 모든 작업 공통:
   - `docs/skills/smartreturn-pro-workflow.md`
   - `docs/skills/git-security-check.md`
+- 신규 기능/DB/메뉴/권한/포털/정산/채널연동/대시보드/사업 지표 설계 작업:
+  - `docs/skills/smartreturn-platform-business-architecture.md`
 - 문서 작성 또는 closeout:
   - `docs/skills/document-style.md`
 - backend API 작업:

@@ -15,6 +15,7 @@
 | `smartreturn-pro-workflow.md` | 모든 작업 시작 전 | 저장소 확인, 진행 모드, 중단 조건, 완료 보고 기준을 정리한다. |
 | `git-security-check.md` | 커밋, push, 파일 변경 작업 전 | 민감 파일 staged/tracked 금지와 커밋 전 보안 체크를 정리한다. |
 | `document-style.md` | 문서 작성, closeout, 인덱스 수정 시 | 한글 문서 작성 기준과 closeout 문서 구성을 정리한다. |
+| `smartreturn-platform-business-architecture.md` | 신규 기능 설계, DB 테이블 추가, 메뉴/권한 변경, 고객사 포털/대리점 포털, 정산/청구, 채널연동, 대시보드/사업 지표 작업 시 | SmartReturn Pro의 최상위 사업/제품 방향, CJ대한통운 대리점 기반 OMS + WMS + Returns 통합 SaaS 플랫폼 구조, 사용자 유형, `agency_id`/`client_id`/`client_unit_id` 데이터 계층, MVP/확장 로드맵, 신규 기능 설계 체크리스트 기준을 정리한다. |
 | `backend-api.md` | FastAPI backend API 작업 시 | ApiResult, 인증/권한, client scope, 테스트 기준을 정리한다. |
 | `frontend-app.md` | React/Vite/TypeScript frontend 작업 시 | 앱 구조, 라우팅, 인증 context, API client 기준을 정리한다. |
 | `smartreturn-screen-design-system.md` | 신규 화면, 화면 개편, UI 수정, 아이콘/이미지 추가 작업 시 | SmartReturn Pro 화면 디자인 철학, 은은한 파스텔 색상 체계, SVG 라인 아이콘/이미지 사용 규칙, 관리자/작업자/고객사 화면 레이아웃, 상태 badge, 카드, 그리드, 모달, 버튼, 새 화면 제작 체크리스트 기준을 정리한다. |
@@ -32,6 +33,7 @@
 - 작업 유형이 정해지면 위 표의 관련 문서를 추가로 읽는다.
 - 문서가 여러 개 해당되면 공통 문서부터 읽고 도메인 문서를 읽는다.
 - 기존 SmartReturn 기준과 SmartReturn Pro 기준이 다르면 SmartReturn Pro 기준을 우선한다.
+- 신규 기능 설계, DB 테이블 추가, 메뉴/권한 변경, 고객사 포털/대리점 포털, 정산/청구, 채널연동, 대시보드/사업 지표 작업은 `smartreturn-platform-business-architecture.md`를 함께 읽는다.
 - 신규 화면, 화면 개편, UI 수정, 아이콘/이미지 추가 작업은 `smartreturn-screen-design-system.md`를 함께 읽는다.
 - 반품 접수, 반품처리, 창고설정, 재고반영, 기준정보 작업은 `return-client-unit-routing.md`를 함께 읽는다.
 - 네이버/쿠팡/카페24/이지어드민/택배사 API 등 외부 채널 반품 자동수집 작업은 `channel-return-auto-collection.md`를 함께 읽는다.
