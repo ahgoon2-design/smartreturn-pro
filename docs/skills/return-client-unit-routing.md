@@ -135,6 +135,12 @@
 - 리퍼, 샘플, 폐기 등은 고객사 설정에 따라 기본 창고로 자동 배정할 수 있다.
 - 일마감 확정 후에는 `client_id`, `client_unit_id`, `warehouse_id`, `product_id`, `judgement_status` 기준으로 재고를 반영한다.
 
+## 관련 운영 기준
+
+- 반품 판정, 세부항목 없는 반품, 스캔/그리드 처리, 부품적출의 상세 기준은 `return-operational-judgment-policy.md`를 따른다.
+- 세트상품 반품, 구성품 체크, 부품적출 가능 여부는 `set-product-component-bom.md`를 함께 따른다.
+- AI 판정 추천과 체크리스트는 `return-judgment-ai-assistant.md`를 따르며, 최종 판정과 창고 확정은 작업자가 수행한다.
+
 ## 향후 구현 순서 제안
 
 1. 고객사 운영단위/팀 기준정보 skeleton

@@ -289,6 +289,12 @@ SmartReturn Pro의 메뉴와 화면은 반품 프로그램처럼 보이면 안 �
   - API/Worker/Scheduler 분리
 - `return-client-unit-routing.md`
   - `client_unit` 기반 반품 접수, 처리, 재고반영 유지
+- `return-operational-judgment-policy.md`
+  - 고객사별 판정, 판정별 창고, 세부항목 없는 반품, 스캔/그리드 처리, 부품적출 기준
+- `set-product-component-bom.md`
+  - 세트상품/구성품/BOM을 출고, 반품, 부품적출에 연결하는 기준
+- `return-judgment-ai-assistant.md`
+  - AI를 최종 판정자가 아닌 고객사별 판정지원 도우미로 설계하는 기준
 - `channel-return-auto-collection.md`
   - 네이버, 쿠팡, 카페24, 이지어드민, 택배사 API 수집자료를 공용 반품접수 흐름으로 연결
 - `smartreturn-screen-design-system.md`

@@ -25,6 +25,9 @@
 | `import-preview.md` | import preview, paste rows, validation 화면 작업 시 | import job 생성, rows 저장, validate, rows/errors 표시 계약을 정리한다. |
 | `channel-return-auto-collection.md` | 네이버/쿠팡/카페24/이지어드민/택배사 API 반품 자동수집 작업 시 | 외부 채널 원본 수집, canonical 정규화, 중복 upsert, 예외상태 분리, 현장 스캔 연결, 채널 역전송 단계화 기준을 정리한다. |
 | `return-client-unit-routing.md` | 반품/재고/창고/기준정보 작업 시 | 고객사 운영단위/팀 기준 반품·창고·재고 라우팅 규칙을 정리한다. |
+| `return-operational-judgment-policy.md` | 반품 판정, 판정별 창고, 세부항목 없는 반품, 스캔/그리드 처리, 폐기/부품적출 작업 시 | 고객사별 판정 설정, `warehouse_id` 필수, 일마감 이후 재고반영, 세부항목 없는 반품 현장 처리, 부품적출 기준을 정리한다. |
+| `set-product-component-bom.md` | 세트상품, 구성품, BOM, 출고 피킹/검수, 세트 반품 처리 작업 시 | 세트상품은 판매 단위, 구성품은 피킹/검수/재고 단위라는 기준과 출고/반품/부품적출 연결 규칙을 정리한다. |
+| `return-judgment-ai-assistant.md` | AI 판정도우미, 고객사별 판정 매뉴얼, 판정 체크리스트, 사진/영상 증빙 데이터 작업 시 | AI를 최종 판정자가 아니라 판정지원 도우미로 설계하는 기준과 추천/체크리스트/데이터 누적 방향을 정리한다. |
 | `naver-cloud-saas-architecture.md` | DB/파일/사진/로그/배포/채널 자동수집/백업/보안/대량 이력 테이블 작업 시 | 네이버클라우드 기반 SaaS 운영, 단일 DB 멀티테넌트, Object Storage 파일 저장, API/Worker/Scheduler 분리, 로그/백업/확장 기준을 정리한다. |
 
 ## 사용 원칙
@@ -36,6 +39,9 @@
 - 신규 기능 설계, DB 테이블 추가, 메뉴/권한 변경, 고객사 포털/대리점 포털, 정산/청구, 채널연동, 대시보드/사업 지표 작업은 `smartreturn-platform-business-architecture.md`를 함께 읽는다.
 - 신규 화면, 화면 개편, UI 수정, 아이콘/이미지 추가 작업은 `smartreturn-screen-design-system.md`를 함께 읽는다.
 - 반품 접수, 반품처리, 창고설정, 재고반영, 기준정보 작업은 `return-client-unit-routing.md`를 함께 읽는다.
+- 반품 판정, 판정별 창고, 세부항목 없는 반품, 스캔/그리드 처리, 폐기/부품적출 작업은 `return-operational-judgment-policy.md`를 함께 읽는다.
+- 세트상품, 구성품, BOM, 출고 피킹/검수, 세트 반품 작업은 `set-product-component-bom.md`를 함께 읽는다.
+- AI 판정도우미, 판정 매뉴얼, 판정 체크리스트, 사진/영상 증빙 데이터 작업은 `return-judgment-ai-assistant.md`를 함께 읽는다.
 - 네이버/쿠팡/카페24/이지어드민/택배사 API 등 외부 채널 반품 자동수집 작업은 `channel-return-auto-collection.md`를 함께 읽는다.
 - DB, 파일, 사진, 로그, 배포, 채널 자동수집, 백업, 보안, 대량 이력 테이블 작업은 `naver-cloud-saas-architecture.md`를 함께 읽는다.
 - 실제 secret, token, password, password_hash 값은 어떤 문서에도 쓰지 않는다.
