@@ -106,6 +106,14 @@ export function ReturnProcessingWorkspacePage() {
         minWidth: 120,
         render: (value) => <SmartStatusBadge status={String(value)} label={toRowStatusLabel(value)} />,
       },
+      {
+        key: "source_type",
+        title: "출처",
+        dataIndex: "source_type",
+        width: 130,
+        minWidth: 120,
+        render: (_value, record) => <SmartStatusBadge status={record.source_type || "MANUAL"} label={toSourceLabel(record)} />,
+      },
       { key: "row_no", title: "row", dataIndex: "row_no", width: 80, minWidth: 70, sortable: true },
       {
         key: "return_tracking_no",
@@ -869,6 +877,13 @@ function toLabelStatusLabel(task: ReturnProcessingTask) {
     LOCAL_AGENT_NOT_CONNECTED: "Local Agent 미연결",
   };
   return labels[status] || "라벨 출력 필요";
+}
+
+function toSourceLabel(task: ReturnProcessingTask) {
+  if (task.source_type === "CHANNEL_API") {
+    return task.source_origin ? `채널:${task.source_origin}` : "채널 자동수집";
+  }
+  return task.source_type || "수동/업로드";
 }
 
 function getLabelNumber(task: ReturnProcessingTask) {

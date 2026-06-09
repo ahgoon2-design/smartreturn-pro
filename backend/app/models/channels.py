@@ -137,6 +137,22 @@ class ChannelReturnCandidate(Base):
     risk_flags_json: Mapped[list | None] = mapped_column(JSONB)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    manual_client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
+    manual_product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    manual_product_code: Mapped[str | None] = mapped_column(String(80))
+    manual_return_tracking_no: Mapped[str | None] = mapped_column(String(100))
+    manual_original_tracking_no: Mapped[str | None] = mapped_column(String(100))
+    manual_qty: Mapped[int | None] = mapped_column(Integer)
+    manual_review_note: Mapped[str | None] = mapped_column(Text)
+    manual_reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    manual_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    correction_status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="NONE",
+        server_default="NONE",
+    )
+    correction_json: Mapped[dict | None] = mapped_column(JSONB)
     return_expected_id: Mapped[int | None] = mapped_column(ForeignKey("return_intake_rows.id"))
     return_expected_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     return_expected_create_status: Mapped[str] = mapped_column(
@@ -146,6 +162,44 @@ class ChannelReturnCandidate(Base):
         server_default="NOT_CREATED",
     )
     return_expected_create_error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ProductChannelMapping(Base):
+    __tablename__ = "product_channel_mappings"
+    __table_args__ = (
+        Index(
+            "ix_product_channel_mappings_lookup",
+            "client_id",
+            "channel_type",
+            "external_seller_product_code",
+            "external_product_name_norm",
+            "external_option_name_norm",
+        ),
+        Index("ix_product_channel_mappings_product", "client_id", "product_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
+    channel_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    channel_account_id: Mapped[int | None] = mapped_column(ForeignKey("channel_accounts.id"))
+    external_product_id: Mapped[str | None] = mapped_column(String(255))
+    external_seller_product_code: Mapped[str | None] = mapped_column(String(255))
+    external_product_name_norm: Mapped[str | None] = mapped_column(String(255))
+    external_option_name_norm: Mapped[str | None] = mapped_column(String(255))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    product_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    decision_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default="100")
+    created_from_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("channel_return_candidates.id"))
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -90,6 +90,9 @@ export interface ReturnIntakeRow {
   client_unit_id?: number | null;
   client_unit_name?: string | null;
   team_assign_status?: ReturnTeamAssignStatus | string | null;
+  source_type?: string | null;
+  source_origin?: string | null;
+  channel_return_candidate_id?: number | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;
@@ -188,6 +191,9 @@ export interface ReturnProcessingTask {
   client_unit_id?: number | null;
   client_unit_name?: string | null;
   team_assign_status?: ReturnTeamAssignStatus | string | null;
+  source_type?: string | null;
+  source_origin?: string | null;
+  channel_return_candidate_id?: number | null;
   row_no: number;
   order_no?: string | null;
   return_tracking_no?: string | null;

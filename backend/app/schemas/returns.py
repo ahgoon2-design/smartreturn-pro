@@ -212,6 +212,9 @@ class ReturnProcessingTaskResponse(BaseModel):
     client_unit_id: int | None = None
     client_unit_name: str | None = None
     team_assign_status: str = "NOT_REQUIRED"
+    source_type: str | None = None
+    source_origin: str | None = None
+    channel_return_candidate_id: int | None = None
     row_no: int
     order_no: str | None = None
     return_tracking_no: str | None = None

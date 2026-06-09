@@ -1,11 +1,12 @@
-import { ApiOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, Select, Space, Switch, Typography, message } from "antd";
+import { ApiOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
+import { Alert, Button, Form, Input, InputNumber, Select, Space, Switch, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
   createChannelAccount,
   createReturnExpectedFromChannelAccount,
   createReturnExpectedFromChannelCandidate,
+  clearChannelReturnCandidateCorrection,
   disableChannelAccount,
   listChannelAccounts,
   listChannelRawEvents,
@@ -17,8 +18,9 @@ import {
   testChannelConnection,
   transformChannelAccountRawEvents,
   updateChannelAccount,
+  updateChannelReturnCandidateCorrection,
 } from "../../api/channels";
-import { listClients, listClientUnits } from "../../api/master";
+import { listClients, listClientUnits, listProducts } from "../../api/master";
 import { SmartDataSection } from "../../components/common/SmartDataSection";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartModalShell } from "../../components/common/SmartModalShell";
@@ -33,11 +35,12 @@ import type {
   ChannelAccountCreatePayload,
   ChannelRawEventListItem,
   ChannelReturnCandidate,
+  ChannelReturnCandidateCorrectionPayload,
   ChannelReturnCandidateStatus,
   ChannelSyncJob,
   ChannelType,
 } from "../../types/channels";
-import type { ClientSummary, ClientUnit } from "../../types/master";
+import type { ClientSummary, ClientUnit, ProductSummary } from "../../types/master";
 
 interface ChannelAccountFormValues {
   client_id?: number;
@@ -48,6 +51,15 @@ interface ChannelAccountFormValues {
   external_account_id?: string | null;
   credential_ref?: string | null;
   sync_enabled?: boolean;
+}
+
+interface CandidateCorrectionFormValues {
+  client_unit_id?: number | null;
+  product_id?: number | null;
+  return_tracking_no?: string | null;
+  original_tracking_no?: string | null;
+  qty?: number | null;
+  review_note?: string | null;
 }
 
 const CHANNEL_OPTIONS: Array<{ value: ChannelType; label: string }> = [
@@ -72,6 +84,8 @@ export function ChannelAccountManagementScreen() {
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [clientUnits, setClientUnits] = useState<ClientUnit[]>([]);
+  const [correctionUnits, setCorrectionUnits] = useState<ClientUnit[]>([]);
+  const [correctionProducts, setCorrectionProducts] = useState<ProductSummary[]>([]);
   const [syncJobs, setSyncJobs] = useState<ChannelSyncJob[]>([]);
   const [rawEvents, setRawEvents] = useState<ChannelRawEventListItem[]>([]);
   const [candidates, setCandidates] = useState<ChannelReturnCandidate[]>([]);
@@ -79,6 +93,7 @@ export function ChannelAccountManagementScreen() {
   const [candidateStatusFilter, setCandidateStatusFilter] = useState<ChannelReturnCandidateStatus | "ALL">("ALL");
   const [selectedAccount, setSelectedAccount] = useState<ChannelAccount | null>(null);
   const [editingAccount, setEditingAccount] = useState<ChannelAccount | null>(null);
+  const [correctingCandidate, setCorrectingCandidate] = useState<ChannelReturnCandidate | null>(null);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
@@ -87,6 +102,7 @@ export function ChannelAccountManagementScreen() {
   const [errorMessage, setErrorMessage] = useState("");
   const [notice, setNotice] = useState("");
   const [form] = Form.useForm<ChannelAccountFormValues>();
+  const [correctionForm] = Form.useForm<CandidateCorrectionFormValues>();
   const selectedClientId = Form.useWatch("client_id", form);
 
   useEffect(() => {
@@ -195,6 +211,13 @@ export function ChannelAccountManagementScreen() {
       { key: "qty", title: "수량", dataIndex: "qty", width: 80, align: "right", render: (value) => toDisplayText(value) },
       { key: "risk_flags", title: "위험", dataIndex: "risk_flags", minWidth: 170, render: (_value, record) => record.risk_flags?.join(", ") || "-" },
       {
+        key: "correction_status",
+        title: "보정",
+        dataIndex: "correction_status",
+        width: 120,
+        render: (value) => <SmartStatusBadge status={String(value)} label={correctionStatusLabel(String(value))} />,
+      },
+      {
         key: "return_expected_create_status",
         title: "반품예정",
         dataIndex: "return_expected_create_status",
@@ -223,6 +246,13 @@ export function ChannelAccountManagementScreen() {
   const candidateActions = useMemo<SmartGridRowAction<ChannelReturnCandidate>[]>(
     () => [
       { key: "reprocess", label: "재처리", icon: <SyncOutlined />, onClick: (record) => void handleReprocessCandidate(record) },
+      {
+        key: "correction",
+        label: "보정",
+        icon: <EditOutlined />,
+        disabled: (record) => Boolean(record.return_expected_id),
+        onClick: (record) => void openCorrectionModal(record),
+      },
       {
         key: "reviewed",
         label: "확인 처리",
@@ -399,6 +429,74 @@ export function ChannelAccountManagementScreen() {
       await loadInitialData();
     } catch (error) {
       message.error(toUserMessage(error, "후보 확인 처리를 실행하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function openCorrectionModal(candidate: ChannelReturnCandidate) {
+    setCorrectingCandidate(candidate);
+    correctionForm.resetFields();
+    correctionForm.setFieldsValue({
+      client_unit_id: candidate.manual_client_unit_id ?? candidate.client_unit_id ?? null,
+      product_id: candidate.manual_product_id ?? candidate.product_id ?? null,
+      return_tracking_no: candidate.manual_return_tracking_no ?? candidate.return_tracking_no ?? null,
+      original_tracking_no: candidate.manual_original_tracking_no ?? candidate.original_tracking_no ?? null,
+      qty: candidate.manual_qty ?? candidate.qty ?? null,
+      review_note: candidate.manual_review_note ?? null,
+    });
+    try {
+      const [units, products] = await Promise.all([
+        listClientUnits(candidate.client_id, { includeInactive: false }),
+        listProducts({ clientId: candidate.client_id, pageSize: 200 }),
+      ]);
+      setCorrectionUnits(units);
+      setCorrectionProducts(products.items);
+    } catch (error) {
+      message.error(toUserMessage(error, "보정 후보 정보를 불러오지 못했습니다."));
+      setCorrectionUnits([]);
+      setCorrectionProducts([]);
+    }
+  }
+
+  async function handleSubmitCorrection() {
+    if (!correctingCandidate) {
+      return;
+    }
+    const values = await correctionForm.validateFields();
+    setActionLoadingId(correctingCandidate.channel_account_id);
+    try {
+      const payload: ChannelReturnCandidateCorrectionPayload = {
+        client_unit_id: values.client_unit_id ?? null,
+        product_id: values.product_id ?? null,
+        return_tracking_no: values.return_tracking_no,
+        original_tracking_no: values.original_tracking_no,
+        qty: values.qty ?? null,
+        review_note: values.review_note,
+      };
+      const result = await updateChannelReturnCandidateCorrection(correctingCandidate.id, payload);
+      message.success(result.message);
+      setCorrectingCandidate(null);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "후보 보정값을 저장하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleClearCorrection() {
+    if (!correctingCandidate) {
+      return;
+    }
+    setActionLoadingId(correctingCandidate.channel_account_id);
+    try {
+      const result = await clearChannelReturnCandidateCorrection(correctingCandidate.id);
+      message.success(result.message);
+      setCorrectingCandidate(null);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "후보 보정값을 초기화하지 못했습니다."));
     } finally {
       setActionLoadingId(null);
     }
@@ -620,6 +718,55 @@ export function ChannelAccountManagementScreen() {
           </Form.Item>
         </Form>
       </SmartModalShell>
+
+      <SmartModalShell
+        title="반품접수 후보 보정"
+        open={Boolean(correctingCandidate)}
+        onCancel={() => setCorrectingCandidate(null)}
+        onOk={() => void handleSubmitCorrection()}
+        confirmLoading={actionLoadingId === correctingCandidate?.channel_account_id}
+        okText="보정 저장"
+        cancelText="닫기"
+        destroyOnHidden
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message="return_tracking_no가 현장 스캔 기준입니다."
+          description="original_tracking_no는 보조 조회 후보이며, 원송장만으로는 READY_FOR_INTAKE로 전환되지 않습니다."
+        />
+        <Space>
+          <Button danger disabled={!correctingCandidate || Boolean(correctingCandidate.return_expected_id)} onClick={() => void handleClearCorrection()}>
+            보정 초기화
+          </Button>
+        </Space>
+        <Form form={correctionForm} layout="vertical">
+          <Form.Item name="client_unit_id" label="팀/운영단위">
+            <Select allowClear options={unitOptions(correctionUnits)} placeholder="팀/운영단위 선택" />
+          </Form.Item>
+          <Form.Item name="product_id" label="상품">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={productOptions(correctionProducts)}
+              placeholder="상품 선택"
+            />
+          </Form.Item>
+          <Form.Item name="return_tracking_no" label="반품송장번호">
+            <Input maxLength={100} placeholder="현장 스캔 기준 송장" />
+          </Form.Item>
+          <Form.Item name="original_tracking_no" label="원송장번호">
+            <Input maxLength={100} placeholder="보조 조회 후보" />
+          </Form.Item>
+          <Form.Item name="qty" label="수량" rules={[{ type: "number", min: 1, message: "수량은 1 이상이어야 합니다." }]}>
+            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="review_note" label="검토 메모">
+            <Input.TextArea maxLength={500} rows={3} placeholder="보정 사유 또는 확인 내용을 입력하세요." />
+          </Form.Item>
+        </Form>
+      </SmartModalShell>
     </SmartPage>
   );
 }
@@ -635,6 +782,13 @@ function unitOptions(units: ClientUnit[]) {
   return units.map((unit) => ({
     value: unit.unit_id,
     label: `${unit.unit_name} (${unit.unit_code})`,
+  }));
+}
+
+function productOptions(products: ProductSummary[]) {
+  return products.map((product) => ({
+    value: product.product_id,
+    label: `${product.product_code} / ${product.product_name}`,
   }));
 }
 
@@ -684,6 +838,17 @@ function returnExpectedCreateStatusLabel(value: string) {
       CREATED: "생성됨",
       SKIPPED_DUPLICATE: "중복 연결",
       FAILED: "생성 실패",
+    }[value] || value
+  );
+}
+
+function correctionStatusLabel(value: string) {
+  return (
+    {
+      NONE: "없음",
+      CORRECTED: "보정됨",
+      REVIEWED: "확인됨",
+      REPROCESS_REQUIRED: "재처리 필요",
     }[value] || value
   );
 }

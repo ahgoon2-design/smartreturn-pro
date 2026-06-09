@@ -16,6 +16,7 @@ CHANNEL_RETURN_CANDIDATE_STATUSES = {
     "BLOCKED",
 }
 CHANNEL_RETURN_EXPECTED_CREATE_STATUSES = {"NOT_CREATED", "CREATED", "SKIPPED_DUPLICATE", "FAILED"}
+CHANNEL_RETURN_CORRECTION_STATUSES = {"NONE", "CORRECTED", "REVIEWED", "REPROCESS_REQUIRED"}
 
 
 class ChannelAccountCreateRequest(BaseModel):
@@ -232,6 +233,17 @@ class ChannelReturnCandidateResponse(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     reviewed_at: datetime | None = None
     reviewed_by: int | None = None
+    manual_client_unit_id: int | None = None
+    manual_product_id: int | None = None
+    manual_product_code: str | None = None
+    manual_return_tracking_no: str | None = None
+    manual_original_tracking_no: str | None = None
+    manual_qty: int | None = None
+    manual_review_note: str | None = None
+    manual_reviewed_by: int | None = None
+    manual_reviewed_at: datetime | None = None
+    correction_status: str = "NONE"
+    correction_summary: dict = Field(default_factory=dict)
     return_expected_id: int | None = None
     return_expected_created_at: datetime | None = None
     return_expected_create_status: str = "NOT_CREATED"
@@ -267,6 +279,24 @@ class ChannelRawEventsBulkTransformResponse(BaseModel):
 class ChannelReturnCandidateActionResponse(BaseModel):
     candidate: ChannelReturnCandidateResponse
     message: str
+
+
+class ChannelReturnCandidateCorrectionRequest(BaseModel):
+    client_unit_id: int | None = None
+    product_id: int | None = None
+    product_code: str | None = None
+    return_tracking_no: str | None = None
+    original_tracking_no: str | None = None
+    qty: int | None = None
+    review_note: str | None = None
+
+    @field_validator("product_code", "return_tracking_no", "original_tracking_no", "review_note")
+    @classmethod
+    def _optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class ChannelReturnExpectedCreateResponse(BaseModel):

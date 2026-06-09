@@ -8,6 +8,7 @@ import type {
   ChannelRawEventsBulkTransformResponse,
   ChannelRawEventTransformResponse,
   ChannelReturnCandidateActionResponse,
+  ChannelReturnCandidateCorrectionPayload,
   ChannelReturnCandidateListResponse,
   ChannelReturnExpectedBulkCreateResponse,
   ChannelReturnExpectedCreateResponse,
@@ -119,6 +120,19 @@ export async function reprocessChannelReturnCandidate(candidateId: number) {
 
 export async function markChannelReturnCandidateReviewed(candidateId: number) {
   return apiRequest<ChannelReturnCandidateActionResponse>(`/api/channels/return-candidates/${candidateId}/mark-reviewed`, {
+    method: "POST",
+  });
+}
+
+export async function updateChannelReturnCandidateCorrection(candidateId: number, payload: ChannelReturnCandidateCorrectionPayload) {
+  return apiRequest<ChannelReturnCandidateActionResponse>(`/api/channels/return-candidates/${candidateId}/correction`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function clearChannelReturnCandidateCorrection(candidateId: number) {
+  return apiRequest<ChannelReturnCandidateActionResponse>(`/api/channels/return-candidates/${candidateId}/clear-correction`, {
     method: "POST",
   });
 }

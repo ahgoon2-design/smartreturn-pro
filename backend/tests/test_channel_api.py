@@ -15,7 +15,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelReturnCandidate, ChannelSyncJob
+from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelReturnCandidate, ChannelSyncJob, ProductChannelMapping
 from app.models.master import Client, ClientUnit, Product, ProductBarcode, Warehouse
 from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow
 
@@ -52,6 +52,7 @@ def db_session() -> Generator[Session, None, None]:
         ReturnIntakeBatch.__table__,
         ReturnIntakeRow.__table__,
         ChannelReturnCandidate.__table__,
+        ProductChannelMapping.__table__,
     ):
         table.create(bind=engine)
 
@@ -701,6 +702,9 @@ def test_channel_ready_candidate_creates_return_intake_row_and_scan_finds_it(
     assert len(items) == 1
     assert items[0]["row_id"] == row.id
     assert items[0]["return_tracking_no"] == "RTNCREATE"
+    assert items[0]["source_type"] == "CHANNEL_API"
+    assert items[0]["source_origin"] == "NAVER_SMARTSTORE"
+    assert items[0]["channel_return_candidate_id"] == candidate["id"]
 
 
 def test_channel_create_return_expected_blocks_non_ready_candidate(client: TestClient, db_session: Session):
@@ -955,3 +959,272 @@ def test_channel_bulk_create_return_expected_and_scope(client: TestClient, db_se
         headers=scoped_headers,
     )
     assert blocked_response.status_code == 403
+
+
+def test_channel_team_pending_correction_reprocesses_to_ready(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-CORR-TEAM")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, external_account_id="corr-team")
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-CORR-TEAM",
+            "productOrderId": "PO-CORR-TEAM",
+            "claimId": "CLAIM-CORR-TEAM",
+            "returnTrackingNo": "RTN-CORR-TEAM",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+    candidate = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers).json()["data"]["candidate"]
+    assert candidate["match_status"] == "TEAM_ASSIGN_PENDING"
+
+    correction = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"client_unit_id": unit.id, "review_note": "팀 확인"},
+    )
+    assert correction.status_code == 200
+    assert correction.json()["data"]["candidate"]["correction_status"] == "CORRECTED"
+
+    reprocessed = client.post(f"/api/channels/return-candidates/{candidate['id']}/reprocess", headers=headers)
+    assert reprocessed.status_code == 200
+    ready = reprocessed.json()["data"]["candidate"]
+    assert ready["match_status"] == "READY_FOR_INTAKE"
+    assert ready["client_unit_id"] == unit.id
+    assert ready["manual_client_unit_id"] == unit.id
+
+
+def test_channel_product_pending_correction_reprocesses_to_ready_and_learns_mapping(
+    client: TestClient,
+    db_session: Session,
+):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-CORR-PRODUCT")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="corr-product")
+    payload = {
+        "eventType": "RETURN_CLAIM",
+        "orderId": "ORDER-CORR-PRODUCT",
+        "productOrderId": "PO-CORR-PRODUCT",
+        "claimId": "CLAIM-CORR-PRODUCT",
+        "returnTrackingNo": "RTN-CORR-PRODUCT",
+        "sellerProductCode": "SELLER-CORR-PRODUCT",
+        "productName": "외부 상품명",
+        "optionName": "검정",
+        "qty": 1,
+    }
+    raw_event = _create_raw_event(db_session, account_id, payload)
+    candidate = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers).json()["data"]["candidate"]
+    assert candidate["match_status"] == "PRODUCT_MATCH_PENDING"
+
+    correction = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"product_id": product.id},
+    )
+    assert correction.status_code == 200
+    assert db_session.query(ProductChannelMapping).count() == 1
+
+    reprocessed = client.post(f"/api/channels/return-candidates/{candidate['id']}/reprocess", headers=headers)
+    assert reprocessed.status_code == 200
+    ready = reprocessed.json()["data"]["candidate"]
+    assert ready["match_status"] == "READY_FOR_INTAKE"
+    assert ready["product_id"] == product.id
+    assert ready["manual_product_id"] == product.id
+
+    next_raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            **payload,
+            "orderId": "ORDER-CORR-PRODUCT-2",
+            "productOrderId": "PO-CORR-PRODUCT-2",
+            "claimId": "CLAIM-CORR-PRODUCT-2",
+            "returnTrackingNo": "RTN-CORR-PRODUCT-2",
+        },
+    )
+    next_candidate = client.post(f"/api/channels/raw-events/{next_raw_event.id}/transform", headers=headers)
+    assert next_candidate.status_code == 200
+    assert next_candidate.json()["data"]["candidate"]["match_status"] == "READY_FOR_INTAKE"
+    assert next_candidate.json()["data"]["candidate"]["product_id"] == product.id
+
+
+def test_channel_return_tracking_pending_correction_reprocesses_to_ready(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-CORR-TRACK")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="corr-track")
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-CORR-TRACK",
+            "productOrderId": "PO-CORR-TRACK",
+            "claimId": "CLAIM-CORR-TRACK",
+            "originalTrackingNo": "ORG-CORR-TRACK",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+    candidate = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers).json()["data"]["candidate"]
+    assert candidate["match_status"] == "RETURN_TRACKING_PENDING"
+
+    correction = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"return_tracking_no": "RTN-CORR-TRACK"},
+    )
+    assert correction.status_code == 200
+    reprocessed = client.post(f"/api/channels/return-candidates/{candidate['id']}/reprocess", headers=headers)
+    assert reprocessed.status_code == 200
+    ready = reprocessed.json()["data"]["candidate"]
+    assert ready["match_status"] == "READY_FOR_INTAKE"
+    assert ready["tracking_no_for_scan"] == "RTNCORRTRACK"
+
+
+def test_channel_original_tracking_only_correction_does_not_make_ready(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-CORR-ORG")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="corr-org")
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-CORR-ORG",
+            "productOrderId": "PO-CORR-ORG",
+            "claimId": "CLAIM-CORR-ORG",
+            "originalTrackingNo": "ORG-CORR-ORG",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+    candidate = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers).json()["data"]["candidate"]
+
+    correction = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"original_tracking_no": "ORG-CORR-ORG-2"},
+    )
+    assert correction.status_code == 200
+    reprocessed = client.post(f"/api/channels/return-candidates/{candidate['id']}/reprocess", headers=headers)
+    assert reprocessed.status_code == 200
+    data = reprocessed.json()["data"]["candidate"]
+    assert data["match_status"] == "RETURN_TRACKING_PENDING"
+    assert data["tracking_no_for_scan"] is None
+
+
+def test_channel_correction_rejects_invalid_scope_and_qty(client: TestClient, db_session: Session):
+    client_a = _create_client(db_session, "CLIENT_CORR_A")
+    client_b = _create_client(db_session, "CLIENT_CORR_B")
+    unit_a = _create_unit(db_session, client_a.id, "UNIT_CORR_A")
+    unit_b = _create_unit(db_session, client_b.id, "UNIT_CORR_B")
+    product_a = _create_product(db_session, client_a.id, "P-CORR-SCOPE-A")
+    product_b = _create_product(db_session, client_b.id, "P-CORR-SCOPE-B")
+    headers = _admin_headers(client, db_session)
+    candidate = _ready_candidate(
+        client,
+        db_session,
+        headers,
+        client_row=client_a,
+        unit=unit_a,
+        product=product_a,
+        external_product_order_id="PO-CORR-SCOPE",
+        external_claim_id="CLAIM-CORR-SCOPE",
+    )
+
+    bad_unit = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"client_unit_id": unit_b.id},
+    )
+    assert bad_unit.status_code == 400
+    bad_product = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"product_id": product_b.id},
+    )
+    assert bad_product.status_code == 400
+    bad_qty = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"qty": 0},
+    )
+    assert bad_qty.status_code == 400
+
+
+def test_channel_linked_candidate_cannot_be_corrected_or_reprocessed(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product = _create_product(db_session, client_row.id, "P-CORR-LINKED")
+    headers = _admin_headers(client, db_session)
+    candidate = _ready_candidate(client, db_session, headers, client_row=client_row, unit=unit, product=product)
+    create_response = client.post(f"/api/channels/return-candidates/{candidate['id']}/create-return-expected", headers=headers)
+    assert create_response.status_code == 200
+
+    correction = client.patch(
+        f"/api/channels/return-candidates/{candidate['id']}/correction",
+        headers=headers,
+        json={"qty": 2},
+    )
+    assert correction.status_code == 400
+    reprocess = client.post(f"/api/channels/return-candidates/{candidate['id']}/reprocess", headers=headers)
+    assert reprocess.status_code == 400
+
+
+def test_channel_mapping_conflict_does_not_auto_confirm_product(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session)
+    unit = _create_unit(db_session, client_row.id)
+    product_a = _create_product(db_session, client_row.id, "P-MAP-A")
+    product_b = _create_product(db_session, client_row.id, "P-MAP-B")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="map-conflict")
+    for product in (product_a, product_b):
+        db_session.add(
+            ProductChannelMapping(
+                client_id=client_row.id,
+                client_unit_id=unit.id,
+                channel_type="NAVER_SMARTSTORE",
+                channel_account_id=account_id,
+                external_seller_product_code="SELLERMAPCONFLICT",
+                external_product_name_norm="외부상품충돌",
+                external_option_name_norm="기본",
+                product_id=product.id,
+                product_code=product.product_code,
+                decision_type="CORRECTED",
+                confidence=100,
+            )
+        )
+    db_session.commit()
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-MAP-CONFLICT",
+            "productOrderId": "PO-MAP-CONFLICT",
+            "claimId": "CLAIM-MAP-CONFLICT",
+            "returnTrackingNo": "RTN-MAP-CONFLICT",
+            "sellerProductCode": "SELLER-MAP-CONFLICT",
+            "productName": "외부 상품 충돌",
+            "optionName": "기본",
+            "qty": 1,
+        },
+    )
+
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+
+    assert response.status_code == 200
+    candidate = response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "PRODUCT_MATCH_PENDING"
+    assert candidate["product_id"] is None

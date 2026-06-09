@@ -27,6 +27,7 @@ from app.schemas.channels import (
     ChannelRawEventsBulkTransformResponse,
     ChannelRawEventTransformResponse,
     ChannelReturnCandidateActionResponse,
+    ChannelReturnCandidateCorrectionRequest,
     ChannelReturnCandidateDetailResponse,
     ChannelReturnCandidateResponse,
     ChannelReturnCandidatesResponse,
@@ -102,6 +103,13 @@ def _tracking_hash(value: str | None) -> str | None:
     if not normalized:
         return None
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _norm_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = "".join(ch for ch in str(value).strip().upper() if ch.isalnum())
+    return text[:255] or None
 
 
 def _account_response(account) -> ChannelAccountResponse:
@@ -200,6 +208,17 @@ def _candidate_response(candidate) -> ChannelReturnCandidateResponse:
         risk_flags=list(candidate.risk_flags_json or []),
         reviewed_at=candidate.reviewed_at,
         reviewed_by=candidate.reviewed_by,
+        manual_client_unit_id=candidate.manual_client_unit_id,
+        manual_product_id=candidate.manual_product_id,
+        manual_product_code=candidate.manual_product_code,
+        manual_return_tracking_no=candidate.manual_return_tracking_no,
+        manual_original_tracking_no=candidate.manual_original_tracking_no,
+        manual_qty=candidate.manual_qty,
+        manual_review_note=candidate.manual_review_note,
+        manual_reviewed_by=candidate.manual_reviewed_by,
+        manual_reviewed_at=candidate.manual_reviewed_at,
+        correction_status=candidate.correction_status,
+        correction_summary=dict(candidate.correction_json or {}),
         return_expected_id=candidate.return_expected_id,
         return_expected_created_at=candidate.return_expected_created_at,
         return_expected_create_status=candidate.return_expected_create_status,
@@ -800,6 +819,7 @@ class ChannelCanonicalTransformService:
     def reprocess_candidate(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
         _require_channel_manage(auth)
         candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        self._ensure_candidate_not_linked(candidate)
         raw_event = repo.get_channel_raw_event(db, candidate.channel_raw_event_id)
         if raw_event is None:
             raise _business_error("CHANNEL_RAW_EVENT_NOT_FOUND", "채널 원본 이벤트를 찾을 수 없습니다.", 404)
@@ -811,9 +831,70 @@ class ChannelCanonicalTransformService:
             message="반품접수 후보를 재처리했습니다.",
         ).model_dump()
 
+    def save_correction(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        candidate_id: int,
+        request: ChannelReturnCandidateCorrectionRequest,
+    ) -> dict:
+        _require_channel_manage(auth)
+        candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        self._ensure_candidate_not_linked(candidate)
+        values = self._validate_correction_values(db, candidate, request)
+        now = datetime.now(timezone.utc)
+        values.update(
+            {
+                "manual_reviewed_by": auth.user_id,
+                "manual_reviewed_at": now,
+                "correction_status": "CORRECTED",
+                "return_expected_create_status": RETURN_EXPECTED_NOT_CREATED,
+                "return_expected_create_error": None,
+            }
+        )
+        candidate = repo.update_channel_return_candidate(db, candidate, values)
+        if candidate.manual_product_id is not None:
+            self._save_product_channel_mapping(db, candidate, auth.user_id)
+        db.commit()
+        return ChannelReturnCandidateActionResponse(
+            candidate=_candidate_response(candidate),
+            message="수동 보정값을 저장했습니다. 재처리 후 READY 전환 여부를 확인하세요.",
+        ).model_dump()
+
+    def clear_correction(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
+        _require_channel_manage(auth)
+        candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        self._ensure_candidate_not_linked(candidate)
+        candidate = repo.update_channel_return_candidate(
+            db,
+            candidate,
+            {
+                "manual_client_unit_id": None,
+                "manual_product_id": None,
+                "manual_product_code": None,
+                "manual_return_tracking_no": None,
+                "manual_original_tracking_no": None,
+                "manual_qty": None,
+                "manual_review_note": None,
+                "manual_reviewed_by": None,
+                "manual_reviewed_at": None,
+                "correction_status": "NONE",
+                "correction_json": None,
+                "return_expected_create_status": RETURN_EXPECTED_NOT_CREATED,
+                "return_expected_create_error": None,
+            },
+        )
+        db.commit()
+        return ChannelReturnCandidateActionResponse(
+            candidate=_candidate_response(candidate),
+            message="수동 보정값을 초기화했습니다.",
+        ).model_dump()
+
     def mark_reviewed(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
         _require_channel_manage(auth)
         candidate = self._get_scoped_candidate(db, auth, candidate_id=candidate_id)
+        self._ensure_candidate_not_linked(candidate)
         now = datetime.now(timezone.utc)
         candidate = repo.upsert_channel_return_candidate(
             db,
@@ -843,6 +924,8 @@ class ChannelCanonicalTransformService:
                 "risk_flags_json": candidate.risk_flags_json,
                 "reviewed_at": now,
                 "reviewed_by": auth.user_id,
+                "correction_status": "REVIEWED",
+                "correction_json": dict(candidate.correction_json or {}),
             },
         )[0]
         db.commit()
@@ -1074,8 +1157,10 @@ class ChannelCanonicalTransformService:
     def _transform_and_save(self, db: Session, *, raw_event, account, reviewed_by: int | None):
         transformer = _transformer_for(raw_event)
         values = transformer.transform(raw_event, account)
-        values = self._apply_matching_and_status(db, raw_event=raw_event, account=account, values=values)
         existing = repo.get_channel_return_candidate_by_raw_event(db, raw_event.id)
+        if existing is not None:
+            values = self._apply_manual_corrections(existing, values)
+        values = self._apply_matching_and_status(db, raw_event=raw_event, account=account, values=values)
         conflicts = repo.find_candidate_conflicts(
             db,
             client_id=account.client_id,
@@ -1093,6 +1178,28 @@ class ChannelCanonicalTransformService:
         if reviewed_by is not None:
             values["reviewed_at"] = datetime.now(timezone.utc)
             values["reviewed_by"] = reviewed_by
+        if existing is not None:
+            values.update(
+                {
+                    "manual_client_unit_id": existing.manual_client_unit_id,
+                    "manual_product_id": existing.manual_product_id,
+                    "manual_product_code": existing.manual_product_code,
+                    "manual_return_tracking_no": existing.manual_return_tracking_no,
+                    "manual_original_tracking_no": existing.manual_original_tracking_no,
+                    "manual_qty": existing.manual_qty,
+                    "manual_review_note": existing.manual_review_note,
+                    "manual_reviewed_by": existing.manual_reviewed_by,
+                    "manual_reviewed_at": existing.manual_reviewed_at,
+                    "correction_status": (
+                        "REVIEWED"
+                        if existing.correction_status == "REVIEWED"
+                        else ("REPROCESS_REQUIRED" if existing.correction_status != "NONE" else "NONE")
+                    ),
+                    "correction_json": existing.correction_json,
+                    "return_expected_create_status": RETURN_EXPECTED_NOT_CREATED,
+                    "return_expected_create_error": None,
+                }
+            )
         candidate, created = repo.upsert_channel_return_candidate(db, raw_event=raw_event, account=account, values=values)
         repo.update_channel_raw_event(
             db,
@@ -1125,7 +1232,9 @@ class ChannelCanonicalTransformService:
             risks.append("PRODUCT_MATCH_REQUIRED")
             reasons.append("상품마스터 매칭이 필요합니다.")
 
-        if account.client_unit_id:
+        if values.get("client_unit_id"):
+            values["client_unit_id"] = values["client_unit_id"]
+        elif account.client_unit_id:
             values["client_unit_id"] = account.client_unit_id
         else:
             values["client_unit_id"] = None
@@ -1168,6 +1277,26 @@ class ChannelCanonicalTransformService:
         values["risk_flags_json"] = sorted(set(risks))
         return values
 
+    def _apply_manual_corrections(self, candidate, values: dict) -> dict:
+        if candidate.manual_client_unit_id is not None:
+            values["client_unit_id"] = candidate.manual_client_unit_id
+        if candidate.manual_product_id is not None:
+            values["product_id"] = candidate.manual_product_id
+            values["product_code"] = candidate.manual_product_code or values.get("product_code")
+        elif candidate.manual_product_code:
+            values["product_code"] = candidate.manual_product_code
+        if candidate.manual_return_tracking_no:
+            values["return_tracking_no"] = candidate.manual_return_tracking_no
+            values["tracking_no_for_scan"] = candidate.manual_return_tracking_no
+        elif candidate.manual_original_tracking_no and not values.get("return_tracking_no"):
+            values["original_tracking_no"] = candidate.manual_original_tracking_no
+            values["tracking_no_for_scan"] = None
+        if candidate.manual_original_tracking_no:
+            values["original_tracking_no"] = candidate.manual_original_tracking_no
+        if candidate.manual_qty is not None:
+            values["qty"] = candidate.manual_qty
+        return values
+
     def _match_product(self, db: Session, client_id: int, values: dict):
         product_code = _first_text(values.get("product_code"))
         if product_code:
@@ -1182,7 +1311,113 @@ class ChannelCanonicalTransformService:
             product_barcode = master_repository.find_product_barcode_by_norm(db, client_id, barcode_norm)
             if product_barcode is not None:
                 return master_repository.get_product_by_id(db, product_barcode.product_id)
+        mapping_product = self._match_product_channel_mapping(db, client_id, values)
+        if mapping_product is not None:
+            return mapping_product
         return None
+
+    def _match_product_channel_mapping(self, db: Session, client_id: int, values: dict):
+        mappings = repo.find_product_channel_mappings(
+            db,
+            client_id=client_id,
+            channel_type=values.get("source_origin") or "",
+            external_seller_product_code=_norm_text(values.get("product_code")),
+            external_product_name_norm=_norm_text(values.get("product_name")),
+            external_option_name_norm=_norm_text(values.get("option_name")),
+        )
+        product_ids = {mapping.product_id for mapping in mappings}
+        if len(product_ids) != 1:
+            return None
+        mapping = mappings[0]
+        product = master_repository.get_product_by_id(db, mapping.product_id)
+        if product is None or product.client_id != client_id or not product.active_yn:
+            return None
+        return product
+
+    def _validate_correction_values(
+        self,
+        db: Session,
+        candidate,
+        request: ChannelReturnCandidateCorrectionRequest,
+    ) -> dict:
+        correction_summary: dict[str, object] = {}
+        values: dict[str, object] = {}
+        if request.client_unit_id is not None:
+            unit = master_repository.get_client_unit_by_id(db, request.client_unit_id)
+            if unit is None or unit.client_id != candidate.client_id or not unit.active_yn:
+                raise _business_error("CHANNEL_CORRECTION_CLIENT_UNIT_INVALID", "후보 고객사에 속한 사용중 운영단위만 보정할 수 있습니다.")
+            values["manual_client_unit_id"] = unit.id
+            correction_summary["client_unit_id"] = unit.id
+
+        product = None
+        if request.product_id is not None:
+            product = master_repository.get_product_by_id(db, request.product_id)
+            if product is None or product.client_id != candidate.client_id or not product.active_yn:
+                raise _business_error("CHANNEL_CORRECTION_PRODUCT_INVALID", "후보 고객사에 속한 사용중 상품만 보정할 수 있습니다.")
+        elif request.product_code:
+            product = master_repository.find_product_by_code(db, candidate.client_id, request.product_code)
+            if product is None or not product.active_yn:
+                raise _business_error("CHANNEL_CORRECTION_PRODUCT_INVALID", "후보 고객사에 속한 사용중 상품만 보정할 수 있습니다.")
+        if product is not None:
+            values["manual_product_id"] = product.id
+            values["manual_product_code"] = product.product_code
+            correction_summary["product_id"] = product.id
+            correction_summary["product_code"] = product.product_code
+
+        return_tracking_no = _normalize_tracking_no(request.return_tracking_no)
+        original_tracking_no = _normalize_tracking_no(request.original_tracking_no)
+        if request.return_tracking_no is not None and not return_tracking_no:
+            raise _business_error("CHANNEL_CORRECTION_RETURN_TRACKING_INVALID", "반품송장 보정값을 확인하세요.")
+        if return_tracking_no:
+            values["manual_return_tracking_no"] = return_tracking_no
+            correction_summary["return_tracking_no_present"] = True
+        elif request.return_tracking_no is not None:
+            values["manual_return_tracking_no"] = None
+        if original_tracking_no:
+            values["manual_original_tracking_no"] = original_tracking_no
+            correction_summary["original_tracking_no_present"] = True
+        elif request.original_tracking_no is not None:
+            values["manual_original_tracking_no"] = None
+
+        if request.qty is not None:
+            if request.qty <= 0:
+                raise _business_error("CHANNEL_CORRECTION_QTY_INVALID", "수량은 1 이상이어야 합니다.")
+            values["manual_qty"] = request.qty
+            correction_summary["qty"] = request.qty
+
+        values["manual_review_note"] = _first_text(request.review_note)
+        if request.review_note:
+            correction_summary["review_note_present"] = True
+        values["correction_json"] = correction_summary
+        return values
+
+    def _save_product_channel_mapping(self, db: Session, candidate, created_by: int | None) -> None:
+        if candidate.manual_product_id is None or not candidate.manual_product_code:
+            return
+        repo.upsert_product_channel_mapping(
+            db,
+            client_id=candidate.client_id,
+            client_unit_id=candidate.manual_client_unit_id or candidate.client_unit_id,
+            channel_type=candidate.source_origin,
+            channel_account_id=candidate.channel_account_id,
+            external_product_id=candidate.external_product_order_id,
+            external_seller_product_code=_norm_text(candidate.product_code),
+            external_product_name_norm=_norm_text(candidate.product_name),
+            external_option_name_norm=_norm_text(candidate.option_name),
+            product_id=candidate.manual_product_id,
+            product_code=candidate.manual_product_code,
+            decision_type="CORRECTED",
+            confidence=100,
+            created_from_candidate_id=candidate.id,
+            created_by=created_by,
+        )
+
+    def _ensure_candidate_not_linked(self, candidate) -> None:
+        if candidate.return_expected_id is not None:
+            raise _business_error(
+                "CHANNEL_CANDIDATE_ALREADY_LINKED",
+                "이미 반품접수 row와 연결된 후보는 보정하거나 재처리할 수 없습니다.",
+            )
 
     def _get_scoped_candidate(self, db: Session, auth: AuthContext, *, candidate_id: int):
         candidate = repo.get_channel_return_candidate(db, candidate_id)

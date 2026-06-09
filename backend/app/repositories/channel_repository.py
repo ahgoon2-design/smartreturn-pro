@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelReturnCandidate, ChannelSyncJob
+from app.models.channels import (
+    ChannelAccount,
+    ChannelRawEvent,
+    ChannelReturnCandidate,
+    ChannelSyncJob,
+    ProductChannelMapping,
+)
 from app.models.returns import ReturnIntakeRow
 
 
@@ -233,6 +239,56 @@ def find_return_intake_row_by_tracking_and_product(
         .order_by(ReturnIntakeRow.id.desc())
         .first()
     )
+
+
+def find_product_channel_mappings(
+    db: Session,
+    *,
+    client_id: int,
+    channel_type: str,
+    external_seller_product_code: str | None,
+    external_product_name_norm: str | None,
+    external_option_name_norm: str | None,
+) -> list[ProductChannelMapping]:
+    query = db.query(ProductChannelMapping).filter(
+        ProductChannelMapping.client_id == client_id,
+        ProductChannelMapping.channel_type == channel_type,
+        ProductChannelMapping.decision_type.in_(("ACCEPTED", "CORRECTED")),
+    )
+    if external_seller_product_code:
+        query = query.filter(ProductChannelMapping.external_seller_product_code == external_seller_product_code)
+    else:
+        query = query.filter(ProductChannelMapping.external_seller_product_code.is_(None))
+    if external_product_name_norm:
+        query = query.filter(ProductChannelMapping.external_product_name_norm == external_product_name_norm)
+    else:
+        query = query.filter(ProductChannelMapping.external_product_name_norm.is_(None))
+    if external_option_name_norm:
+        query = query.filter(ProductChannelMapping.external_option_name_norm == external_option_name_norm)
+    else:
+        query = query.filter(ProductChannelMapping.external_option_name_norm.is_(None))
+    return query.order_by(ProductChannelMapping.updated_at.desc(), ProductChannelMapping.id.desc()).all()
+
+
+def upsert_product_channel_mapping(db: Session, **values) -> ProductChannelMapping:
+    existing_rows = find_product_channel_mappings(
+        db,
+        client_id=values["client_id"],
+        channel_type=values["channel_type"],
+        external_seller_product_code=values.get("external_seller_product_code"),
+        external_product_name_norm=values.get("external_product_name_norm"),
+        external_option_name_norm=values.get("external_option_name_norm"),
+    )
+    for row in existing_rows:
+        if row.product_id == values["product_id"]:
+            for field, value in values.items():
+                setattr(row, field, value)
+            db.flush()
+            return row
+    mapping = ProductChannelMapping(**values)
+    db.add(mapping)
+    db.flush()
+    return mapping
 
 
 def find_candidate_conflicts(

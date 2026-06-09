@@ -12,6 +12,7 @@ export type ChannelReturnCandidateStatus =
   | "NEEDS_REVIEW"
   | "BLOCKED";
 export type ChannelReturnExpectedCreateStatus = "NOT_CREATED" | "CREATED" | "SKIPPED_DUPLICATE" | "FAILED";
+export type ChannelReturnCorrectionStatus = "NONE" | "CORRECTED" | "REVIEWED" | "REPROCESS_REQUIRED";
 
 export interface ChannelAccount {
   id: number;
@@ -151,6 +152,17 @@ export interface ChannelReturnCandidate {
   risk_flags: string[];
   reviewed_at?: string | null;
   reviewed_by?: number | null;
+  manual_client_unit_id?: number | null;
+  manual_product_id?: number | null;
+  manual_product_code?: string | null;
+  manual_return_tracking_no?: string | null;
+  manual_original_tracking_no?: string | null;
+  manual_qty?: number | null;
+  manual_review_note?: string | null;
+  manual_reviewed_by?: number | null;
+  manual_reviewed_at?: string | null;
+  correction_status: ChannelReturnCorrectionStatus;
+  correction_summary: Record<string, unknown>;
   return_expected_id?: number | null;
   return_expected_created_at?: string | null;
   return_expected_create_status: ChannelReturnExpectedCreateStatus;
@@ -182,6 +194,16 @@ export interface ChannelRawEventsBulkTransformResponse {
 export interface ChannelReturnCandidateActionResponse {
   candidate: ChannelReturnCandidate;
   message: string;
+}
+
+export interface ChannelReturnCandidateCorrectionPayload {
+  client_unit_id?: number | null;
+  product_id?: number | null;
+  product_code?: string | null;
+  return_tracking_no?: string | null;
+  original_tracking_no?: string | null;
+  qty?: number | null;
+  review_note?: string | null;
 }
 
 export interface ChannelReturnExpectedCreateResponse {

@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_auth_context, get_db
 from app.core.permissions import require_password_change_completed
 from app.schemas.auth import AuthContext
-from app.schemas.channels import ChannelAccountCreateRequest, ChannelAccountUpdateRequest, ChannelSyncDryRunRequest
+from app.schemas.channels import (
+    ChannelAccountCreateRequest,
+    ChannelAccountUpdateRequest,
+    ChannelReturnCandidateCorrectionRequest,
+    ChannelSyncDryRunRequest,
+)
 from app.schemas.common import ApiResult, api_success
 from app.services.channel_service import account_service, sync_service, transform_service
 
@@ -264,6 +269,35 @@ def reprocess_channel_return_candidate_api(
         result_code="CHANNEL_RETURN_CANDIDATE_REPROCESSED",
         message="채널 반품접수 후보를 재처리했습니다.",
         data=transform_service.reprocess_candidate(db, auth, candidate_id=candidate_id),
+    )
+
+
+@router.patch("/return-candidates/{candidate_id}/correction", response_model=ApiResult)
+def update_channel_return_candidate_correction_api(
+    candidate_id: int,
+    request: ChannelReturnCandidateCorrectionRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_CANDIDATE_CORRECTION_SAVED",
+        message="채널 반품접수 후보 보정값을 저장했습니다.",
+        data=transform_service.save_correction(db, auth, candidate_id=candidate_id, request=request),
+    )
+
+
+@router.post("/return-candidates/{candidate_id}/clear-correction", response_model=ApiResult)
+def clear_channel_return_candidate_correction_api(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_RETURN_CANDIDATE_CORRECTION_CLEARED",
+        message="채널 반품접수 후보 보정값을 초기화했습니다.",
+        data=transform_service.clear_correction(db, auth, candidate_id=candidate_id),
     )
 
 
