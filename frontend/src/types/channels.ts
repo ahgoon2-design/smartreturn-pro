@@ -181,6 +181,9 @@ export interface ChannelReturnCandidate {
   safe_to_create_return_expected: boolean;
   safe_to_reprocess: boolean;
   safe_to_correct: boolean;
+  product_mapping_status: "NONE" | "MATCHED" | "PENDING" | "CONFLICT" | "REJECTED" | "INACTIVE";
+  product_mapping_id?: number | null;
+  product_mapping_conflict_reason?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -280,16 +283,42 @@ export interface ProductChannelMapping {
   external_option_name_norm?: string | null;
   product_id: number;
   product_code: string;
+  product_name?: string | null;
+  status: "ACTIVE" | "INACTIVE" | "CONFLICT" | "REJECTED";
   decision_type: string;
   confidence: number;
+  conflict_group_key?: string | null;
   conflict_status: "OK" | "CONFLICT";
   conflict_reason?: string | null;
+  approved_by?: number | null;
+  approved_at?: string | null;
+  rejected_by?: number | null;
+  rejected_at?: string | null;
+  disabled_by?: number | null;
+  disabled_at?: string | null;
+  note?: string | null;
+  last_used_at?: string | null;
+  used_count: number;
   created_from_candidate_id?: number | null;
   created_at: string;
   updated_at: string;
+  next_recommended_action: "APPROVE" | "RESOLVE_CONFLICT" | "DISABLE" | "NO_ACTION";
 }
 
 export interface ProductChannelMappingListResponse {
   items: ProductChannelMapping[];
   summary: Record<string, number>;
+}
+
+export interface ProductChannelMappingActionResponse {
+  mapping: ProductChannelMapping;
+  message: string;
+}
+
+export interface ProductChannelMappingConflictRebuildResponse {
+  total_count: number;
+  conflict_count: number;
+  active_count: number;
+  updated_count: number;
+  items: ProductChannelMapping[];
 }

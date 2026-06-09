@@ -1457,3 +1457,244 @@ def test_channel_product_mapping_list_marks_conflicts_and_filters(client: TestCl
     assert all(item["conflict_reason"] for item in data["items"])
     _assert_no_secret_fields(data)
     assert "raw_json" not in str(data)
+
+
+def test_channel_product_mapping_actions_and_rebuild_conflicts(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_MAPPING_ACTION")
+    unit = _create_unit(db_session, client_row.id, "UNIT_MAPPING_ACTION")
+    product_a = _create_product(db_session, client_row.id, "P-MAP-ACTION-A")
+    product_b = _create_product(db_session, client_row.id, "P-MAP-ACTION-B")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="mapping-action")
+    mapping_a = ProductChannelMapping(
+        client_id=client_row.id,
+        client_unit_id=unit.id,
+        channel_type="NAVER_SMARTSTORE",
+        channel_account_id=account_id,
+        external_seller_product_code="SELLERACTION",
+        external_product_name_norm="외부상품액션",
+        external_option_name_norm="기본",
+        product_id=product_a.id,
+        product_code=product_a.product_code,
+        product_name=product_a.product_name,
+        status="ACTIVE",
+        decision_type="CORRECTED",
+        confidence=100,
+    )
+    mapping_b = ProductChannelMapping(
+        client_id=client_row.id,
+        client_unit_id=unit.id,
+        channel_type="NAVER_SMARTSTORE",
+        channel_account_id=account_id,
+        external_seller_product_code="SELLERACTION",
+        external_product_name_norm="외부상품액션",
+        external_option_name_norm="기본",
+        product_id=product_b.id,
+        product_code=product_b.product_code,
+        product_name=product_b.product_name,
+        status="ACTIVE",
+        decision_type="CORRECTED",
+        confidence=100,
+    )
+    db_session.add_all([mapping_a, mapping_b])
+    db_session.commit()
+
+    rebuild = client.post("/api/channels/product-mappings/rebuild-conflicts", headers=headers)
+
+    assert rebuild.status_code == 200
+    assert rebuild.json()["data"]["conflict_count"] == 2
+    db_session.refresh(mapping_a)
+    assert mapping_a.status == "CONFLICT"
+
+    disable = client.post(f"/api/channels/product-mappings/{mapping_b.id}/disable", headers=headers, json={"note": "다른 상품으로 충돌"})
+    assert disable.status_code == 200
+    db_session.refresh(mapping_a)
+    db_session.refresh(mapping_b)
+    assert mapping_b.status == "INACTIVE"
+    assert mapping_a.status == "ACTIVE"
+
+    reject = client.post(f"/api/channels/product-mappings/{mapping_b.id}/reject", headers=headers, json={"note": "오매핑"})
+    assert reject.status_code == 200
+    assert reject.json()["data"]["mapping"]["status"] == "REJECTED"
+
+    approve = client.post(f"/api/channels/product-mappings/{mapping_b.id}/approve", headers=headers, json={"note": "재승인"})
+    assert approve.status_code == 200
+    assert approve.json()["data"]["mapping"]["status"] in {"ACTIVE", "CONFLICT"}
+    _assert_no_secret_fields(approve.json()["data"])
+
+
+def test_channel_product_mapping_status_controls_candidate_auto_match(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_MAPPING_STATUS")
+    unit = _create_unit(db_session, client_row.id, "UNIT_MAPPING_STATUS")
+    product = _create_product(db_session, client_row.id, "P-MAP-STATUS")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="mapping-status")
+    db_session.add(
+        ProductChannelMapping(
+            client_id=client_row.id,
+            client_unit_id=unit.id,
+            channel_type="NAVER_SMARTSTORE",
+            channel_account_id=account_id,
+            external_seller_product_code="SELLERSTATUS",
+            external_product_name_norm="외부상품상태",
+            external_option_name_norm="기본",
+            product_id=product.id,
+            product_code=product.product_code,
+            product_name=product.product_name,
+            status="ACTIVE",
+            decision_type="ACCEPTED",
+            confidence=100,
+        )
+    )
+    db_session.commit()
+    payload = {
+        "eventType": "RETURN_CLAIM",
+        "orderId": "ORDER-MAP-STATUS-A",
+        "productOrderId": "PO-MAP-STATUS-A",
+        "claimId": "CLAIM-MAP-STATUS-A",
+        "returnTrackingNo": "RTN-MAP-STATUS-A",
+        "sellerProductCode": "SELLER-STATUS",
+        "productName": "외부 상품 상태",
+        "optionName": "기본",
+        "qty": 1,
+    }
+    raw_event = _create_raw_event(db_session, account_id, payload)
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+    assert response.status_code == 200
+    candidate = response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "READY_FOR_INTAKE"
+    assert candidate["product_id"] == product.id
+    assert candidate["product_mapping_status"] == "MATCHED"
+
+    mapping = db_session.query(ProductChannelMapping).one()
+    disabled = client.post(f"/api/channels/product-mappings/{mapping.id}/disable", headers=headers, json={})
+    assert disabled.status_code == 200
+    raw_event_disabled = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            **payload,
+            "orderId": "ORDER-MAP-STATUS-B",
+            "productOrderId": "PO-MAP-STATUS-B",
+            "claimId": "CLAIM-MAP-STATUS-B",
+            "returnTrackingNo": "RTN-MAP-STATUS-B",
+        },
+    )
+    disabled_response = client.post(f"/api/channels/raw-events/{raw_event_disabled.id}/transform", headers=headers)
+    assert disabled_response.status_code == 200
+    disabled_candidate = disabled_response.json()["data"]["candidate"]
+    assert disabled_candidate["match_status"] == "PRODUCT_MATCH_PENDING"
+    assert disabled_candidate["product_mapping_status"] == "INACTIVE"
+
+
+def test_channel_product_mapping_conflict_blocks_candidate_auto_match(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_MAPPING_BLOCK")
+    unit = _create_unit(db_session, client_row.id, "UNIT_MAPPING_BLOCK")
+    product_a = _create_product(db_session, client_row.id, "P-MAP-BLOCK-A")
+    product_b = _create_product(db_session, client_row.id, "P-MAP-BLOCK-B")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="mapping-block")
+    for product in (product_a, product_b):
+        db_session.add(
+            ProductChannelMapping(
+                client_id=client_row.id,
+                client_unit_id=unit.id,
+                channel_type="NAVER_SMARTSTORE",
+                channel_account_id=account_id,
+                external_seller_product_code="SELLERBLOCK",
+                external_product_name_norm="외부상품충돌차단",
+                external_option_name_norm="기본",
+                product_id=product.id,
+                product_code=product.product_code,
+                product_name=product.product_name,
+                status="ACTIVE",
+                decision_type="ACCEPTED",
+                confidence=100,
+            )
+        )
+    db_session.commit()
+
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-MAP-BLOCK",
+            "productOrderId": "PO-MAP-BLOCK",
+            "claimId": "CLAIM-MAP-BLOCK",
+            "returnTrackingNo": "RTN-MAP-BLOCK",
+            "sellerProductCode": "SELLER-BLOCK",
+            "productName": "외부 상품 충돌 차단",
+            "optionName": "기본",
+            "qty": 1,
+        },
+    )
+    response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+
+    assert response.status_code == 200
+    candidate = response.json()["data"]["candidate"]
+    assert candidate["match_status"] == "PRODUCT_MATCH_PENDING"
+    assert candidate["product_mapping_status"] == "CONFLICT"
+    assert "PRODUCT_MAPPING_CONFLICT" in candidate["risk_flags"]
+
+
+def test_channel_product_mapping_manage_requires_manage_permission_and_scope(client: TestClient, db_session: Session):
+    client_a = _create_client(db_session, "CLIENT_MAPPING_SCOPE_A")
+    client_b = _create_client(db_session, "CLIENT_MAPPING_SCOPE_B")
+    unit_a = _create_unit(db_session, client_a.id, "UNIT_MAPPING_SCOPE_A")
+    unit_b = _create_unit(db_session, client_b.id, "UNIT_MAPPING_SCOPE_B")
+    product_a = _create_product(db_session, client_a.id, "P-MAP-SCOPE-A")
+    product_b = _create_product(db_session, client_b.id, "P-MAP-SCOPE-B")
+    admin_headers = _admin_headers(client, db_session)
+    account_a = _create_account(client, admin_headers, client_a.id, client_unit_id=unit_a.id, external_account_id="mapping-scope-a")
+    account_b = _create_account(client, admin_headers, client_b.id, client_unit_id=unit_b.id, external_account_id="mapping-scope-b")
+    mapping_b = ProductChannelMapping(
+        client_id=client_b.id,
+        client_unit_id=unit_b.id,
+        channel_type="NAVER_SMARTSTORE",
+        channel_account_id=account_b,
+        external_seller_product_code="SELLERSCOPE",
+        product_id=product_b.id,
+        product_code=product_b.product_code,
+        product_name=product_b.product_name,
+        status="ACTIVE",
+        decision_type="ACCEPTED",
+        confidence=100,
+    )
+    db_session.add_all(
+        [
+            ProductChannelMapping(
+                client_id=client_a.id,
+                client_unit_id=unit_a.id,
+                channel_type="NAVER_SMARTSTORE",
+                channel_account_id=account_a,
+                external_seller_product_code="SELLERSCOPEA",
+                product_id=product_a.id,
+                product_code=product_a.product_code,
+                product_name=product_a.product_name,
+                status="ACTIVE",
+                decision_type="ACCEPTED",
+                confidence=100,
+            ),
+            mapping_b,
+        ]
+    )
+    db_session.commit()
+    _create_user(
+        db_session,
+        login_id="mapping_view_only",
+        role_code="CLIENT_ADMIN",
+        permissions=["RETURN_VIEW"],
+        client_id=client_a.id,
+    )
+    view_headers = _login(client, "mapping_view_only")
+
+    list_response = client.get("/api/channels/product-mappings", headers=view_headers)
+    assert list_response.status_code == 200
+    assert {item["client_id"] for item in list_response.json()["data"]["items"]} == {client_a.id}
+
+    blocked_scope = client.get(f"/api/channels/product-mappings/{mapping_b.id}", headers=view_headers)
+    assert blocked_scope.status_code == 403
+
+    forbidden_manage = client.post(f"/api/channels/product-mappings/{mapping_b.id}/disable", headers=view_headers, json={})
+    assert forbidden_manage.status_code in {401, 403}

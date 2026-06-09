@@ -16,6 +16,8 @@ import type {
   ChannelSyncDryRunPayload,
   ChannelSyncDryRunResponse,
   ChannelSyncJob,
+  ProductChannelMappingActionResponse,
+  ProductChannelMappingConflictRebuildResponse,
   ProductChannelMappingListResponse,
 } from "../types/channels";
 
@@ -202,11 +204,14 @@ export async function listChannelReturnCandidates(options: ChannelReturnCandidat
 
 export interface ProductChannelMappingListOptions {
   clientId?: number;
+  clientUnitId?: number;
   channelType?: string;
   accountId?: number;
+  status?: string;
   decisionType?: string;
   conflictOnly?: boolean;
   keyword?: string;
+  sortBy?: string;
 }
 
 export async function listProductChannelMappings(options: ProductChannelMappingListOptions = {}) {
@@ -214,11 +219,17 @@ export async function listProductChannelMappings(options: ProductChannelMappingL
   if (options.clientId) {
     params.set("client_id", String(options.clientId));
   }
+  if (options.clientUnitId) {
+    params.set("client_unit_id", String(options.clientUnitId));
+  }
   if (options.channelType) {
     params.set("channel_type", options.channelType);
   }
   if (options.accountId) {
     params.set("account_id", String(options.accountId));
+  }
+  if (options.status && options.status !== "ALL") {
+    params.set("status", options.status);
   }
   if (options.decisionType) {
     params.set("decision_type", options.decisionType);
@@ -229,8 +240,54 @@ export async function listProductChannelMappings(options: ProductChannelMappingL
   if (options.keyword?.trim()) {
     params.set("keyword", options.keyword.trim());
   }
+  if (options.sortBy) {
+    params.set("sort_by", options.sortBy);
+  }
   const query = params.toString();
   return apiRequest<ProductChannelMappingListResponse>(`/api/channels/product-mappings${query ? `?${query}` : ""}`);
+}
+
+export async function approveProductChannelMapping(mappingId: number, note?: string) {
+  return apiRequest<ProductChannelMappingActionResponse>(`/api/channels/product-mappings/${mappingId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function rejectProductChannelMapping(mappingId: number, note?: string) {
+  return apiRequest<ProductChannelMappingActionResponse>(`/api/channels/product-mappings/${mappingId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function disableProductChannelMapping(mappingId: number, note?: string) {
+  return apiRequest<ProductChannelMappingActionResponse>(`/api/channels/product-mappings/${mappingId}/disable`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function enableProductChannelMapping(mappingId: number, note?: string) {
+  return apiRequest<ProductChannelMappingActionResponse>(`/api/channels/product-mappings/${mappingId}/enable`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function rebuildProductChannelMappingConflicts(options: { clientId?: number; channelType?: string } = {}) {
+  const params = new URLSearchParams();
+  if (options.clientId) {
+    params.set("client_id", String(options.clientId));
+  }
+  if (options.channelType) {
+    params.set("channel_type", options.channelType);
+  }
+  const query = params.toString();
+  return apiRequest<ProductChannelMappingConflictRebuildResponse>(
+    `/api/channels/product-mappings/rebuild-conflicts${query ? `?${query}` : ""}`,
+    { method: "POST" },
+  );
 }
 
 export async function reprocessChannelReturnCandidate(candidateId: number) {

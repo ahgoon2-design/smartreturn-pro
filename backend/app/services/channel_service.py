@@ -39,6 +39,9 @@ from app.schemas.channels import (
     ChannelSyncDryRunResponse,
     ChannelSyncJobResponse,
     ChannelSyncJobsResponse,
+    ProductChannelMappingActionRequest,
+    ProductChannelMappingActionResponse,
+    ProductChannelMappingConflictRebuildResponse,
     ProductChannelMappingResponse,
     ProductChannelMappingsResponse,
 )
@@ -65,6 +68,10 @@ RETURN_INTAKE_BATCH_STATUS_READY = "READY_FOR_PROCESSING"
 RETURN_INTAKE_ROW_STATUS_READY = "READY_FOR_PROCESSING"
 RETURN_INTAKE_ROW_VALID = "VALID"
 RETURN_INTAKE_TEAM_ASSIGNED = "ASSIGNED"
+PRODUCT_MAPPING_STATUS_ACTIVE = "ACTIVE"
+PRODUCT_MAPPING_STATUS_INACTIVE = "INACTIVE"
+PRODUCT_MAPPING_STATUS_CONFLICT = "CONFLICT"
+PRODUCT_MAPPING_STATUS_REJECTED = "REJECTED"
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -186,6 +193,7 @@ def _raw_event_list_item(event) -> ChannelRawEventListItem:
 
 def _candidate_response(candidate) -> ChannelReturnCandidateResponse:
     action_state = _candidate_action_state(candidate)
+    canonical = candidate.canonical_json if isinstance(candidate.canonical_json, dict) else {}
     return ChannelReturnCandidateResponse(
         id=candidate.id,
         channel_raw_event_id=candidate.channel_raw_event_id,
@@ -234,6 +242,9 @@ def _candidate_response(candidate) -> ChannelReturnCandidateResponse:
         safe_to_create_return_expected=action_state["safe_to_create_return_expected"],
         safe_to_reprocess=action_state["safe_to_reprocess"],
         safe_to_correct=action_state["safe_to_correct"],
+        product_mapping_status=canonical.get("product_mapping_status") or "NONE",
+        product_mapping_id=canonical.get("product_mapping_id"),
+        product_mapping_conflict_reason=canonical.get("product_mapping_conflict_reason"),
         created_at=candidate.created_at,
         updated_at=candidate.updated_at,
     )
@@ -340,10 +351,19 @@ def _product_mapping_conflict_key(mapping) -> tuple | None:
     return None
 
 
+def _product_mapping_conflict_key_string(mapping) -> str | None:
+    key = _product_mapping_conflict_key(mapping)
+    if key is None:
+        return None
+    return "|".join("" if part is None else str(part) for part in key)
+
+
 def _product_mapping_conflicts(mappings: list) -> dict[int, str]:
     grouped: dict[tuple, set[int]] = defaultdict(set)
     row_keys: dict[int, tuple] = {}
     for mapping in mappings:
+        if mapping.status in {PRODUCT_MAPPING_STATUS_INACTIVE, PRODUCT_MAPPING_STATUS_REJECTED}:
+            continue
         key = _product_mapping_conflict_key(mapping)
         if key is None:
             continue
@@ -355,6 +375,16 @@ def _product_mapping_conflicts(mappings: list) -> dict[int, str]:
         if key in conflict_keys:
             result[row_id] = "같은 외부 상품 기준이 서로 다른 SmartReturn 상품에 연결되어 자동확정에서 제외됩니다."
     return result
+
+
+def _product_mapping_next_action(mapping, conflicts: dict[int, str]) -> str:
+    if mapping.id in conflicts or mapping.status == PRODUCT_MAPPING_STATUS_CONFLICT:
+        return "RESOLVE_CONFLICT"
+    if mapping.status == PRODUCT_MAPPING_STATUS_ACTIVE:
+        return "DISABLE"
+    if mapping.status in {PRODUCT_MAPPING_STATUS_INACTIVE, PRODUCT_MAPPING_STATUS_REJECTED}:
+        return "APPROVE"
+    return "NO_ACTION"
 
 
 def _datetime_gte(value: datetime | None, threshold: datetime) -> bool:
@@ -1062,11 +1092,14 @@ class ChannelCanonicalTransformService:
         auth: AuthContext,
         *,
         client_id: int | None = None,
+        client_unit_id: int | None = None,
         channel_type: str | None = None,
         account_id: int | None = None,
+        status: str | None = None,
         decision_type: str | None = None,
         conflict_only: bool = False,
         keyword: str | None = None,
+        sort_by: str | None = None,
     ) -> dict:
         _require_channel_view(auth)
         effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
@@ -1077,36 +1110,20 @@ class ChannelCanonicalTransformService:
         rows = repo.list_product_channel_mappings(
             db,
             client_id=effective_client_id,
+            client_unit_id=client_unit_id,
             channel_type=channel_type,
             account_id=account_id,
+            status=status,
             decision_type=decision_type,
             keyword=keyword,
+            sort_by=sort_by,
             limit=200,
         )
         conflicts = _product_mapping_conflicts(rows)
         if conflict_only:
             rows = [row for row in rows if row.id in conflicts]
         items = [
-            ProductChannelMappingResponse(
-                mapping_id=row.id,
-                client_id=row.client_id,
-                client_unit_id=row.client_unit_id,
-                channel_type=row.channel_type,
-                channel_account_id=row.channel_account_id,
-                account_name=account_names.get(row.channel_account_id) if row.channel_account_id else None,
-                external_seller_product_code=row.external_seller_product_code,
-                external_product_name_norm=row.external_product_name_norm,
-                external_option_name_norm=row.external_option_name_norm,
-                product_id=row.product_id,
-                product_code=row.product_code,
-                decision_type=row.decision_type,
-                confidence=row.confidence,
-                conflict_status="CONFLICT" if row.id in conflicts else "OK",
-                conflict_reason=conflicts.get(row.id),
-                created_from_candidate_id=row.created_from_candidate_id,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
-            )
+            self._product_mapping_response(db, row, account_names=account_names, conflicts=conflicts)
             for row in rows
         ]
         return ProductChannelMappingsResponse(
@@ -1114,7 +1131,191 @@ class ChannelCanonicalTransformService:
             summary={
                 "total": len(rows),
                 "conflict_count": sum(1 for row in rows if row.id in conflicts),
+                "active_count": sum(1 for row in rows if row.status == PRODUCT_MAPPING_STATUS_ACTIVE and row.id not in conflicts),
+                "inactive_count": sum(1 for row in rows if row.status == PRODUCT_MAPPING_STATUS_INACTIVE),
+                "rejected_count": sum(1 for row in rows if row.status == PRODUCT_MAPPING_STATUS_REJECTED),
             },
+        ).model_dump()
+
+    def get_product_mapping(self, db: Session, auth: AuthContext, *, mapping_id: int) -> dict:
+        _require_channel_view(auth)
+        mapping = self._get_scoped_product_mapping(db, auth, mapping_id=mapping_id)
+        accounts = repo.list_channel_accounts(db, client_id=mapping.client_id, channel_type=mapping.channel_type, include_inactive=True)
+        conflicts = _product_mapping_conflicts(
+            repo.list_product_channel_mappings(db, client_id=mapping.client_id, channel_type=mapping.channel_type, limit=10000)
+        )
+        return self._product_mapping_response(
+            db,
+            mapping,
+            account_names={account.id: account.account_name for account in accounts},
+            conflicts=conflicts,
+        ).model_dump()
+
+    def approve_product_mapping(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        mapping_id: int,
+        request: ProductChannelMappingActionRequest,
+    ) -> dict:
+        _require_channel_manage(auth)
+        mapping = self._get_scoped_product_mapping(db, auth, mapping_id=mapping_id)
+        now = datetime.now(timezone.utc)
+        mapping = repo.update_product_channel_mapping(
+            db,
+            mapping,
+            {
+                "status": PRODUCT_MAPPING_STATUS_ACTIVE,
+                "decision_type": "ACCEPTED",
+                "confidence": max(mapping.confidence or 0, 100),
+                "approved_by": auth.user_id,
+                "approved_at": now,
+                "rejected_by": None,
+                "rejected_at": None,
+                "disabled_by": None,
+                "disabled_at": None,
+                "note": request.note,
+            },
+        )
+        changed = self._rebuild_product_mapping_conflicts_for_client(db, client_id=mapping.client_id, channel_type=mapping.channel_type)
+        db.commit()
+        mapping = repo.get_product_channel_mapping(db, mapping.id) or mapping
+        return ProductChannelMappingActionResponse(
+            mapping=self._product_mapping_response(db, mapping, conflicts=changed["conflicts"]),
+            message="상품 매핑을 승인했습니다. 충돌 상태를 재계산했습니다.",
+        ).model_dump()
+
+    def reject_product_mapping(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        mapping_id: int,
+        request: ProductChannelMappingActionRequest,
+    ) -> dict:
+        _require_channel_manage(auth)
+        mapping = self._get_scoped_product_mapping(db, auth, mapping_id=mapping_id)
+        now = datetime.now(timezone.utc)
+        mapping = repo.update_product_channel_mapping(
+            db,
+            mapping,
+            {
+                "status": PRODUCT_MAPPING_STATUS_REJECTED,
+                "decision_type": "REJECTED",
+                "rejected_by": auth.user_id,
+                "rejected_at": now,
+                "note": request.note,
+            },
+        )
+        changed = self._rebuild_product_mapping_conflicts_for_client(db, client_id=mapping.client_id, channel_type=mapping.channel_type)
+        db.commit()
+        return ProductChannelMappingActionResponse(
+            mapping=self._product_mapping_response(db, mapping, conflicts=changed["conflicts"]),
+            message="상품 매핑을 거부 처리했습니다. 자동확정에서 제외됩니다.",
+        ).model_dump()
+
+    def disable_product_mapping(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        mapping_id: int,
+        request: ProductChannelMappingActionRequest,
+    ) -> dict:
+        _require_channel_manage(auth)
+        mapping = self._get_scoped_product_mapping(db, auth, mapping_id=mapping_id)
+        now = datetime.now(timezone.utc)
+        mapping = repo.update_product_channel_mapping(
+            db,
+            mapping,
+            {
+                "status": PRODUCT_MAPPING_STATUS_INACTIVE,
+                "disabled_by": auth.user_id,
+                "disabled_at": now,
+                "note": request.note,
+            },
+        )
+        changed = self._rebuild_product_mapping_conflicts_for_client(db, client_id=mapping.client_id, channel_type=mapping.channel_type)
+        db.commit()
+        return ProductChannelMappingActionResponse(
+            mapping=self._product_mapping_response(db, mapping, conflicts=changed["conflicts"]),
+            message="상품 매핑을 비활성화했습니다. 자동확정에서 제외됩니다.",
+        ).model_dump()
+
+    def enable_product_mapping(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        mapping_id: int,
+        request: ProductChannelMappingActionRequest,
+    ) -> dict:
+        _require_channel_manage(auth)
+        mapping = self._get_scoped_product_mapping(db, auth, mapping_id=mapping_id)
+        mapping = repo.update_product_channel_mapping(
+            db,
+            mapping,
+            {
+                "status": PRODUCT_MAPPING_STATUS_ACTIVE,
+                "decision_type": "ACCEPTED" if mapping.decision_type == "REJECTED" else mapping.decision_type,
+                "disabled_by": None,
+                "disabled_at": None,
+                "note": request.note,
+            },
+        )
+        changed = self._rebuild_product_mapping_conflicts_for_client(db, client_id=mapping.client_id, channel_type=mapping.channel_type)
+        db.commit()
+        mapping = repo.get_product_channel_mapping(db, mapping.id) or mapping
+        return ProductChannelMappingActionResponse(
+            mapping=self._product_mapping_response(db, mapping, conflicts=changed["conflicts"]),
+            message="상품 매핑을 재활성화하고 충돌 상태를 재계산했습니다.",
+        ).model_dump()
+
+    def delete_product_mapping(self, db: Session, auth: AuthContext, *, mapping_id: int) -> dict:
+        _require_channel_manage(auth)
+        mapping = self._get_scoped_product_mapping(db, auth, mapping_id=mapping_id)
+        now = datetime.now(timezone.utc)
+        mapping = repo.update_product_channel_mapping(
+            db,
+            mapping,
+            {
+                "status": PRODUCT_MAPPING_STATUS_INACTIVE,
+                "disabled_by": auth.user_id,
+                "disabled_at": now,
+                "note": "DELETE 요청에 따라 soft delete 처리했습니다.",
+            },
+        )
+        changed = self._rebuild_product_mapping_conflicts_for_client(db, client_id=mapping.client_id, channel_type=mapping.channel_type)
+        db.commit()
+        return ProductChannelMappingActionResponse(
+            mapping=self._product_mapping_response(db, mapping, conflicts=changed["conflicts"]),
+            message="상품 매핑을 물리 삭제하지 않고 비활성 처리했습니다.",
+        ).model_dump()
+
+    def rebuild_product_mapping_conflicts(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        client_id: int | None = None,
+        channel_type: str | None = None,
+    ) -> dict:
+        _require_channel_manage(auth)
+        effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+        changed = self._rebuild_product_mapping_conflicts_for_client(
+            db,
+            client_id=effective_client_id,
+            channel_type=channel_type,
+        )
+        db.commit()
+        rows = repo.list_product_channel_mappings(db, client_id=effective_client_id, channel_type=channel_type, limit=200)
+        return ProductChannelMappingConflictRebuildResponse(
+            total_count=len(rows),
+            conflict_count=len(changed["conflicts"]),
+            active_count=sum(1 for row in rows if row.status == PRODUCT_MAPPING_STATUS_ACTIVE),
+            updated_count=changed["updated_count"],
+            items=[self._product_mapping_response(db, row, conflicts=changed["conflicts"]) for row in rows[:50]],
         ).model_dump()
 
     def get_candidate(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:
@@ -1461,6 +1662,82 @@ class ChannelCanonicalTransformService:
             "risk_flags": list(candidate.risk_flags_json or []),
         }
 
+    def _get_scoped_product_mapping(self, db: Session, auth: AuthContext, *, mapping_id: int):
+        mapping = repo.get_product_channel_mapping(db, mapping_id)
+        if mapping is None:
+            raise _business_error("CHANNEL_PRODUCT_MAPPING_NOT_FOUND", "채널 상품 매핑을 찾을 수 없습니다.", 404)
+        resolve_effective_client_id(auth, mapping.client_id)
+        return mapping
+
+    def _product_mapping_response(self, db: Session, mapping, *, account_names: dict[int, str] | None = None, conflicts: dict[int, str] | None = None):
+        conflicts = conflicts or {}
+        product_name = mapping.product_name
+        if not product_name:
+            product = master_repository.get_product_by_id(db, mapping.product_id)
+            product_name = product.product_name if product is not None else None
+        conflict_reason = mapping.conflict_reason or conflicts.get(mapping.id)
+        conflict_status = "CONFLICT" if mapping.status == PRODUCT_MAPPING_STATUS_CONFLICT or mapping.id in conflicts else "OK"
+        return ProductChannelMappingResponse(
+            mapping_id=mapping.id,
+            client_id=mapping.client_id,
+            client_unit_id=mapping.client_unit_id,
+            channel_type=mapping.channel_type,
+            channel_account_id=mapping.channel_account_id,
+            account_name=(account_names or {}).get(mapping.channel_account_id) if mapping.channel_account_id else None,
+            external_seller_product_code=mapping.external_seller_product_code,
+            external_product_name_norm=mapping.external_product_name_norm,
+            external_option_name_norm=mapping.external_option_name_norm,
+            product_id=mapping.product_id,
+            product_code=mapping.product_code,
+            product_name=product_name,
+            status=mapping.status,
+            decision_type=mapping.decision_type,
+            confidence=mapping.confidence,
+            conflict_group_key=mapping.conflict_group_key,
+            conflict_status=conflict_status,
+            conflict_reason=conflict_reason,
+            approved_by=mapping.approved_by,
+            approved_at=mapping.approved_at,
+            rejected_by=mapping.rejected_by,
+            rejected_at=mapping.rejected_at,
+            disabled_by=mapping.disabled_by,
+            disabled_at=mapping.disabled_at,
+            note=mapping.note,
+            last_used_at=mapping.last_used_at,
+            used_count=mapping.used_count,
+            created_from_candidate_id=mapping.created_from_candidate_id,
+            created_at=mapping.created_at,
+            updated_at=mapping.updated_at,
+            next_recommended_action=_product_mapping_next_action(mapping, conflicts),
+        )
+
+    def _rebuild_product_mapping_conflicts_for_client(
+        self,
+        db: Session,
+        *,
+        client_id: int | None,
+        channel_type: str | None = None,
+    ) -> dict:
+        rows = repo.list_product_channel_mappings(db, client_id=client_id, channel_type=channel_type, limit=10000)
+        conflicts = _product_mapping_conflicts(rows)
+        updated_count = 0
+        for row in rows:
+            group_key = _product_mapping_conflict_key_string(row)
+            next_values = {
+                "conflict_group_key": group_key,
+                "conflict_reason": conflicts.get(row.id),
+            }
+            if row.id in conflicts and row.status == PRODUCT_MAPPING_STATUS_ACTIVE:
+                next_values["status"] = PRODUCT_MAPPING_STATUS_CONFLICT
+            elif row.status == PRODUCT_MAPPING_STATUS_CONFLICT and row.id not in conflicts:
+                next_values["status"] = PRODUCT_MAPPING_STATUS_ACTIVE
+                next_values["conflict_reason"] = None
+            if any(getattr(row, key) != value for key, value in next_values.items()):
+                repo.update_product_channel_mapping(db, row, next_values)
+                updated_count += 1
+        refreshed = repo.list_product_channel_mappings(db, client_id=client_id, channel_type=channel_type, limit=10000)
+        return {"updated_count": updated_count, "conflicts": _product_mapping_conflicts(refreshed)}
+
     def _transform_and_save(self, db: Session, *, raw_event, account, reviewed_by: int | None):
         transformer = _transformer_for(raw_event)
         values = transformer.transform(raw_event, account)
@@ -1524,6 +1801,10 @@ class ChannelCanonicalTransformService:
             return values
         risks: list[str] = list(values.get("risk_flags_json") or [])
         reasons: list[str] = []
+        canonical_json = dict(values.get("canonical_json") or {})
+        canonical_json.setdefault("product_mapping_status", "NONE")
+        canonical_json.setdefault("product_mapping_id", None)
+        canonical_json.setdefault("product_mapping_conflict_reason", None)
 
         if not values.get("external_product_order_id") and not values.get("external_claim_id") and not values.get("return_tracking_no") and not values.get("original_tracking_no"):
             values["match_status"] = "BLOCKED"
@@ -1537,7 +1818,18 @@ class ChannelCanonicalTransformService:
             values["product_code"] = product.product_code
         else:
             risks.append("PRODUCT_MATCH_REQUIRED")
-            reasons.append("상품마스터 매칭이 필요합니다.")
+            mapping_status = values.get("_product_mapping_status")
+            if mapping_status == "CONFLICT":
+                risks.append("PRODUCT_MAPPING_CONFLICT")
+                reasons.append("이 외부 상품명/옵션명에 서로 다른 상품코드가 매핑되어 자동확정하지 않았습니다.")
+            elif mapping_status in {"REJECTED", "INACTIVE"}:
+                reasons.append("이전 보정 이력이 있으나 현재 자동확정 대상이 아닙니다.")
+            else:
+                reasons.append("명확한 상품코드/바코드/승인 매핑이 없어 상품 확인이 필요합니다.")
+        if values.get("_product_mapping_status"):
+            canonical_json["product_mapping_status"] = values.get("_product_mapping_status")
+            canonical_json["product_mapping_id"] = values.get("_product_mapping_id")
+            canonical_json["product_mapping_conflict_reason"] = values.get("_product_mapping_conflict_reason")
 
         if values.get("client_unit_id"):
             values["client_unit_id"] = values["client_unit_id"]
@@ -1580,8 +1872,12 @@ class ChannelCanonicalTransformService:
             reason = "고객사, 팀, 상품, 반품송장 기준이 확인되어 현장 스캔 처리 후보입니다."
 
         values["match_status"] = status
-        values["match_reason"] = reason if not reasons else reason
+        values["match_reason"] = reasons[0] if reasons else reason
         values["risk_flags_json"] = sorted(set(risks))
+        values["canonical_json"] = canonical_json
+        values.pop("_product_mapping_status", None)
+        values.pop("_product_mapping_id", None)
+        values.pop("_product_mapping_conflict_reason", None)
         return values
 
     def _apply_manual_corrections(self, candidate, values: dict) -> dict:
@@ -1624,21 +1920,63 @@ class ChannelCanonicalTransformService:
         return None
 
     def _match_product_channel_mapping(self, db: Session, client_id: int, values: dict):
-        mappings = repo.find_product_channel_mappings(
+        all_mappings = repo.find_product_channel_mappings(
             db,
             client_id=client_id,
             channel_type=values.get("source_origin") or "",
             external_seller_product_code=_norm_text(values.get("product_code")),
             external_product_name_norm=_norm_text(values.get("product_name")),
             external_option_name_norm=_norm_text(values.get("option_name")),
+            active_only=False,
         )
-        product_ids = {mapping.product_id for mapping in mappings}
-        if len(product_ids) != 1:
+        active_mappings = [
+            mapping
+            for mapping in all_mappings
+            if mapping.status == PRODUCT_MAPPING_STATUS_ACTIVE and mapping.decision_type in {"ACCEPTED", "CORRECTED"}
+        ]
+        if not active_mappings:
+            inactive = next((mapping for mapping in all_mappings if mapping.status == PRODUCT_MAPPING_STATUS_INACTIVE), None)
+            rejected = next((mapping for mapping in all_mappings if mapping.status == PRODUCT_MAPPING_STATUS_REJECTED), None)
+            conflict = next((mapping for mapping in all_mappings if mapping.status == PRODUCT_MAPPING_STATUS_CONFLICT), None)
+            if conflict is not None:
+                values["_product_mapping_status"] = "CONFLICT"
+                values["_product_mapping_id"] = conflict.id
+                values["_product_mapping_conflict_reason"] = conflict.conflict_reason or "상품 매핑 충돌이 있어 자동확정하지 않았습니다."
+            elif rejected is not None:
+                values["_product_mapping_status"] = "REJECTED"
+                values["_product_mapping_id"] = rejected.id
+                values["_product_mapping_conflict_reason"] = "거부 처리된 상품 매핑이라 자동확정하지 않았습니다."
+            elif inactive is not None:
+                values["_product_mapping_status"] = "INACTIVE"
+                values["_product_mapping_id"] = inactive.id
+                values["_product_mapping_conflict_reason"] = "비활성 상품 매핑이라 자동확정하지 않았습니다."
+            else:
+                values["_product_mapping_status"] = "PENDING"
             return None
-        mapping = mappings[0]
+        conflicts = _product_mapping_conflicts(active_mappings)
+        product_ids = {mapping.product_id for mapping in active_mappings}
+        if len(product_ids) != 1:
+            conflict = active_mappings[0]
+            values["_product_mapping_status"] = "CONFLICT"
+            values["_product_mapping_id"] = conflict.id
+            values["_product_mapping_conflict_reason"] = conflicts.get(conflict.id) or "같은 외부 상품 기준이 여러 상품에 연결되어 자동확정하지 않았습니다."
+            return None
+        mapping = active_mappings[0]
         product = master_repository.get_product_by_id(db, mapping.product_id)
         if product is None or product.client_id != client_id or not product.active_yn:
+            values["_product_mapping_status"] = "PENDING"
             return None
+        values["_product_mapping_status"] = "MATCHED"
+        values["_product_mapping_id"] = mapping.id
+        values["_product_mapping_conflict_reason"] = None
+        repo.update_product_channel_mapping(
+            db,
+            mapping,
+            {
+                "last_used_at": datetime.now(timezone.utc),
+                "used_count": (mapping.used_count or 0) + 1,
+            },
+        )
         return product
 
     def _validate_correction_values(
@@ -1701,6 +2039,7 @@ class ChannelCanonicalTransformService:
     def _save_product_channel_mapping(self, db: Session, candidate, created_by: int | None) -> None:
         if candidate.manual_product_id is None or not candidate.manual_product_code:
             return
+        product = master_repository.get_product_by_id(db, candidate.manual_product_id)
         repo.upsert_product_channel_mapping(
             db,
             client_id=candidate.client_id,
@@ -1713,6 +2052,8 @@ class ChannelCanonicalTransformService:
             external_option_name_norm=_norm_text(candidate.option_name),
             product_id=candidate.manual_product_id,
             product_code=candidate.manual_product_code,
+            product_name=product.product_name if product is not None else candidate.product_name,
+            status=PRODUCT_MAPPING_STATUS_ACTIVE,
             decision_type="CORRECTED",
             confidence=100,
             created_from_candidate_id=candidate.id,

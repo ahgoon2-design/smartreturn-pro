@@ -13,6 +13,7 @@ from app.schemas.channels import (
     ChannelAccountUpdateRequest,
     ChannelReturnCandidateCorrectionRequest,
     ChannelSyncDryRunRequest,
+    ProductChannelMappingActionRequest,
 )
 from app.schemas.common import ApiResult, api_success
 from app.services.channel_service import account_service, sync_service, transform_service
@@ -306,11 +307,14 @@ def list_channel_return_candidates_api(
 @router.get("/product-mappings", response_model=ApiResult)
 def list_channel_product_mappings_api(
     client_id: int | None = None,
+    client_unit_id: int | None = None,
     channel_type: str | None = None,
     account_id: int | None = None,
+    status: str | None = None,
     decision_type: str | None = None,
     conflict_only: bool = False,
     keyword: str | None = None,
+    sort_by: str | None = None,
     db: Session = Depends(get_db),
     auth: AuthContext = Depends(get_current_auth_context),
 ) -> ApiResult:
@@ -322,14 +326,119 @@ def list_channel_product_mappings_api(
             db,
             auth,
             client_id=client_id,
+            client_unit_id=client_unit_id,
             channel_type=channel_type,
             account_id=account_id,
+            status=status,
             decision_type=decision_type,
             conflict_only=conflict_only,
             keyword=keyword,
+            sort_by=sort_by,
         ),
     )
 
+
+@router.post("/product-mappings/rebuild-conflicts", response_model=ApiResult)
+def rebuild_channel_product_mapping_conflicts_api(
+    client_id: int | None = None,
+    channel_type: str | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPING_CONFLICTS_REBUILT",
+        message="채널 상품 매핑 충돌 상태를 재계산했습니다.",
+        data=transform_service.rebuild_product_mapping_conflicts(db, auth, client_id=client_id, channel_type=channel_type),
+    )
+
+
+@router.get("/product-mappings/{mapping_id}", response_model=ApiResult)
+def get_channel_product_mapping_api(
+    mapping_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPING_FOUND",
+        message="채널 상품 매핑을 조회했습니다.",
+        data=transform_service.get_product_mapping(db, auth, mapping_id=mapping_id),
+    )
+
+
+@router.post("/product-mappings/{mapping_id}/approve", response_model=ApiResult)
+def approve_channel_product_mapping_api(
+    mapping_id: int,
+    request: ProductChannelMappingActionRequest | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPING_APPROVED",
+        message="채널 상품 매핑을 승인했습니다.",
+        data=transform_service.approve_product_mapping(db, auth, mapping_id=mapping_id, request=request or ProductChannelMappingActionRequest()),
+    )
+
+
+@router.post("/product-mappings/{mapping_id}/reject", response_model=ApiResult)
+def reject_channel_product_mapping_api(
+    mapping_id: int,
+    request: ProductChannelMappingActionRequest | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPING_REJECTED",
+        message="채널 상품 매핑을 거부 처리했습니다.",
+        data=transform_service.reject_product_mapping(db, auth, mapping_id=mapping_id, request=request or ProductChannelMappingActionRequest()),
+    )
+
+
+@router.post("/product-mappings/{mapping_id}/disable", response_model=ApiResult)
+def disable_channel_product_mapping_api(
+    mapping_id: int,
+    request: ProductChannelMappingActionRequest | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPING_DISABLED",
+        message="채널 상품 매핑을 비활성화했습니다.",
+        data=transform_service.disable_product_mapping(db, auth, mapping_id=mapping_id, request=request or ProductChannelMappingActionRequest()),
+    )
+
+
+@router.post("/product-mappings/{mapping_id}/enable", response_model=ApiResult)
+def enable_channel_product_mapping_api(
+    mapping_id: int,
+    request: ProductChannelMappingActionRequest | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPING_ENABLED",
+        message="채널 상품 매핑을 재활성화했습니다.",
+        data=transform_service.enable_product_mapping(db, auth, mapping_id=mapping_id, request=request or ProductChannelMappingActionRequest()),
+    )
+
+
+@router.delete("/product-mappings/{mapping_id}", response_model=ApiResult)
+def delete_channel_product_mapping_api(
+    mapping_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPING_SOFT_DELETED",
+        message="채널 상품 매핑을 비활성 처리했습니다.",
+        data=transform_service.delete_product_mapping(db, auth, mapping_id=mapping_id),
+    )
 
 @router.get("/return-candidates/{candidate_id}", response_model=ApiResult)
 def get_channel_return_candidate_api(

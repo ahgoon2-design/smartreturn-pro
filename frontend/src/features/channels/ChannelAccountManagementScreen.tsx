@@ -1,13 +1,16 @@
 import { ApiOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, InputNumber, Segmented, Select, Space, Switch, Typography, message } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
+  approveProductChannelMapping,
   createChannelAccount,
   createReturnExpectedFromChannelAccount,
   createReturnExpectedFromChannelCandidate,
   clearChannelReturnCandidateCorrection,
+  disableProductChannelMapping,
   disableChannelAccount,
+  enableProductChannelMapping,
   getChannelDashboardSummary,
   listChannelAccounts,
   listProductChannelMappings,
@@ -16,6 +19,8 @@ import {
   listChannelSyncJobs,
   markChannelReturnCandidateReviewed,
   reprocessChannelReturnCandidate,
+  rebuildProductChannelMappingConflicts,
+  rejectProductChannelMapping,
   runChannelDryRunSync,
   testChannelConnection,
   transformChannelAccountRawEvents,
@@ -127,7 +132,7 @@ export function ChannelAccountManagementScreen() {
   const [candidateSummary, setCandidateSummary] = useState<Record<string, number>>({});
   const [candidateStatusFilter, setCandidateStatusFilter] = useState<CandidateStatusFilter>("ALL");
   const [candidateKeyword, setCandidateKeyword] = useState("");
-  const [mappingConflictOnly, setMappingConflictOnly] = useState(false);
+  const [mappingStatusFilter, setMappingStatusFilter] = useState<"ALL" | "ACTIVE" | "CONFLICT" | "INACTIVE" | "REJECTED">("ALL");
   const [selectedAccount, setSelectedAccount] = useState<ChannelAccount | null>(null);
   const [editingAccount, setEditingAccount] = useState<ChannelAccount | null>(null);
   const [correctingCandidate, setCorrectingCandidate] = useState<ChannelReturnCandidate | null>(null);
@@ -144,7 +149,7 @@ export function ChannelAccountManagementScreen() {
 
   useEffect(() => {
     void loadInitialData();
-  }, [includeInactive, candidateStatusFilter, mappingConflictOnly]);
+  }, [includeInactive, candidateStatusFilter, mappingStatusFilter]);
 
   useEffect(() => {
     if (selectedClientId) {
@@ -335,11 +340,52 @@ export function ChannelAccountManagementScreen() {
       { key: "external_product_name_norm", title: "외부 상품명", dataIndex: "external_product_name_norm", minWidth: 170 },
       { key: "external_option_name_norm", title: "외부 옵션명", dataIndex: "external_option_name_norm", minWidth: 150 },
       { key: "product_code", title: "연결 상품코드", dataIndex: "product_code", width: 150, copyable: true },
+      { key: "product_name", title: "연결 상품명", dataIndex: "product_name", minWidth: 170, render: (value) => toDisplayText(value) },
+      {
+        key: "status",
+        title: "상태",
+        dataIndex: "status",
+        width: 110,
+        render: (value) => <SmartStatusBadge status={String(value)} label={mappingStatusLabel(String(value))} />,
+      },
       { key: "decision_type", title: "이력", dataIndex: "decision_type", width: 110, render: (value) => <SmartStatusBadge status={String(value)} label={String(value)} /> },
       { key: "confidence", title: "신뢰도", dataIndex: "confidence", width: 90, align: "right", render: (value) => `${value || 0}%` },
+      { key: "used_count", title: "사용", dataIndex: "used_count", width: 80, align: "right", render: (value) => `${value || 0}` },
+      { key: "last_used_at", title: "마지막 사용", dataIndex: "last_used_at", width: 150, render: formatDateTime },
       { key: "created_from_candidate_id", title: "후보 ID", dataIndex: "created_from_candidate_id", width: 100, render: (value) => toDisplayText(value) },
       { key: "conflict_reason", title: "충돌 사유", dataIndex: "conflict_reason", minWidth: 220, render: (value) => toDisplayText(value) },
       { key: "updated_at", title: "갱신시각", dataIndex: "updated_at", width: 150, render: formatDateTime },
+    ],
+    [],
+  );
+
+  const productMappingActions = useMemo<SmartGridRowAction<ProductChannelMapping>[]>(
+    () => [
+      {
+        key: "approve",
+        label: "승인",
+        disabled: (record) => record.status === "ACTIVE" && record.conflict_status !== "CONFLICT",
+        onClick: (record) => confirmMappingAction(record, "approve"),
+      },
+      {
+        key: "disable",
+        label: "비활성",
+        disabled: (record) => record.status === "INACTIVE",
+        onClick: (record) => confirmMappingAction(record, "disable"),
+      },
+      {
+        key: "enable",
+        label: "재활성",
+        disabled: (record) => record.status === "ACTIVE",
+        onClick: (record) => confirmMappingAction(record, "enable"),
+      },
+      {
+        key: "reject",
+        label: "거부",
+        danger: true,
+        disabled: (record) => record.status === "REJECTED",
+        onClick: (record) => confirmMappingAction(record, "reject"),
+      },
     ],
     [],
   );
@@ -361,7 +407,11 @@ export function ChannelAccountManagementScreen() {
         listChannelRawEvents(),
         listChannelReturnCandidates(candidateOptions),
         getChannelDashboardSummary(),
-        listProductChannelMappings({ conflictOnly: mappingConflictOnly }),
+        listProductChannelMappings({
+          status: mappingStatusFilter === "ALL" || mappingStatusFilter === "CONFLICT" ? undefined : mappingStatusFilter,
+          conflictOnly: mappingStatusFilter === "CONFLICT",
+          sortBy: "updated_at",
+        }),
       ]);
       setClients(clientItems);
       setAccounts(accountResult.items);
@@ -602,6 +652,60 @@ export function ChannelAccountManagementScreen() {
     }
   }
 
+  function confirmMappingAction(mapping: ProductChannelMapping, action: "approve" | "disable" | "enable" | "reject") {
+    const label = {
+      approve: "승인",
+      disable: "비활성",
+      enable: "재활성",
+      reject: "거부",
+    }[action];
+    Modal.confirm({
+      title: `상품 매핑 ${label}`,
+      content:
+        action === "approve"
+          ? "충돌이 남아 있으면 승인 후에도 자동확정에서 제외될 수 있습니다."
+          : "이 작업은 원본 이벤트를 수정하지 않고 상품 매핑 학습 상태만 변경합니다.",
+      okText: label,
+      cancelText: "취소",
+      okButtonProps: { danger: action === "reject" },
+      onOk: () => handleProductMappingAction(mapping, action),
+    });
+  }
+
+  async function handleProductMappingAction(mapping: ProductChannelMapping, action: "approve" | "disable" | "enable" | "reject") {
+    setActionLoadingId(mapping.mapping_id);
+    try {
+      const note = `채널 연동 관리 화면에서 ${action} 처리`;
+      const result =
+        action === "approve"
+          ? await approveProductChannelMapping(mapping.mapping_id, note)
+          : action === "disable"
+            ? await disableProductChannelMapping(mapping.mapping_id, note)
+            : action === "enable"
+              ? await enableProductChannelMapping(mapping.mapping_id, note)
+              : await rejectProductChannelMapping(mapping.mapping_id, note);
+      message.success(result.message);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "상품 매핑 상태를 변경하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleRebuildProductMappingConflicts() {
+    setActionLoadingId(-1);
+    try {
+      const result = await rebuildProductChannelMappingConflicts();
+      message.success(`충돌 재계산 완료: 충돌 ${result.conflict_count}건, 갱신 ${result.updated_count}건`);
+      await loadInitialData();
+    } catch (error) {
+      message.error(toUserMessage(error, "상품 매핑 충돌을 재계산하지 못했습니다."));
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
   async function handleBulkCreateReturnExpected(account: ChannelAccount) {
     setActionLoadingId(account.id);
     try {
@@ -793,18 +897,37 @@ export function ChannelAccountManagementScreen() {
         title="상품 매핑 학습"
         extra={
           <Space>
-            <Switch checked={mappingConflictOnly} onChange={setMappingConflictOnly} checkedChildren="충돌만" unCheckedChildren="전체" />
+            <Segmented
+              value={mappingStatusFilter}
+              options={[
+                { value: "ALL", label: "전체" },
+                { value: "ACTIVE", label: "활성" },
+                { value: "CONFLICT", label: "충돌" },
+                { value: "INACTIVE", label: "비활성" },
+                { value: "REJECTED", label: "거부" },
+              ]}
+              onChange={(value) => setMappingStatusFilter(value as typeof mappingStatusFilter)}
+            />
+            <Button icon={<SyncOutlined />} loading={actionLoadingId === -1} onClick={() => void handleRebuildProductMappingConflicts()}>
+              충돌 재계산
+            </Button>
             <Typography.Text type="secondary">
               학습 {productMappingSummary.total || 0}건 / 충돌 {productMappingSummary.conflict_count || 0}건
             </Typography.Text>
           </Space>
         }
       >
+        <section className="smart-summary-grid" aria-label="상품 매핑 학습 요약">
+          <SmartSummaryCard label="전체 매핑" value={`${productMappingSummary.total || 0}건`} />
+          <SmartSummaryCard label="활성 매핑" value={`${productMappingSummary.active_count || 0}건`} />
+          <SmartSummaryCard label="충돌 매핑" value={`${productMappingSummary.conflict_count || 0}건`} />
+          <SmartSummaryCard label="비활성/거부" value={`${(productMappingSummary.inactive_count || 0) + (productMappingSummary.rejected_count || 0)}건`} />
+        </section>
         <Alert
           type={dashboardSummary.product_mapping_conflict_count > 0 ? "warning" : "info"}
           showIcon
           message="상품 매핑 학습 상태"
-          description="충돌 매핑은 자동확정 대상에서 제외됩니다. 수정/삭제 관리는 다음 단계에서 별도 화면으로 분리합니다."
+          description="충돌, 비활성, 거부 매핑은 자동확정 대상에서 제외됩니다. 상품명/옵션명 유사도만으로는 자동확정하지 않습니다."
         />
         <SmartDataGrid<ProductChannelMapping>
           rows={productMappings}
@@ -812,6 +935,7 @@ export function ChannelAccountManagementScreen() {
           columns={productMappingColumns}
           loading={loading || actionLoadingId !== null}
           emptyText="학습된 상품 매핑이 없습니다."
+          rowActions={productMappingActions}
           maxHeight={260}
           enableCopy
         />
@@ -985,6 +1109,17 @@ function correctionStatusLabel(value: string) {
       CORRECTED: "보정됨",
       REVIEWED: "확인됨",
       REPROCESS_REQUIRED: "재처리 필요",
+    }[value] || value
+  );
+}
+
+function mappingStatusLabel(value: string) {
+  return (
+    {
+      ACTIVE: "활성",
+      INACTIVE: "비활성",
+      CONFLICT: "충돌",
+      REJECTED: "거부",
     }[value] || value
   );
 }

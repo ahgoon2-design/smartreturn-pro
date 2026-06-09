@@ -26,6 +26,8 @@ CHANNEL_RETURN_NEXT_ACTIONS = {
     "ALREADY_CREATED",
     "BLOCKED_NO_ACTION",
 }
+PRODUCT_CHANNEL_MAPPING_STATUSES = {"ACTIVE", "INACTIVE", "CONFLICT", "REJECTED"}
+PRODUCT_CHANNEL_MAPPING_NEXT_ACTIONS = {"APPROVE", "RESOLVE_CONFLICT", "DISABLE", "NO_ACTION"}
 
 
 class ChannelAccountCreateRequest(BaseModel):
@@ -263,6 +265,9 @@ class ChannelReturnCandidateResponse(BaseModel):
     safe_to_create_return_expected: bool = False
     safe_to_reprocess: bool = False
     safe_to_correct: bool = False
+    product_mapping_status: str = "NONE"
+    product_mapping_id: int | None = None
+    product_mapping_conflict_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -374,15 +379,53 @@ class ProductChannelMappingResponse(BaseModel):
     external_option_name_norm: str | None = None
     product_id: int
     product_code: str
+    product_name: str | None = None
+    status: str = "ACTIVE"
     decision_type: str
     confidence: int
+    conflict_group_key: str | None = None
     conflict_status: str
     conflict_reason: str | None = None
+    approved_by: int | None = None
+    approved_at: datetime | None = None
+    rejected_by: int | None = None
+    rejected_at: datetime | None = None
+    disabled_by: int | None = None
+    disabled_at: datetime | None = None
+    note: str | None = None
+    last_used_at: datetime | None = None
+    used_count: int = 0
     created_from_candidate_id: int | None = None
     created_at: datetime
     updated_at: datetime
+    next_recommended_action: str = "NO_ACTION"
 
 
 class ProductChannelMappingsResponse(BaseModel):
     items: list[ProductChannelMappingResponse]
     summary: dict[str, int] = Field(default_factory=dict)
+
+
+class ProductChannelMappingActionRequest(BaseModel):
+    note: str | None = None
+
+    @field_validator("note")
+    @classmethod
+    def _optional_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value[:500] or None
+
+
+class ProductChannelMappingActionResponse(BaseModel):
+    mapping: ProductChannelMappingResponse
+    message: str
+
+
+class ProductChannelMappingConflictRebuildResponse(BaseModel):
+    total_count: int
+    conflict_count: int
+    active_count: int
+    updated_count: int
+    items: list[ProductChannelMappingResponse] = Field(default_factory=list)

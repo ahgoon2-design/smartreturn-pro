@@ -303,12 +303,18 @@ def find_product_channel_mappings(
     external_seller_product_code: str | None,
     external_product_name_norm: str | None,
     external_option_name_norm: str | None,
+    active_only: bool = True,
 ) -> list[ProductChannelMapping]:
     query = db.query(ProductChannelMapping).filter(
         ProductChannelMapping.client_id == client_id,
         ProductChannelMapping.channel_type == channel_type,
-        ProductChannelMapping.decision_type.in_(("ACCEPTED", "CORRECTED")),
+        ProductChannelMapping.decision_type.in_(("ACCEPTED", "CORRECTED", "REJECTED")),
     )
+    if active_only:
+        query = query.filter(
+            ProductChannelMapping.decision_type.in_(("ACCEPTED", "CORRECTED")),
+            ProductChannelMapping.status == "ACTIVE",
+        )
     if external_seller_product_code:
         query = query.filter(ProductChannelMapping.external_seller_product_code == external_seller_product_code)
     else:
@@ -351,8 +357,11 @@ def list_product_channel_mappings(
     client_id: int | None = None,
     channel_type: str | None = None,
     account_id: int | None = None,
+    client_unit_id: int | None = None,
+    status: str | None = None,
     decision_type: str | None = None,
     keyword: str | None = None,
+    sort_by: str | None = None,
     limit: int = 100,
 ) -> list[ProductChannelMapping]:
     query = db.query(ProductChannelMapping)
@@ -362,6 +371,10 @@ def list_product_channel_mappings(
         query = query.filter(ProductChannelMapping.channel_type == channel_type)
     if account_id is not None:
         query = query.filter(ProductChannelMapping.channel_account_id == account_id)
+    if client_unit_id is not None:
+        query = query.filter(ProductChannelMapping.client_unit_id == client_unit_id)
+    if status:
+        query = query.filter(ProductChannelMapping.status == status)
     if decision_type:
         query = query.filter(ProductChannelMapping.decision_type == decision_type)
     if keyword:
@@ -372,9 +385,27 @@ def list_product_channel_mappings(
                 ProductChannelMapping.external_product_name_norm.ilike(like),
                 ProductChannelMapping.external_option_name_norm.ilike(like),
                 ProductChannelMapping.product_code.ilike(like),
+                ProductChannelMapping.product_name.ilike(like),
             )
         )
-    return query.order_by(ProductChannelMapping.updated_at.desc(), ProductChannelMapping.id.desc()).limit(limit).all()
+    if sort_by == "created_at":
+        query = query.order_by(ProductChannelMapping.created_at.desc(), ProductChannelMapping.id.desc())
+    elif sort_by == "used_count":
+        query = query.order_by(ProductChannelMapping.used_count.desc(), ProductChannelMapping.updated_at.desc())
+    else:
+        query = query.order_by(ProductChannelMapping.updated_at.desc(), ProductChannelMapping.id.desc())
+    return query.limit(limit).all()
+
+
+def get_product_channel_mapping(db: Session, mapping_id: int) -> ProductChannelMapping | None:
+    return db.query(ProductChannelMapping).filter(ProductChannelMapping.id == mapping_id).one_or_none()
+
+
+def update_product_channel_mapping(db: Session, mapping: ProductChannelMapping, values: dict) -> ProductChannelMapping:
+    for field, value in values.items():
+        setattr(mapping, field, value)
+    db.flush()
+    return mapping
 
 
 def find_candidate_conflicts(
