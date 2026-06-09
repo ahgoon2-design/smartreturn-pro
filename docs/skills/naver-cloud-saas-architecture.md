@@ -320,7 +320,7 @@ Object Storage:
 - API/Worker/Scheduler 컨테이너 분리
 - PostgreSQL 파티셔닝
 - 대량 이력 아카이브
-- `agency_id` 도입 검토
+- `agency_id` 기반 대리점 scope, 정산, 권한 정책 고도화
 
 4단계: 대형 고객/전국 SaaS
 

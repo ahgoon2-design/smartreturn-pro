@@ -197,6 +197,15 @@ body {
   margin-top: 10px;
 }
 
+.smart-paragraph-compact {
+  margin-bottom: 0;
+}
+
+.smart-paragraph-note {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
 .smart-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
