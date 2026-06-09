@@ -9,8 +9,8 @@ from sqlalchemy.pool import StaticPool
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
-from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.master import Client, Warehouse
+from app.models.auth import AuthLoginLog, Permission, Role, RolePermission, User, UserRole
+from app.models.master import Agency, Client, Warehouse
 
 
 @pytest.fixture()
@@ -21,6 +21,7 @@ def db_session() -> Generator[Session, None, None]:
         poolclass=StaticPool,
     )
     for table in (
+        Agency.__table__,
         Client.__table__,
         Warehouse.__table__,
         Role.__table__,
@@ -28,6 +29,7 @@ def db_session() -> Generator[Session, None, None]:
         User.__table__,
         UserRole.__table__,
         RolePermission.__table__,
+        AuthLoginLog.__table__,
     ):
         table.create(bind=engine)
 
@@ -60,6 +62,8 @@ def _create_user(
     active_yn: bool = True,
     must_change_password: bool = True,
 ) -> User:
+    agency = Agency(agency_code="LOGIN_AGENCY", agency_name="로그인 대리점", active_yn=True)
+    client = Client(client_code="LOGIN_CLIENT", client_name="로그인 고객사", agency_id=None, active_yn=True)
     role = Role(
         role_code="SUPER_ADMIN",
         role_name="최고 관리자",
@@ -76,10 +80,16 @@ def _create_user(
         login_id=login_id,
         user_name="테스트",
         password_hash=hash_password(password),
+        agency_id=None,
+        client_id=None,
         active_yn=active_yn,
         must_change_password=must_change_password,
     )
-    db.add_all([role, permission, user])
+    db.add_all([agency, client, role, permission, user])
+    db.flush()
+    client.agency_id = agency.id
+    user.agency_id = agency.id
+    user.client_id = client.id
     db.flush()
     db.add_all(
         [
@@ -110,6 +120,10 @@ def test_login_success_returns_access_token(client: TestClient, db_session: Sess
     assert data["must_change_password"] is True
     assert data["user"]["roles"] == ["SUPER_ADMIN"]
     _assert_no_password_material(data)
+    login_log = db_session.query(AuthLoginLog).filter(AuthLoginLog.login_id == "tester").one()
+    assert login_log.result == "SUCCESS"
+    assert login_log.agency_id is not None
+    assert login_log.client_id is not None
 
 
 def test_login_rejects_wrong_password(client: TestClient, db_session: Session):
@@ -119,6 +133,10 @@ def test_login_rejects_wrong_password(client: TestClient, db_session: Session):
 
     assert response.status_code == 401
     assert response.json()["result_code"] == "INVALID_LOGIN"
+    login_log = db_session.query(AuthLoginLog).filter(AuthLoginLog.login_id == "tester").one()
+    assert login_log.result == "FAILURE"
+    assert login_log.agency_id is not None
+    assert login_log.client_id is not None
 
 
 def test_login_rejects_missing_user(client: TestClient):

@@ -520,6 +520,7 @@ def _external_outbound_batch_summary_response(batch, client) -> dict:
     return ReturnExternalOutboundBatchSummaryResponse(
         batch_id=batch.id,
         batch_no=batch.batch_no,
+        agency_id=batch.agency_id,
         client_id=batch.client_id,
         client_code=client.client_code if client else None,
         client_name=client.client_name if client else None,
@@ -715,6 +716,7 @@ def _return_history_response(row: ReturnIntakeRow, client, attachment_count: int
 def _attachment_response(attachment: ReturnProcessingAttachment) -> dict:
     return ReturnProcessingAttachmentResponse(
         attachment_id=attachment.id,
+        agency_id=attachment.agency_id,
         task_id=attachment.return_intake_row_id,
         row_id=attachment.return_intake_row_id,
         batch_id=attachment.batch_id,
@@ -1351,6 +1353,7 @@ def upload_return_processing_attachment(
     storage_path = RETURN_PROCESSING_UPLOAD_ROOT / str(row.client_id) / str(row.id) / stored_filename
 
     attachment = ReturnProcessingAttachment(
+        agency_id=row.agency_id or master_repository.get_client_agency_id(db, row.client_id),
         return_intake_row_id=row.id,
         client_id=row.client_id,
         batch_id=row.batch_id,
@@ -1896,9 +1899,11 @@ def confirm_return_external_outbound(
         if confirmed_row_refs:
             confirmed_at = datetime.now(timezone.utc)
             client_ids = {row.client_id for row in confirmed_row_refs}
+            agency_ids = {row.agency_id for row in confirmed_row_refs if row.agency_id is not None}
             batch_client_id = next(iter(client_ids)) if len(client_ids) == 1 else effective_client_id
             outbound_batch = repo.create_external_outbound_batch(
                 db,
+                agency_id=next(iter(agency_ids)) if len(agency_ids) == 1 else None,
                 client_id=batch_client_id,
                 batch_no=_generate_external_outbound_batch_no(confirmed_at),
                 status=EXTERNAL_OUTBOUND_BATCH_STATUS_CONFIRMED,
@@ -1949,6 +1954,7 @@ def list_return_external_outbound_batches(
 ) -> dict:
     _require_return_view(auth)
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    effective_agency_id = resolve_effective_agency_id(auth, None, allow_all_agencies=True)
     safe_status = _safe_text(status)
     if safe_status:
         safe_status = safe_status.upper()
@@ -1961,6 +1967,7 @@ def list_return_external_outbound_batches(
     safe_page_size = min(max(page_size, 1), 500)
     batches, total_count = repo.list_external_outbound_batches(
         db,
+        agency_id=effective_agency_id,
         client_id=effective_client_id,
         status=safe_status,
         date_from=date_from,
@@ -1987,9 +1994,11 @@ def get_return_external_outbound_batch_detail(
 ) -> dict:
     _require_return_view(auth)
     effective_client_id = resolve_effective_client_id(auth, None, allow_all_clients=True)
+    effective_agency_id = resolve_effective_agency_id(auth, None, allow_all_agencies=True)
     batch_with_client = repo.get_external_outbound_batch_with_client(
         db,
         batch_id,
+        agency_id=effective_agency_id,
         client_id=effective_client_id,
     )
     if batch_with_client is None:

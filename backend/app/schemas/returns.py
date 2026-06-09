@@ -351,6 +351,7 @@ class ReturnProcessingJudgeResponse(ReturnProcessingTaskResponse):
 
 class ReturnProcessingAttachmentResponse(BaseModel):
     attachment_id: int
+    agency_id: int | None = None
     task_id: int
     row_id: int
     batch_id: int
@@ -506,6 +507,7 @@ class ReturnExternalOutboundConfirmResponse(BaseModel):
 class ReturnExternalOutboundBatchSummaryResponse(BaseModel):
     batch_id: int
     batch_no: str
+    agency_id: int | None = None
     client_id: int | None = None
     client_code: str | None = None
     client_name: str | None = None

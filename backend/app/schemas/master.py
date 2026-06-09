@@ -155,6 +155,7 @@ class WarehouseUpdateRequest(BaseModel):
 
 class ClientWarehouseSummary(BaseModel):
     setting_id: int
+    agency_id: int | None = None
     client_id: int
     client_code: str | None = None
     client_name: str
@@ -178,6 +179,7 @@ class ClientWarehouseSettingResponse(ClientWarehouseSummary):
 
 class ClientUnitResponse(BaseModel):
     unit_id: int
+    agency_id: int | None = None
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
@@ -250,6 +252,7 @@ class ClientUnitUpdateRequest(BaseModel):
 
 class ReturnJudgmentWarehouseRouteResponse(BaseModel):
     route_id: int
+    agency_id: int | None = None
     client_id: int
     client_code: str | None = None
     client_name: str | None = None
@@ -372,6 +375,7 @@ class WarehouseOptionResponse(BaseModel):
 
 class ProductBarcodeDto(BaseModel):
     barcode_id: int
+    agency_id: int | None = None
     barcode: str
     barcode_type: str
     unit_qty: int
@@ -381,6 +385,7 @@ class ProductBarcodeDto(BaseModel):
 
 class ProductSummary(BaseModel):
     product_id: int
+    agency_id: int | None = None
     client_id: int
     client_name: str
     product_code: str

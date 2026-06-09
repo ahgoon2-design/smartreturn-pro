@@ -219,6 +219,7 @@ def create_client_unit(
     memo: str | None = None,
 ) -> ClientUnit:
     unit = ClientUnit(
+        agency_id=get_client_agency_id(db, client_id),
         client_id=client_id,
         unit_code=unit_code,
         unit_name=unit_name,
@@ -344,6 +345,7 @@ def create_return_judgment_warehouse_route(
     memo: str | None = None,
 ) -> ReturnJudgmentWarehouseRoute:
     route = ReturnJudgmentWarehouseRoute(
+        agency_id=get_client_agency_id(db, client_id),
         client_id=client_id,
         client_unit_id=client_unit_id,
         judgment_code=judgment_code,
@@ -505,6 +507,7 @@ def create_client_warehouse_setting(
     is_default: bool = False,
 ) -> ClientWarehouseSetting:
     setting = ClientWarehouseSetting(
+        agency_id=get_client_agency_id(db, client_id),
         client_id=client_id,
         warehouse_id=warehouse_id,
         usage_type=usage_type,
@@ -582,6 +585,7 @@ def set_client_warehouse_setting_default(
 
 def list_products(
     db: Session,
+    agency_id: int | None = None,
     client_id: int | None = None,
     keyword: str | None = None,
     active_only: bool = True,
@@ -589,6 +593,8 @@ def list_products(
     page_size: int = 50,
 ) -> tuple[list[tuple[Product, Client]], int]:
     query = db.query(Product, Client).join(Client, Client.id == Product.client_id)
+    if agency_id is not None:
+        query = query.filter(Product.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(Product.client_id == client_id)
     if active_only:
@@ -661,6 +667,7 @@ def create_product(
     remarks: str | None = None,
 ) -> Product:
     product = Product(
+        agency_id=get_client_agency_id(db, client_id),
         client_id=client_id,
         product_code=product_code,
         product_name=product_name,
@@ -725,6 +732,7 @@ def create_product_barcode(
     remarks: str | None = None,
 ) -> ProductBarcode:
     product_barcode = ProductBarcode(
+        agency_id=get_client_agency_id(db, client_id),
         client_id=client_id,
         product_id=product_id,
         barcode=barcode,

@@ -383,6 +383,7 @@ def list_external_outbound_rows_by_ids(
 def create_external_outbound_batch(
     db: Session,
     *,
+    agency_id: int | None,
     client_id: int | None,
     batch_no: str,
     status: str,
@@ -395,6 +396,7 @@ def create_external_outbound_batch(
     memo: str | None = None,
 ) -> ReturnExternalOutboundBatch:
     batch = ReturnExternalOutboundBatch(
+        agency_id=agency_id,
         client_id=client_id,
         batch_no=batch_no,
         status=status,
@@ -414,6 +416,7 @@ def create_external_outbound_batch(
 def list_external_outbound_batches(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     status: str | None = None,
     date_from: datetime | None = None,
@@ -426,6 +429,8 @@ def list_external_outbound_batches(
         Client,
         Client.id == ReturnExternalOutboundBatch.client_id,
     )
+    if agency_id is not None:
+        query = query.filter(ReturnExternalOutboundBatch.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ReturnExternalOutboundBatch.client_id == client_id)
     if status:
@@ -457,6 +462,7 @@ def get_external_outbound_batch_with_client(
     db: Session,
     batch_id: int,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
 ) -> tuple[ReturnExternalOutboundBatch, Client | None] | None:
     query = db.query(ReturnExternalOutboundBatch, Client).outerjoin(
@@ -464,6 +470,8 @@ def get_external_outbound_batch_with_client(
         Client.id == ReturnExternalOutboundBatch.client_id,
     )
     query = query.filter(ReturnExternalOutboundBatch.id == batch_id)
+    if agency_id is not None:
+        query = query.filter(ReturnExternalOutboundBatch.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ReturnExternalOutboundBatch.client_id == client_id)
     return query.one_or_none()

@@ -13,7 +13,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.import_job import ImportJob, ImportJobFile
-from app.models.master import Client, Warehouse
+from app.models.master import Agency, Client, ClientWarehouseSetting, Warehouse
 
 
 TEST_PASSWORD = "DummyPass123!"
@@ -32,8 +32,10 @@ def db_session() -> Generator[Session, None, None]:
         poolclass=StaticPool,
     )
     for table in (
+        Agency.__table__,
         Client.__table__,
         Warehouse.__table__,
+        ClientWarehouseSetting.__table__,
         ImportJob.__table__,
         ImportJobFile.__table__,
         Role.__table__,
@@ -66,8 +68,11 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 
 
 def _create_client(db: Session, code: str = "CLIENT_A", active_yn: bool = True) -> Client:
-    row = Client(client_code=code, client_name=f"{code} Name", active_yn=active_yn)
-    db.add(row)
+    agency = Agency(agency_code=f"AGENCY_{code}", agency_name=f"{code} Agency", active_yn=True)
+    row = Client(client_code=code, client_name=f"{code} Name", agency_id=None, active_yn=active_yn)
+    db.add_all([agency, row])
+    db.flush()
+    row.agency_id = agency.id
     db.commit()
     return row
 
@@ -77,6 +82,20 @@ def _create_warehouse(db: Session, code: str = "WH_A", active_yn: bool = True) -
     db.add(row)
     db.commit()
     return row
+
+
+def _link_warehouse(db: Session, client_id: int, warehouse_id: int) -> ClientWarehouseSetting:
+    setting = ClientWarehouseSetting(
+        agency_id=db.get(Client, client_id).agency_id if db.get(Client, client_id) is not None else None,
+        client_id=client_id,
+        warehouse_id=warehouse_id,
+        usage_type="IMPORT",
+        is_default=False,
+        active_yn=True,
+    )
+    db.add(setting)
+    db.commit()
+    return setting
 
 
 def _create_user(
@@ -200,6 +219,7 @@ def test_import_manage_permission_is_required(client: TestClient, db_session: Se
 def test_super_admin_can_create_import_job(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
     warehouse = _create_warehouse(db_session)
+    _link_warehouse(db_session, client_row.id, warehouse.id)
     _create_user(db_session, login_id="super_import", role_code="SUPER_ADMIN")
 
     response = client.post(
@@ -349,6 +369,28 @@ def test_import_job_create_blocks_inactive_warehouse(client: TestClient, db_sess
 
     assert response.status_code == 400
     assert response.json()["result_code"] == "MASTER_WAREHOUSE_INACTIVE"
+
+
+def test_import_job_create_blocks_warehouse_from_other_client(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_IMPORT_SCOPE")
+    other_client = _create_client(db_session, code="CLIENT_IMPORT_OTHER")
+    warehouse = _create_warehouse(db_session, code="WH_IMPORT_OTHER")
+    _link_warehouse(db_session, other_client.id, warehouse.id)
+    _create_user(
+        db_session,
+        login_id="warehouse_scope_import_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=["IMPORT_MANAGE"],
+    )
+
+    response = client.post(
+        "/api/import-jobs",
+        json=_payload(requested_client_id=client_row.id, requested_warehouse_id=warehouse.id),
+        headers=_login(client, "warehouse_scope_import_admin"),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "IMPORT_JOB_WAREHOUSE_SCOPE_INVALID"
 
 
 def test_import_job_create_initializes_draft_and_zero_counts(client: TestClient, db_session: Session):

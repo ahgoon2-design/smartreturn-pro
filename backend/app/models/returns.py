@@ -180,11 +180,13 @@ class ReturnExternalOutboundBatch(Base):
     __tablename__ = "return_external_outbound_batches"
     __table_args__ = (
         UniqueConstraint("batch_no", name="uq_return_external_outbound_batches_batch_no"),
+        Index("ix_return_external_outbound_batches_agency_client_created", "agency_id", "client_id", "created_at"),
         Index("ix_return_external_outbound_batches_client_created", "client_id", "created_at"),
         Index("ix_return_external_outbound_batches_status_created", "status", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
     batch_no: Mapped[str] = mapped_column(String(80), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="CONFIRMED", server_default="CONFIRMED")
@@ -206,11 +208,13 @@ class ReturnExternalOutboundBatch(Base):
 class ReturnProcessingAttachment(Base):
     __tablename__ = "return_processing_attachments"
     __table_args__ = (
+        Index("ix_return_processing_attachments_agency_client", "agency_id", "client_id"),
         Index("ix_return_processing_attachments_row_active", "return_intake_row_id", "active_yn"),
         Index("ix_return_processing_attachments_client_uploaded", "client_id", "uploaded_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     return_intake_row_id: Mapped[int] = mapped_column(ForeignKey("return_intake_rows.id"), nullable=False)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     batch_id: Mapped[int] = mapped_column(ForeignKey("return_intake_batches.id"), nullable=False)

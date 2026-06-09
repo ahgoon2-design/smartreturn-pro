@@ -10,7 +10,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.master import Client, Product, ProductBarcode, Warehouse
+from app.models.master import Agency, Client, Product, ProductBarcode, Warehouse
 
 
 TEST_PASSWORD = "DummyPass123!"
@@ -24,6 +24,7 @@ def db_session() -> Generator[Session, None, None]:
         poolclass=StaticPool,
     )
     for table in (
+        Agency.__table__,
         Client.__table__,
         Warehouse.__table__,
         Product.__table__,
@@ -58,8 +59,11 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 
 
 def _create_client(db: Session, code: str = "CLIENT_A", name: str = "Test Client") -> Client:
-    client = Client(client_code=code, client_name=name, active_yn=True)
-    db.add(client)
+    agency = Agency(agency_code=f"AGENCY_{code}", agency_name=f"{name} Agency", active_yn=True)
+    client = Client(client_code=code, client_name=name, agency_id=None, active_yn=True)
+    db.add_all([agency, client])
+    db.flush()
+    client.agency_id = agency.id
     db.commit()
     return client
 
@@ -74,6 +78,7 @@ def _create_product(
     active_yn: bool = True,
 ) -> Product:
     product = Product(
+        agency_id=db.get(Client, client_id).agency_id if db.get(Client, client_id) is not None else None,
         client_id=client_id,
         product_code=product_code,
         product_name=product_name,
@@ -213,6 +218,9 @@ def test_internal_admin_can_create_product(client: TestClient, db_session: Sessi
     data = response.json()
     assert data["result_code"] == "MASTER_PRODUCT_CREATED"
     assert data["data"]["product_code"] == "PROD_NEW"
+    assert data["data"]["agency_id"] == client_row.agency_id
+    product = db_session.query(Product).filter(Product.product_code == "PROD_NEW").one()
+    assert product.agency_id == client_row.agency_id
     _assert_no_sensitive_values(data)
 
 
@@ -327,6 +335,9 @@ def test_product_barcode_create_blocks_duplicate_and_invalid_qty(client: TestCli
     assert create_response.status_code == 200
     assert create_response.json()["result_code"] == "MASTER_PRODUCT_BARCODE_CREATED"
     assert create_response.json()["data"]["unit_qty"] == 20
+    assert create_response.json()["data"]["agency_id"] == client_row.agency_id
+    created_barcode = db_session.query(ProductBarcode).filter(ProductBarcode.barcode == "288000000020").one()
+    assert created_barcode.agency_id == client_row.agency_id
     assert duplicate_response.status_code == 400
     assert duplicate_response.json()["result_code"] == "MASTER_PRODUCT_BARCODE_DUPLICATED"
     assert invalid_qty_response.status_code == 422

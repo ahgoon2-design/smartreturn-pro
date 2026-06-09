@@ -103,12 +103,16 @@ class RolePermission(Base):
 class AuthLoginLog(Base):
     __tablename__ = "auth_login_logs"
     __table_args__ = (
+        Index("ix_auth_login_logs_agency_created", "agency_id", "created_at"),
+        Index("ix_auth_login_logs_client_created", "client_id", "created_at"),
         Index("ix_auth_login_logs_user_created", "user_id", "created_at"),
         Index("ix_auth_login_logs_login_created", "login_id", "created_at"),
         Index("ix_auth_login_logs_result_created", "result", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     login_id: Mapped[str] = mapped_column(String(80), nullable=False)
     result: Mapped[str] = mapped_column(String(50), nullable=False)

@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.master import (
+    Agency,
     Client,
     ClientWarehouseSetting,
     CommonCode,
@@ -29,6 +30,7 @@ def db_session() -> Generator[Session, None, None]:
         poolclass=StaticPool,
     )
     for table in (
+        Agency.__table__,
         Client.__table__,
         Warehouse.__table__,
         ClientWarehouseSetting.__table__,
@@ -66,8 +68,12 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 
 
 def _seed_master_data(db: Session) -> dict[str, object]:
-    client_a = Client(client_code="CLIENT_A", client_name="테스트 고객사 A", active_yn=True)
-    client_b = Client(client_code="CLIENT_B", client_name="테스트 고객사 B", active_yn=True)
+    agency_a = Agency(agency_code="AGENCY_A", agency_name="테스트 대리점 A", active_yn=True)
+    agency_b = Agency(agency_code="AGENCY_B", agency_name="테스트 대리점 B", active_yn=True)
+    db.add_all([agency_a, agency_b])
+    db.flush()
+    client_a = Client(client_code="CLIENT_A", client_name="테스트 고객사 A", agency_id=agency_a.id, active_yn=True)
+    client_b = Client(client_code="CLIENT_B", client_name="테스트 고객사 B", agency_id=agency_b.id, active_yn=True)
     warehouse_a = Warehouse(
         warehouse_code="WH_A",
         warehouse_name="테스트 창고 A",
@@ -86,6 +92,7 @@ def _seed_master_data(db: Session) -> dict[str, object]:
     db.add_all(
         [
             ClientWarehouseSetting(
+                agency_id=agency_a.id,
                 client_id=client_a.id,
                 warehouse_id=warehouse_a.id,
                 usage_type="RETURN_GOOD",
@@ -93,6 +100,7 @@ def _seed_master_data(db: Session) -> dict[str, object]:
                 active_yn=True,
             ),
             ClientWarehouseSetting(
+                agency_id=agency_b.id,
                 client_id=client_b.id,
                 warehouse_id=warehouse_b.id,
                 usage_type="STORAGE",
@@ -103,6 +111,7 @@ def _seed_master_data(db: Session) -> dict[str, object]:
     )
 
     product_a = Product(
+        agency_id=agency_a.id,
         client_id=client_a.id,
         product_code="PROD_A",
         product_name="테스트 상품 A",
@@ -112,6 +121,7 @@ def _seed_master_data(db: Session) -> dict[str, object]:
         active_yn=True,
     )
     product_b = Product(
+        agency_id=agency_b.id,
         client_id=client_b.id,
         product_code="PROD_B",
         product_name="테스트 상품 B",
@@ -122,6 +132,7 @@ def _seed_master_data(db: Session) -> dict[str, object]:
     db.flush()
     db.add(
         ProductBarcode(
+            agency_id=agency_a.id,
             client_id=client_a.id,
             product_id=product_a.id,
             barcode="1880000000008",
@@ -157,6 +168,8 @@ def _seed_master_data(db: Session) -> dict[str, object]:
     return {
         "client_a": client_a,
         "client_b": client_b,
+        "agency_a": agency_a,
+        "agency_b": agency_b,
         "warehouse_a": warehouse_a,
         "warehouse_b": warehouse_b,
         "product_a": product_a,
@@ -171,14 +184,16 @@ def _create_user(
     role_code: str,
     permissions: list[str] | None = None,
     client_id: int | None = None,
+    agency_id: int | None = None,
     must_change_password: bool = False,
 ) -> User:
-    role_type = "INTERNAL" if role_code in {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER"} else "CLIENT"
+    role_type = "INTERNAL" if role_code in {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER"} else "AGENCY" if role_code == "AGENCY_ADMIN" else "CLIENT"
     role = Role(role_code=role_code, role_name=role_code, role_type=role_type, active_yn=True)
     user = User(
         login_id=login_id,
         user_name=f"{login_id} 사용자",
         password_hash=hash_password("DummyPass123!"),
+        agency_id=agency_id,
         client_id=client_id,
         active_yn=True,
         must_change_password=must_change_password,
@@ -360,6 +375,27 @@ def test_products_return_page_data_and_apply_client_scope(client: TestClient, db
     page = response.json()["data"]
     assert page["total_count"] == 1
     assert page["items"][0]["client_id"] == client_a.id
+
+
+def test_agency_admin_products_are_scoped_by_agency_without_client_filter(client: TestClient, db_session: Session):
+    seeded = _seed_master_data(db_session)
+    agency_a = seeded["agency_a"]
+    client_a = seeded["client_a"]
+    _create_user(
+        db_session,
+        login_id="agency_products",
+        role_code="AGENCY_ADMIN",
+        permissions=["MASTER_VIEW"],
+        agency_id=agency_a.id,
+    )
+
+    response = client.get("/api/master/products?page=1&page_size=20", headers=_login(client, "agency_products"))
+
+    assert response.status_code == 200
+    page = response.json()["data"]
+    assert page["total_count"] == 1
+    assert page["items"][0]["client_id"] == client_a.id
+    assert page["items"][0]["agency_id"] == agency_a.id
 
 
 def test_client_user_cannot_request_other_client_products(client: TestClient, db_session: Session):

@@ -45,6 +45,7 @@ export interface ClientWarehouseAllowedActions {
 
 export interface ClientWarehouseSetting {
   setting_id: number;
+  agency_id?: number | null;
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
@@ -75,6 +76,7 @@ export interface ClientWarehouseOption {
 
 export interface ClientUnit {
   unit_id: number;
+  agency_id?: number | null;
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
@@ -114,6 +116,7 @@ export interface ClientUnitUpdatePayload {
 
 export interface ReturnWarehouseRoute {
   route_id: number;
+  agency_id?: number | null;
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
@@ -166,6 +169,7 @@ export interface ClientWarehouseSettingUpdatePayload {
 
 export interface ProductSummary {
   product_id: number;
+  agency_id?: number | null;
   client_id: number;
   client_name: string;
   product_code: string;
@@ -178,6 +182,7 @@ export interface ProductSummary {
 
 export interface ProductBarcodeSummary {
   barcode_id: number;
+  agency_id?: number | null;
   barcode: string;
   barcode_type: string;
   unit_qty: number;

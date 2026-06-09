@@ -15,7 +15,7 @@ from app.models.master import (
     ReturnJudgmentWarehouseRoute,
     Warehouse,
 )
-from app.models.returns import ReturnExternalOutboundBatch, ReturnIntakeBatch, ReturnIntakeRow
+from app.models.returns import ReturnExternalOutboundBatch, ReturnIntakeBatch, ReturnIntakeRow, ReturnProcessingAttachment
 
 __all__ = [
     "AuthLoginLog",
@@ -45,6 +45,7 @@ __all__ = [
     "ReturnExternalOutboundBatch",
     "ReturnIntakeBatch",
     "ReturnIntakeRow",
+    "ReturnProcessingAttachment",
     "Role",
     "RolePermission",
     "User",

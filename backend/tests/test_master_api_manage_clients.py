@@ -10,7 +10,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
-from app.models.master import Client, ClientUnit, ClientWarehouseSetting, ReturnJudgmentWarehouseRoute, Warehouse
+from app.models.master import Agency, Client, ClientUnit, ClientWarehouseSetting, ReturnJudgmentWarehouseRoute, Warehouse
 
 
 TEST_PASSWORD = "DummyPass123!"
@@ -24,6 +24,7 @@ def db_session() -> Generator[Session, None, None]:
         poolclass=StaticPool,
     )
     for table in (
+        Agency.__table__,
         Client.__table__,
         Warehouse.__table__,
         ClientUnit.__table__,
@@ -59,8 +60,11 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 
 
 def _create_client(db: Session, code: str = "CLIENT_A", name: str = "Test Client") -> Client:
-    client = Client(client_code=code, client_name=name, active_yn=True)
-    db.add(client)
+    agency = Agency(agency_code=f"AGENCY_{code}", agency_name=f"{name} Agency", active_yn=True)
+    client = Client(client_code=code, client_name=name, agency_id=None, active_yn=True)
+    db.add_all([agency, client])
+    db.flush()
+    client.agency_id = agency.id
     db.commit()
     return client
 
@@ -124,6 +128,7 @@ def _warehouse_manage_permissions() -> list[str]:
 
 def _create_client_warehouse_setting(db: Session, client_id: int, warehouse_id: int) -> ClientWarehouseSetting:
     setting = ClientWarehouseSetting(
+        agency_id=db.get(Client, client_id).agency_id if db.get(Client, client_id) is not None else None,
         client_id=client_id,
         warehouse_id=warehouse_id,
         usage_type="RETURN_GOOD",
@@ -289,6 +294,34 @@ def test_client_unit_blocks_duplicate_code_in_same_client(client: TestClient, db
 
     assert response.status_code == 400
     assert response.json()["result_code"] == "MASTER_CLIENT_UNIT_CODE_DUPLICATED"
+
+
+def test_client_unit_blocks_warehouse_from_other_client(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, code="CLIENT_UNIT_SCOPE")
+    other_client = _create_client(db_session, code="CLIENT_UNIT_OTHER")
+    other_warehouse = Warehouse(warehouse_code="OTHER-WH", warehouse_name="Other Warehouse", active_yn=True)
+    db_session.add(other_warehouse)
+    db_session.flush()
+    _create_client_warehouse_setting(db_session, client_id=other_client.id, warehouse_id=other_warehouse.id)
+    _create_user(
+        db_session,
+        login_id="client_unit_scope_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_manage_permissions(),
+    )
+
+    response = client.post(
+        f"/api/master/clients/{client_row.id}/units",
+        json={
+            "unit_code": "SCOPE",
+            "unit_name": "범위검증팀",
+            "default_warehouse_id": other_warehouse.id,
+        },
+        headers=_login(client, "client_unit_scope_admin"),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "MASTER_CLIENT_UNIT_WAREHOUSE_UNLINKED"
 
 
 def test_return_warehouse_route_crud_flow(client: TestClient, db_session: Session):

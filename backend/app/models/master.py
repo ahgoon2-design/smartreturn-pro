@@ -86,12 +86,14 @@ class ClientWarehouseSetting(Base):
     __tablename__ = "client_warehouse_settings"
     __table_args__ = (
         UniqueConstraint("client_id", "warehouse_id", "usage_type", name="uq_client_warehouse_usage"),
+        Index("ix_client_warehouse_settings_agency_client", "agency_id", "client_id"),
         Index("ix_client_warehouse_settings_client_id", "client_id"),
         Index("ix_client_warehouse_settings_warehouse_id", "warehouse_id"),
         Index("ix_client_warehouse_settings_client_usage", "client_id", "usage_type"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouses.id"), nullable=False)
     usage_type: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -110,12 +112,14 @@ class ClientUnit(Base):
     __tablename__ = "client_units"
     __table_args__ = (
         UniqueConstraint("client_id", "unit_code", name="uq_client_units_client_unit_code"),
+        Index("ix_client_units_agency_client", "agency_id", "client_id"),
         Index("ix_client_units_client_active", "client_id", "active_yn"),
         Index("ix_client_units_default_warehouse", "default_warehouse_id"),
         Index("ix_client_units_return_warehouse", "return_warehouse_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     unit_code: Mapped[str] = mapped_column(String(80), nullable=False)
     unit_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -144,12 +148,14 @@ class ReturnJudgmentWarehouseRoute(Base):
             "warehouse_id",
             name="uq_return_judgment_warehouse_route",
         ),
+        Index("ix_return_judgment_routes_agency_client", "agency_id", "client_id"),
         Index("ix_return_judgment_routes_client_judgment", "client_id", "judgment_code", "active_yn"),
         Index("ix_return_judgment_routes_client_unit", "client_id", "client_unit_id", "active_yn"),
         Index("ix_return_judgment_routes_warehouse", "warehouse_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
     judgment_code: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -193,12 +199,14 @@ class Product(Base):
     __tablename__ = "products"
     __table_args__ = (
         UniqueConstraint("client_id", "product_code", name="uq_products_client_product_code"),
+        Index("ix_products_agency_client", "agency_id", "client_id"),
         Index("ix_products_client_product_name", "client_id", "product_name"),
         Index("ix_products_client_barcode", "client_id", "barcode"),
         Index("ix_products_client_active", "client_id", "active_yn"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     product_code: Mapped[str] = mapped_column(String(80), nullable=False)
     product_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -221,12 +229,14 @@ class ProductBarcode(Base):
     __table_args__ = (
         UniqueConstraint("client_id", "barcode_norm", name="uq_product_barcodes_client_barcode_norm"),
         CheckConstraint("unit_qty >= 1", name="ck_product_barcodes_unit_qty_positive"),
+        Index("ix_product_barcodes_agency_client", "agency_id", "client_id"),
         Index("ix_product_barcodes_client_product", "client_id", "product_id"),
         Index("ix_product_barcodes_client_type", "client_id", "barcode_type"),
         Index("ix_product_barcodes_client_active", "client_id", "active_yn"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     barcode: Mapped[str] = mapped_column(String(100), nullable=False)

@@ -17,6 +17,7 @@ from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.inventory import CurrentInventory, InventoryEvent
 from app.models.master import (
+    Agency,
     Client,
     ClientUnit,
     ClientWarehouseSetting,
@@ -50,6 +51,7 @@ def db_session() -> Generator[Session, None, None]:
         poolclass=StaticPool,
     )
     for table in (
+        Agency.__table__,
         Client.__table__,
         Warehouse.__table__,
         ClientUnit.__table__,
@@ -104,8 +106,11 @@ def upload_root(monkeypatch: pytest.MonkeyPatch) -> Generator[Path, None, None]:
 
 
 def _create_client(db: Session, code: str = "CLIENT_A", active_yn: bool = True) -> Client:
-    row = Client(client_code=code, client_name=f"{code} Name", active_yn=active_yn)
-    db.add(row)
+    agency = Agency(agency_code=f"AGENCY_{code}", agency_name=f"{code} Agency", active_yn=True)
+    row = Client(client_code=code, client_name=f"{code} Name", agency_id=None, active_yn=active_yn)
+    db.add_all([agency, row])
+    db.flush()
+    row.agency_id = agency.id
     db.commit()
     return row
 
@@ -167,6 +172,7 @@ def _return_permissions() -> list[str]:
 
 def _create_product(db: Session, client_id: int, code: str = "P001", barcode: str = "880001") -> Product:
     product = Product(
+        agency_id=db.get(Client, client_id).agency_id if db.get(Client, client_id) is not None else None,
         client_id=client_id,
         product_code=code,
         product_name="Test Product",
@@ -176,6 +182,7 @@ def _create_product(db: Session, client_id: int, code: str = "P001", barcode: st
     db.add(product)
     db.flush()
     product_barcode = ProductBarcode(
+        agency_id=product.agency_id,
         client_id=client_id,
         product_id=product.id,
         barcode="880002",
@@ -196,6 +203,7 @@ def _create_product(db: Session, client_id: int, code: str = "P001", barcode: st
         db.flush()
         db.add(
             ClientWarehouseSetting(
+                agency_id=product.agency_id,
                 client_id=client_id,
                 warehouse_id=warehouse.id,
                 usage_type=f"RETURN_ROUTE_{judgement_code}",
@@ -205,6 +213,7 @@ def _create_product(db: Session, client_id: int, code: str = "P001", barcode: st
         )
         db.add(
             ReturnJudgmentWarehouseRoute(
+                agency_id=product.agency_id,
                 client_id=client_id,
                 client_unit_id=None,
                 judgment_code=judgement_code,
@@ -233,6 +242,7 @@ def _create_warehouse_setting(
     db.flush()
     db.add(
         ClientWarehouseSetting(
+            agency_id=db.get(Client, client_id).agency_id if db.get(Client, client_id) is not None else None,
             client_id=client_id,
             warehouse_id=warehouse.id,
             usage_type=usage_type,
@@ -253,6 +263,7 @@ def _create_return_warehouse_route(
     client_unit_id: int | None = None,
 ) -> ReturnJudgmentWarehouseRoute:
     route = ReturnJudgmentWarehouseRoute(
+        agency_id=db.get(Client, client_id).agency_id if db.get(Client, client_id) is not None else None,
         client_id=client_id,
         client_unit_id=client_unit_id,
         judgment_code=judgement_code,
@@ -267,6 +278,7 @@ def _create_return_warehouse_route(
 
 def _create_client_unit(db: Session, client_id: int, code: str = "ONLINE", active_yn: bool = True) -> ClientUnit:
     unit = ClientUnit(
+        agency_id=db.get(Client, client_id).agency_id if db.get(Client, client_id) is not None else None,
         client_id=client_id,
         unit_code=code,
         unit_name=f"{code} Team",
@@ -996,6 +1008,7 @@ def test_upload_return_processing_attachment_and_list(
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["task_id"] == task_id
+    assert data["agency_id"] == client_row.agency_id
     assert data["original_filename"] == "evidence.jpg"
     assert data["content_type"] == "image/jpeg"
     assert data["file_size"] > 0
@@ -1005,6 +1018,9 @@ def test_upload_return_processing_attachment_and_list(
     items = list_response.json()["data"]["items"]
     assert len(items) == 1
     assert items[0]["attachment_id"] == data["attachment_id"]
+    assert items[0]["agency_id"] == client_row.agency_id
+    attachment = db_session.query(ReturnProcessingAttachment).filter(ReturnProcessingAttachment.id == data["attachment_id"]).one()
+    assert attachment.agency_id == client_row.agency_id
     assert list(upload_root.rglob("*.jpg"))
     _assert_no_sensitive_values(response.json())
 
@@ -1879,6 +1895,7 @@ def test_return_external_outbound_confirm_marks_confirmed_without_inventory_chan
     assert row.external_outbound_confirmed_by is not None
     assert row.external_outbound_batch_id == data["batch_id"]
     outbound_batch = db_session.query(ReturnExternalOutboundBatch).filter(ReturnExternalOutboundBatch.id == data["batch_id"]).one()
+    assert outbound_batch.agency_id == client_row.agency_id
     assert outbound_batch.batch_no == data["batch_no"]
     assert outbound_batch.status == "CONFIRMED"
     assert outbound_batch.target_type == "NON_GOOD_EXTERNAL_OUTBOUND"
@@ -1934,10 +1951,12 @@ def test_return_external_outbound_batches_list_and_detail(client: TestClient, db
     assert list_data["total_count"] == 1
     assert list_data["items"][0]["batch_id"] == batch_id
     assert list_data["items"][0]["batch_no"] == confirm_data["batch_no"]
+    assert list_data["items"][0]["agency_id"] == client_row.agency_id
     assert list_data["items"][0]["confirmed_rows"] == 1
     assert detail_response.status_code == 200
     detail_data = detail_response.json()["data"]
     assert detail_data["batch_id"] == batch_id
+    assert detail_data["agency_id"] == client_row.agency_id
     assert detail_data["batch_no"] == confirm_data["batch_no"]
     assert detail_data["rows"][0]["row_id"] == task_id
     assert detail_data["rows"][0]["return_management_no"] == judged["return_management_no"]

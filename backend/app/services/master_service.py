@@ -241,6 +241,7 @@ def _barcode_dto(product_barcode) -> dict:
     return _dump(
         ProductBarcodeDto(
             barcode_id=product_barcode.id,
+            agency_id=product_barcode.agency_id,
             barcode=product_barcode.barcode,
             barcode_type=product_barcode.barcode_type,
             unit_qty=product_barcode.unit_qty,
@@ -303,6 +304,7 @@ def _client_warehouse_setting_response(db: Session, auth: AuthContext, setting) 
     return _dump(
         ClientWarehouseSettingResponse(
             setting_id=setting.id,
+            agency_id=setting.agency_id,
             client_id=client.id,
             client_code=client.client_code,
             client_name=client.client_name,
@@ -326,6 +328,7 @@ def _client_unit_response(unit, client, default_warehouse=None, return_warehouse
     return _dump(
         ClientUnitResponse(
             unit_id=unit.id,
+            agency_id=unit.agency_id,
             client_id=client.id,
             client_code=client.client_code,
             client_name=client.client_name,
@@ -359,6 +362,7 @@ def _return_warehouse_route_response(route, client, client_unit=None, warehouse=
     return _dump(
         ReturnJudgmentWarehouseRouteResponse(
             route_id=route.id,
+            agency_id=route.agency_id,
             client_id=route.client_id,
             client_code=client.client_code if client else None,
             client_name=client.client_name if client else None,
@@ -517,6 +521,16 @@ def _ensure_optional_active_warehouse(db: Session, warehouse_id: int | None):
     return _ensure_active_warehouse(db, warehouse_id)
 
 
+def _ensure_optional_client_warehouse(db: Session, client_id: int, warehouse_id: int | None):
+    if warehouse_id is None:
+        return None
+    warehouse = _ensure_active_warehouse(db, warehouse_id)
+    setting = repo.find_active_client_warehouse_for_warehouse(db, client_id=client_id, warehouse_id=warehouse_id)
+    if setting is None:
+        raise _business_error("MASTER_CLIENT_UNIT_WAREHOUSE_UNLINKED", "고객사에 연결된 활성 창고만 운영단위 창고로 사용할 수 있습니다.")
+    return warehouse
+
+
 def _ensure_return_warehouse_route_judgment_code(judgment_code: str) -> str:
     judgment_code = judgment_code.strip().upper()
     if judgment_code not in RETURN_WAREHOUSE_ROUTE_JUDGMENT_CODES:
@@ -600,8 +614,8 @@ def create_client_unit_for_client(
     effective_client_id = resolve_effective_client_id(auth, client_id)
     _ensure_active_client(db, effective_client_id)
     _ensure_client_unit_code_available(db, client_id=effective_client_id, unit_code=request.unit_code)
-    _ensure_optional_active_warehouse(db, request.default_warehouse_id)
-    _ensure_optional_active_warehouse(db, request.return_warehouse_id)
+    _ensure_optional_client_warehouse(db, effective_client_id, request.default_warehouse_id)
+    _ensure_optional_client_warehouse(db, effective_client_id, request.return_warehouse_id)
     try:
         unit = repo.create_client_unit(db, client_id=effective_client_id, **request.model_dump())
         db.commit()
@@ -635,9 +649,9 @@ def update_client_unit_for_client(
             exclude_unit_id=unit.id,
         )
     if "default_warehouse_id" in values:
-        _ensure_optional_active_warehouse(db, values["default_warehouse_id"])
+        _ensure_optional_client_warehouse(db, effective_client_id, values["default_warehouse_id"])
     if "return_warehouse_id" in values:
-        _ensure_optional_active_warehouse(db, values["return_warehouse_id"])
+        _ensure_optional_client_warehouse(db, effective_client_id, values["return_warehouse_id"])
     try:
         repo.update_client_unit(db, unit, values)
         db.commit()
@@ -664,8 +678,8 @@ def set_client_unit_active_for_client(
         raise ClientScopeDeniedError("다른 고객사의 운영단위는 변경할 수 없습니다.")
     if active_yn:
         _ensure_active_client(db, effective_client_id)
-        _ensure_optional_active_warehouse(db, unit.default_warehouse_id)
-        _ensure_optional_active_warehouse(db, unit.return_warehouse_id)
+        _ensure_optional_client_warehouse(db, effective_client_id, unit.default_warehouse_id)
+        _ensure_optional_client_warehouse(db, effective_client_id, unit.return_warehouse_id)
     try:
         repo.set_client_unit_active(db, unit, active_yn)
         db.commit()
@@ -1160,10 +1174,12 @@ def get_products(
     page_size: int = 50,
 ) -> dict:
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    effective_agency_id = resolve_effective_agency_id(auth, None, allow_all_agencies=True)
     safe_page = max(page, 1)
     safe_page_size = min(max(page_size, 1), 200)
     rows, total_count = repo.list_products(
         db,
+        agency_id=effective_agency_id,
         client_id=effective_client_id,
         keyword=keyword,
         page=safe_page,
@@ -1173,6 +1189,7 @@ def get_products(
         _dump(
             ProductSummary(
                 product_id=product.id,
+                agency_id=product.agency_id,
                 client_id=client.id,
                 client_name=client.client_name,
                 product_code=product.product_code,
@@ -1195,6 +1212,7 @@ def get_product_detail(db: Session, auth: AuthContext, product_id: int) -> dict 
     barcodes = [
         ProductBarcodeDto(
             barcode_id=barcode.id,
+            agency_id=barcode.agency_id,
             barcode=barcode.barcode,
             barcode_type=barcode.barcode_type,
             unit_qty=barcode.unit_qty,
@@ -1206,6 +1224,7 @@ def get_product_detail(db: Session, auth: AuthContext, product_id: int) -> dict 
     return _dump(
         ProductDetail(
             product_id=product.id,
+            agency_id=product.agency_id,
             client_id=client.id,
             client_name=client.client_name,
             product_code=product.product_code,

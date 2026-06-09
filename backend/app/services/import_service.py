@@ -1445,12 +1445,19 @@ def _ensure_requested_client(db: Session, client_id: int):
     return client
 
 
-def _ensure_requested_warehouse(db: Session, warehouse_id: int):
+def _ensure_requested_warehouse(db: Session, *, client_id: int, warehouse_id: int):
     warehouse = master_repository.get_warehouse_by_id(db, warehouse_id)
     if warehouse is None:
         raise _business_error("MASTER_WAREHOUSE_NOT_FOUND", "창고를 찾을 수 없습니다.", 404)
     if not warehouse.active_yn:
         raise _business_error("MASTER_WAREHOUSE_INACTIVE", "비활성 창고에는 import job을 생성할 수 없습니다.")
+    setting = master_repository.find_active_client_warehouse_for_warehouse(
+        db,
+        client_id=client_id,
+        warehouse_id=warehouse_id,
+    )
+    if setting is None:
+        raise _business_error("IMPORT_JOB_WAREHOUSE_SCOPE_INVALID", "요청 고객사에 연결된 활성 창고만 import job에 사용할 수 있습니다.")
     return warehouse
 
 
@@ -2454,7 +2461,7 @@ def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRe
     _ensure_requested_client(db, requested_client_id)
     agency_id = master_repository.get_client_agency_id(db, requested_client_id)
     if request.requested_warehouse_id is not None:
-        _ensure_requested_warehouse(db, request.requested_warehouse_id)
+        _ensure_requested_warehouse(db, client_id=requested_client_id, warehouse_id=request.requested_warehouse_id)
 
     try:
         job = repo.create_import_job(

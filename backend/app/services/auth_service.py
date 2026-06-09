@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.core.auth_context import build_auth_context_from_user
@@ -11,7 +12,7 @@ from app.core.config import get_settings
 from app.core.exceptions import InvalidLoginError, NotAuthenticatedError
 from app.core.jwt import create_access_token
 from app.core.security import verify_password
-from app.models.auth import Permission, Role, RolePermission, User, UserRole
+from app.models.auth import AuthLoginLog, Permission, Role, RolePermission, User, UserRole
 from app.models.master import Agency, Client
 from app.schemas.auth import AuthContext
 from app.schemas.login import LoginRequest, LoginResponse, LoginUserDto
@@ -71,6 +72,29 @@ def authenticate_user(db: Session, login_id: str, password: str) -> User | None:
     return user
 
 
+def _write_login_log(
+    db: Session,
+    *,
+    login_id: str,
+    result: str,
+    user: User | None = None,
+    failure_reason: str | None = None,
+) -> None:
+    bind = db.get_bind()
+    if bind is None or not inspect(bind).has_table("auth_login_logs"):
+        return
+    db.add(
+        AuthLoginLog(
+            agency_id=user.agency_id if user is not None else None,
+            client_id=user.client_id if user is not None else None,
+            user_id=user.id if user is not None else None,
+            login_id=login_id,
+            result=result,
+            failure_reason=failure_reason,
+        )
+    )
+
+
 def get_user_auth_context(db: Session, user_id: int) -> AuthContext:
     user = db.query(User).filter(User.id == user_id).one_or_none()
     if user is None or not user.active_yn:
@@ -90,12 +114,15 @@ def get_user_auth_context(db: Session, user_id: int) -> AuthContext:
 
 
 def login(db: Session, request: LoginRequest) -> LoginResponse:
-    user = authenticate_user(db, request.login_id, request.password)
-    if user is None:
+    user = db.query(User).filter(User.login_id == request.login_id).one_or_none()
+    if user is None or not user.active_yn or not verify_password(request.password, user.password_hash):
+        _write_login_log(db, login_id=request.login_id, result="FAILURE", user=user, failure_reason="INVALID_LOGIN")
+        db.commit()
         raise InvalidLoginError()
 
     auth = get_user_auth_context(db, user.id)
     user.last_login_at = datetime.now(UTC)
+    _write_login_log(db, login_id=request.login_id, result="SUCCESS", user=user)
     db.commit()
 
     settings = get_settings()

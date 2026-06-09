@@ -279,6 +279,7 @@ export interface CreateReturnProcessingManualRowResponse extends ReturnProcessin
 
 export interface ReturnProcessingAttachment {
   attachment_id: number;
+  agency_id?: number | null;
   task_id: number;
   row_id: number;
   batch_id: number;
@@ -433,6 +434,7 @@ export interface ReturnExternalOutboundConfirmResponse {
 export interface ReturnExternalOutboundBatch {
   batch_id: number;
   batch_no: string;
+  agency_id?: number | null;
   client_id?: number | null;
   client_code?: string | null;
   client_name?: string | null;
