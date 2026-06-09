@@ -81,6 +81,9 @@ body {
 }
 
 .smart-app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -115,6 +118,9 @@ body {
 }
 
 .smart-work-tabs {
+  position: sticky;
+  top: 64px;
+  z-index: 35;
   display: flex;
   gap: 6px;
   align-items: center;
@@ -122,7 +128,11 @@ body {
   padding: 0 0 12px;
   margin-bottom: 12px;
   overflow-x: auto;
+  background:
+    linear-gradient(180deg, rgba(246, 248, 251, 0.96) 0%, rgba(246, 248, 251, 0.88) 100%),
+    var(--smart-page-bg);
   border-bottom: 1px solid rgba(229, 234, 240, 0.78);
+  backdrop-filter: blur(10px);
 }
 
 .smart-work-tab {
@@ -162,10 +172,20 @@ body {
 }
 
 .smart-page-header {
+  position: sticky;
+  top: 112px;
+  z-index: 30;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding: 10px 0 10px;
+  background:
+    linear-gradient(180deg, rgba(246, 248, 251, 0.98) 0%, rgba(246, 248, 251, 0.92) 100%),
+    var(--smart-page-bg);
+  border-bottom: 1px solid rgba(229, 234, 240, 0.72);
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.035);
+  backdrop-filter: blur(10px);
 }
 
 .smart-page-header h3,
@@ -190,6 +210,13 @@ body {
   border: 1px solid var(--smart-border);
   border-radius: 12px;
   box-shadow: var(--smart-panel-shadow-soft);
+}
+
+.smart-page > .smart-toolbar:first-of-type,
+.smart-page > .ant-space.smart-toolbar:first-of-type {
+  position: sticky;
+  top: 196px;
+  z-index: 24;
 }
 
 .smart-control {
@@ -498,6 +525,9 @@ body {
 }
 
 .return-processing-scan-panel {
+  position: sticky;
+  top: 196px;
+  z-index: 25;
   display: grid;
   grid-template-columns: minmax(420px, 1fr) minmax(260px, 0.55fr);
   gap: 12px;

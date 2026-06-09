@@ -19,6 +19,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
+import { useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useRecentWorkTabs } from "../hooks/useRecentWorkTabs";
@@ -29,6 +30,8 @@ const { Header, Sider, Content } = Layout;
 export function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const contentRef = useRef<HTMLElement | null>(null);
+  const navigationSourceRef = useRef<"menu" | "work-tab" | null>(null);
   const { authContext, role, hasPermission, logout } = useAuth();
   const { tabs: workTabs, closeRecentTab } = useRecentWorkTabs(location);
   const canSeePlatformMenus = Boolean(
@@ -265,6 +268,28 @@ export function MainLayout() {
     navigate(ROUTE_PATHS.login, { replace: true });
   }
 
+  useEffect(() => {
+    if (navigationSourceRef.current !== "menu") {
+      navigationSourceRef.current = null;
+      return;
+    }
+    requestAnimationFrame(() => {
+      scrollContentToTop(contentRef.current);
+      navigationSourceRef.current = null;
+    });
+  }, [location.pathname, location.search]);
+
+  function handleMenuNavigate(path: string) {
+    navigationSourceRef.current = "menu";
+    navigate(path);
+    requestAnimationFrame(() => scrollContentToTop(contentRef.current));
+  }
+
+  function handleWorkTabNavigate(path: string) {
+    navigationSourceRef.current = "work-tab";
+    navigate(path);
+  }
+
   return (
     <Layout className="smart-app-shell">
       <Header className="smart-app-header">
@@ -290,12 +315,12 @@ export function MainLayout() {
             items={menuItems}
             onClick={({ key }) => {
               if (String(key).startsWith("/")) {
-                navigate(key);
+                handleMenuNavigate(String(key));
               }
             }}
           />
         </Sider>
-        <Content className="smart-app-content">
+        <Content ref={contentRef} className="smart-app-content">
           <nav className="smart-work-tabs" aria-label="최근 작업 탭">
             {workTabs.map((tab) => {
               const active = location.pathname === tab.key || location.pathname.startsWith(`${tab.key}/`);
@@ -307,7 +332,7 @@ export function MainLayout() {
                   className={["smart-work-tab", active ? "smart-work-tab--active" : "", tab.fixed ? "smart-work-tab--fixed" : ""]
                     .filter(Boolean)
                     .join(" ")}
-                  onClick={() => navigate(tab.path)}
+                  onClick={() => handleWorkTabNavigate(tab.path)}
                 >
                   <span className="smart-work-tab__label">{tab.label}</span>
                   {tab.fixed ? <Tag color="blue">고정</Tag> : null}
@@ -330,4 +355,9 @@ export function MainLayout() {
       </Layout>
     </Layout>
   );
+}
+
+function scrollContentToTop(contentElement: HTMLElement | null) {
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  contentElement?.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
 }
