@@ -28,6 +28,9 @@ export function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { authContext, role, hasPermission, logout } = useAuth();
+  const canSeePlatformMenus = Boolean(
+    authContext?.is_platform_admin || authContext?.is_internal_user || authContext?.is_agency_user,
+  );
   const selectedMenuKey = location.pathname.startsWith(ROUTE_PATHS.masterClients)
     ? ROUTE_PATHS.masterClients
     : location.pathname.startsWith(ROUTE_PATHS.masterProducts)
@@ -67,26 +70,62 @@ export function MainLayout() {
       label: "대시보드",
     },
     {
-      key: "oms-group",
-      label: "OMS 관리",
+      key: "order-channel-group",
+      label: "주문/채널",
       type: "group",
       children: [
-        { key: "oms-orders-ready", icon: <ShoppingOutlined />, label: "주문관리 준비중", disabled: true },
-        { key: "oms-outbound-ready", icon: <ExportOutlined />, label: "출고지시 준비중", disabled: true },
-        { key: "oms-picking-ready", icon: <CheckCircleOutlined />, label: "피킹리스트 준비중", disabled: true },
-        { key: "oms-inspection-ready", icon: <ScanOutlined />, label: "출고검수 준비중", disabled: true },
+        { key: "orders-ready", icon: <ShoppingOutlined />, label: "주문 수집 준비중", disabled: true },
+        {
+          key: ROUTE_PATHS.channelAccounts,
+          icon: <ApiOutlined />,
+          label: "채널 연동 관리",
+          disabled: !canSeePlatformMenus || !hasPermission("RETURN_VIEW"),
+        },
+        { key: "channel-sync-ready", icon: <HistoryOutlined />, label: "채널 동기화 이력 준비중", disabled: true },
+        { key: "channel-actions-ready", icon: <CheckCircleOutlined />, label: "채널 역전송 준비중", disabled: true },
       ],
     },
     {
-      key: "wms-group",
-      label: "WMS 관리",
+      key: "inbound-group",
+      label: "입고",
       type: "group",
       children: [
-        { key: "wms-inbound-ready", icon: <InboxOutlined />, label: "입고관리 준비중", disabled: true },
+        { key: "inbound-expected-ready", icon: <InboxOutlined />, label: "입고 예정 준비중", disabled: true },
+        { key: "inbound-inspection-ready", icon: <ScanOutlined />, label: "입고 검수 준비중", disabled: true },
+        { key: "inbound-history-ready", icon: <HistoryOutlined />, label: "입고 이력 준비중", disabled: true },
+      ],
+    },
+    {
+      key: "outbound-group",
+      label: "출고",
+      type: "group",
+      children: [
+        { key: "outbound-orders-ready", icon: <ExportOutlined />, label: "출고 예정 준비중", disabled: true },
+        { key: "outbound-picking-ready", icon: <CheckCircleOutlined />, label: "피킹 리스트 준비중", disabled: true },
+        { key: "outbound-inspection-ready", icon: <ScanOutlined />, label: "출고 검수 준비중", disabled: true },
+        {
+          key: ROUTE_PATHS.returnExternalOutbound,
+          icon: <ExportOutlined />,
+          label: "반품 외부반출",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+        {
+          key: ROUTE_PATHS.returnExternalOutboundBatches,
+          icon: <HistoryOutlined />,
+          label: "외부반출 이력",
+          disabled: !hasPermission("RETURN_VIEW"),
+        },
+      ],
+    },
+    {
+      key: "inventory-group",
+      label: "재고",
+      type: "group",
+      children: [
         {
           key: ROUTE_PATHS.inventoryCurrent,
           icon: <DatabaseOutlined />,
-          label: "재고현황",
+          label: "현재고",
           disabled: !hasPermission("INVENTORY_VIEW"),
         },
         {
@@ -95,21 +134,15 @@ export function MainLayout() {
           label: "재고 이벤트",
           disabled: !hasPermission("INVENTORY_VIEW"),
         },
-        { key: "wms-transfer-ready", icon: <AppstoreOutlined />, label: "재고이동 준비중", disabled: true },
-        { key: "wms-adjust-ready", icon: <CheckCircleOutlined />, label: "재고조정 준비중", disabled: true },
+        { key: "inventory-count-ready", icon: <CheckCircleOutlined />, label: "재고실사 준비중", disabled: true },
+        { key: "inventory-adjust-ready", icon: <AppstoreOutlined />, label: "재고조정 준비중", disabled: true },
       ],
     },
     {
       key: "returns-group",
-      label: "반품 관리",
+      label: "반품",
       type: "group",
       children: [
-        {
-          key: ROUTE_PATHS.channelAccounts,
-          icon: <ApiOutlined />,
-          label: "채널 연동 관리",
-          disabled: !hasPermission("RETURN_VIEW"),
-        },
         {
           key: ROUTE_PATHS.returnIntake,
           icon: <RollbackOutlined />,
@@ -135,18 +168,6 @@ export function MainLayout() {
           disabled: !hasPermission("RETURN_VIEW"),
         },
         {
-          key: ROUTE_PATHS.returnExternalOutbound,
-          icon: <ExportOutlined />,
-          label: "반품 외부반출",
-          disabled: !hasPermission("RETURN_VIEW"),
-        },
-        {
-          key: ROUTE_PATHS.returnExternalOutboundBatches,
-          icon: <HistoryOutlined />,
-          label: "외부반출 이력",
-          disabled: !hasPermission("RETURN_VIEW"),
-        },
-        {
           key: ROUTE_PATHS.returnHold,
           icon: <PauseCircleOutlined />,
           label: "반품 보류관리",
@@ -166,23 +187,41 @@ export function MainLayout() {
         },
       ],
     },
+    ...(canSeePlatformMenus
+      ? [
+          {
+            key: "settlement-group",
+            label: "정산",
+            type: "group" as const,
+            children: [
+              { key: "settlement-usage-ready", icon: <DatabaseOutlined />, label: "사용량 집계 준비중", disabled: true },
+              { key: "settlement-billing-ready", icon: <CheckCircleOutlined />, label: "청구/인보이스 준비중", disabled: true },
+              { key: "settlement-agency-ready", icon: <TeamOutlined />, label: "대리점 정산 준비중", disabled: true },
+            ],
+          },
+          {
+            key: "agency-client-group",
+            label: "고객사/대리점",
+            type: "group" as const,
+            children: [
+              { key: "agency-management-ready", icon: <TeamOutlined />, label: "대리점 관리 준비중", disabled: true },
+              {
+                key: ROUTE_PATHS.masterClients,
+                icon: <DatabaseOutlined />,
+                label: "고객사/셀러",
+                disabled: !hasPermission("MASTER_VIEW"),
+              },
+              { key: "client-unit-ready", icon: <TeamOutlined />, label: "운영단위 관리 준비중", disabled: true },
+              { key: "worker-management-ready", icon: <UserOutlined />, label: "작업자 관리 준비중", disabled: true },
+            ],
+          },
+        ]
+      : []),
     {
       key: "master-group",
-      label: "기준 정보",
+      label: "기준정보",
       type: "group",
       children: [
-        {
-          key: ROUTE_PATHS.importPreview,
-          icon: <CloudUploadOutlined />,
-          label: "Import Preview",
-          disabled: !hasPermission("IMPORT_MANAGE"),
-        },
-        {
-          key: ROUTE_PATHS.masterClients,
-          icon: <DatabaseOutlined />,
-          label: "고객사/셀러",
-          disabled: !hasPermission("MASTER_VIEW"),
-        },
         {
           key: ROUTE_PATHS.masterProducts,
           icon: <ShoppingOutlined />,
@@ -196,13 +235,20 @@ export function MainLayout() {
           disabled: !hasPermission("MASTER_VIEW"),
         },
         { key: "master-warehouse-ready", icon: <InboxOutlined />, label: "창고/처리장소 준비중", disabled: true },
+        { key: "label-policy-ready", icon: <ScanOutlined />, label: "라벨 정책 준비중", disabled: true },
       ],
     },
     {
       key: "system-group",
-      label: "시스템 관리",
+      label: "시스템",
       type: "group",
       children: [
+        {
+          key: ROUTE_PATHS.importPreview,
+          icon: <CloudUploadOutlined />,
+          label: "Smart Import",
+          disabled: !hasPermission("IMPORT_MANAGE"),
+        },
         { key: "system-users-ready", icon: <UserOutlined />, label: "사용자 관리 준비중", disabled: true },
         { key: "system-permissions-ready", icon: <TeamOutlined />, label: "권한 관리 준비중", disabled: true },
         { key: "system-logs-ready", icon: <HistoryOutlined />, label: "로그 관리 준비중", disabled: true },

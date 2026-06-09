@@ -1,3 +1,13 @@
+export interface AgencySummary {
+  agency_id: number;
+  code: string;
+  name: string;
+  status: string;
+  memo?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface ClientSummary {
   client_id?: number;
   id?: number;

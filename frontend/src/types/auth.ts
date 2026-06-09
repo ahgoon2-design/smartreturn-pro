@@ -1,3 +1,12 @@
+export type RoleCode =
+  | "SUPER_ADMIN"
+  | "INTERNAL_ADMIN"
+  | "INTERNAL_WORKER"
+  | "AGENCY_ADMIN"
+  | "CLIENT_ADMIN"
+  | "CLIENT_USER"
+  | "READ_ONLY";
+
 export interface LoginRequest {
   login_id: string;
   password: string;
@@ -7,7 +16,7 @@ export interface LoginUserDto {
   user_id: number;
   login_id: string;
   user_name: string;
-  roles: string[];
+  roles: RoleCode[];
   client_id: number | null;
   agency_id: number | null;
   agency_name: string | null;
@@ -29,7 +38,7 @@ export interface AuthContextResponse {
   user_id: number;
   login_id: string;
   user_name: string;
-  roles: string[];
+  roles: RoleCode[];
   permissions: string[];
   client_id: number | null;
   agency_id: number | null;
