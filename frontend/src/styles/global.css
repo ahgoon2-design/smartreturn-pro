@@ -199,12 +199,18 @@ body {
 
 .smart-summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(130px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 8px;
+}
+
+.smart-summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 8px;
 }
 
 .smart-summary-card {
-  min-height: 78px;
+  min-height: 68px;
   overflow: hidden;
   border-radius: 14px;
   border: 1px solid var(--smart-blue-border);
@@ -213,7 +219,7 @@ body {
 }
 
 .smart-summary-card .ant-card-body {
-  padding: 13px 14px;
+  padding: 10px 12px;
 }
 
 .smart-summary-card__body {
@@ -229,7 +235,7 @@ body {
 }
 
 .smart-summary-card .ant-statistic-title {
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   color: var(--smart-text-secondary);
   font-size: 12px;
   font-weight: 700;
@@ -237,16 +243,29 @@ body {
 
 .smart-summary-card .ant-statistic-content {
   color: var(--smart-text-primary);
-  font-size: 22px;
+  font-size: clamp(17px, 1.55vw, 22px);
   font-weight: 800;
   line-height: 1.12;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.smart-summary-card .ant-statistic-content-value {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .smart-summary-card__description {
   display: block;
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--smart-text-secondary);
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .smart-summary-card__icon {
@@ -254,8 +273,8 @@ body {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   color: var(--smart-blue-main);
   background: var(--smart-blue-soft);
   border: 1px solid var(--smart-blue-border);

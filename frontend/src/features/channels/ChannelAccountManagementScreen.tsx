@@ -812,44 +812,6 @@ export function ChannelAccountManagementScreen() {
       <SmartErrorNotice message={errorMessage} />
       {notice && !errorMessage ? <Typography.Text type="secondary">{notice}</Typography.Text> : null}
 
-      <SmartDataSection title="채널 계정">
-        <SmartDataGrid<ChannelAccount>
-          rows={accounts}
-          rowKey="id"
-          columns={accountColumns}
-          loading={loading || actionLoadingId !== null}
-          emptyText="등록된 채널 계정이 없습니다."
-          rowActions={accountActions}
-          onRowClick={setSelectedAccount}
-          selectedRowKeys={selectedAccount ? [selectedAccount.id] : []}
-          maxHeight={360}
-          enableCopy
-        />
-      </SmartDataSection>
-
-      <SmartDataSection title={selectedAccount ? `${selectedAccount.store_name} dry-run 이력` : "dry-run 이력"}>
-        <SmartDataGrid<ChannelSyncJob>
-          rows={selectedJobs}
-          rowKey="id"
-          columns={jobColumns}
-          loading={loading}
-          emptyText="dry-run 수집 job이 없습니다."
-          maxHeight={240}
-        />
-      </SmartDataSection>
-
-      <SmartDataSection title="원본 이벤트 요약">
-        <SmartDataGrid<ChannelRawEventListItem>
-          rows={selectedEvents}
-          rowKey="id"
-          columns={rawEventColumns}
-          loading={loading}
-          emptyText="수집된 원본 이벤트 요약이 없습니다."
-          maxHeight={260}
-          enableCopy
-        />
-      </SmartDataSection>
-
       <section className="smart-summary-grid" aria-label="채널 반품 후보 상태 요약">
         <SmartSummaryCard label="입고 준비" value={`${candidateSummary.READY_FOR_INTAKE || 0}건`} tone="success" />
         <SmartSummaryCard label="팀 배정 필요" value={`${candidateSummary.TEAM_ASSIGN_PENDING || 0}건`} tone="warning" />
@@ -862,7 +824,7 @@ export function ChannelAccountManagementScreen() {
       <SmartDataSection
         title={selectedAccount ? `${selectedAccount.store_name} 반품접수 후보` : "반품접수 후보"}
         extra={
-          <Space>
+          <Space wrap>
             <Segmented
               value={candidateStatusFilter}
               options={CANDIDATE_STATUS_OPTIONS}
@@ -907,10 +869,48 @@ export function ChannelAccountManagementScreen() {
         />
       </SmartDataSection>
 
+      <SmartDataSection title="채널 계정">
+        <SmartDataGrid<ChannelAccount>
+          rows={accounts}
+          rowKey="id"
+          columns={accountColumns}
+          loading={loading || actionLoadingId !== null}
+          emptyText="등록된 채널 계정이 없습니다."
+          rowActions={accountActions}
+          onRowClick={setSelectedAccount}
+          selectedRowKeys={selectedAccount ? [selectedAccount.id] : []}
+          maxHeight={320}
+          enableCopy
+        />
+      </SmartDataSection>
+
+      <SmartDataSection title={selectedAccount ? `${selectedAccount.store_name} dry-run 이력` : "dry-run 이력"}>
+        <SmartDataGrid<ChannelSyncJob>
+          rows={selectedJobs}
+          rowKey="id"
+          columns={jobColumns}
+          loading={loading}
+          emptyText="dry-run 수집 job이 없습니다."
+          maxHeight={220}
+        />
+      </SmartDataSection>
+
+      <SmartDataSection title="원본 이벤트 요약">
+        <SmartDataGrid<ChannelRawEventListItem>
+          rows={selectedEvents}
+          rowKey="id"
+          columns={rawEventColumns}
+          loading={loading}
+          emptyText="수집된 원본 이벤트 요약이 없습니다."
+          maxHeight={240}
+          enableCopy
+        />
+      </SmartDataSection>
+
       <SmartDataSection
         title="상품 매핑 학습"
         extra={
-          <Space>
+          <Space wrap>
             <Segmented
               value={mappingStatusFilter}
               options={[
