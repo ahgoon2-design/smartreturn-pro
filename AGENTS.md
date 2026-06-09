@@ -58,6 +58,7 @@
 - `scan_events`는 스캔 이벤트 로그이며 재고 원장이 아니다.
 - Local Agent/로컬 클라이언트는 재고를 직접 변경하지 않는다.
 - 운송장번호, 상품코드, 바코드는 비교용 정규화 기준을 둔다.
+- SmartReturn Pro는 네이버클라우드 SaaS 운영을 전제로 설계한다. 초기 운영은 단일 Cloud DB for PostgreSQL + `client_id`/`client_unit_id` 기반 멀티테넌트 구조를 기본으로 하며, 고객사별 DB 분리는 초기에는 하지 않는다. 모든 고객사 API는 backend에서 client scope를 재검증한다. 사진/첨부/라벨/업로드 원본/export 파일은 DB에 직접 저장하지 않고 Object Storage에 저장한다. `channel_raw_events`, `import_job_rows`, `inventory_events`, `scan_events`, `audit_logs` 같은 대량 이력 테이블은 인덱스, 보관기간, 파티셔닝, 아카이브를 고려한다. 자세한 기준은 `docs/skills/naver-cloud-saas-architecture.md`를 따른다.
 
 ## 반품 핵심 원칙
 - 반품 구글시트는 반품처리 원장이 아니라 업체 반품접수/회신 채널이다.
@@ -111,3 +112,5 @@
   - `docs/skills/return-client-unit-routing.md`
 - 네이버/쿠팡/카페24/이지어드민/택배사 API 반품 자동수집 작업:
   - `docs/skills/channel-return-auto-collection.md`
+- DB/파일/사진/로그/배포/채널 자동수집/백업/보안/대량 이력 테이블 작업:
+  - `docs/skills/naver-cloud-saas-architecture.md`
