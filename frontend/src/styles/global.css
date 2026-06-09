@@ -497,6 +497,16 @@ body {
   font-weight: 700;
 }
 
+.return-processing-manual-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(135deg, var(--smart-card-bg) 0%, var(--smart-orange-glow) 100%);
+  border: 1px solid var(--smart-orange-border);
+  border-radius: 14px;
+  box-shadow: var(--smart-panel-shadow-soft);
+}
+
 .return-processing-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;

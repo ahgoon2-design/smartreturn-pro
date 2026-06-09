@@ -185,6 +185,34 @@ def _create_product(db: Session, client_id: int, code: str = "P001", barcode: st
         active_yn=True,
     )
     db.add(product_barcode)
+    for judgement_code in ("GOOD", "REFURB", "REFURB_A", "REFURB_B", "REFURB_C", "SAMPLE", "MANUFACTURER_RETURN", "DISPOSAL", "HOLD"):
+        warehouse = Warehouse(
+            warehouse_code=f"WH-{client_id}-{judgement_code}",
+            warehouse_name=f"{judgement_code} Warehouse",
+            warehouse_type="RETURN",
+            active_yn=True,
+        )
+        db.add(warehouse)
+        db.flush()
+        db.add(
+            ClientWarehouseSetting(
+                client_id=client_id,
+                warehouse_id=warehouse.id,
+                usage_type=f"RETURN_ROUTE_{judgement_code}",
+                is_default=False,
+                active_yn=True,
+            )
+        )
+        db.add(
+            ReturnJudgmentWarehouseRoute(
+                client_id=client_id,
+                client_unit_id=None,
+                judgment_code=judgement_code,
+                warehouse_id=warehouse.id,
+                active_yn=True,
+                sort_order=100,
+            )
+        )
     db.commit()
     return product
 
@@ -740,9 +768,125 @@ def test_processing_tasks_support_tracking_search(client: TestClient, db_session
     assert items[0]["return_tracking_no"] == "RTN-002"
 
 
+def test_manual_processing_row_creates_and_increments_no_detail_return(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "NO_DETAIL_CLIENT")
+    product = _create_product(db_session, client_id=client_row.id, code="ND-P001", barcode="ND-BC001")
+    _create_warehouse_setting(db_session, client_id=client_row.id)
+    _create_user(db_session, login_id="manual_no_detail_admin", role_code="INTERNAL_ADMIN", permissions=_return_permissions())
+    headers = _login(client, "manual_no_detail_admin")
+
+    first_response = client.post(
+        "/api/returns/processing/manual-rows",
+        json={
+            "client_id": client_row.id,
+            "return_tracking_no": "ND-TRACK-001",
+            "barcode": product.barcode,
+            "quantity": 1,
+            "processing_method": "SCAN",
+        },
+        headers=headers,
+    )
+    assert first_response.status_code == 200
+    first_data = first_response.json()["data"]
+    assert first_data["created"] is True
+    assert first_data["qty"] == 1
+    assert first_data["processing_mode"] == "NO_DETAIL_MANUAL_INTAKE"
+    assert first_data["processing_method"] == "SCAN"
+
+    second_response = client.post(
+        "/api/returns/processing/manual-rows",
+        json={
+            "client_id": client_row.id,
+            "return_tracking_no": "ND-TRACK-001",
+            "barcode": product.barcode,
+            "quantity": 1,
+            "processing_method": "SCAN",
+        },
+        headers=headers,
+    )
+    assert second_response.status_code == 200
+    second_data = second_response.json()["data"]
+    assert second_data["created"] is False
+    assert second_data["task_id"] == first_data["task_id"]
+    assert second_data["qty"] == 2
+
+    current_count = db_session.query(CurrentInventory).count()
+    judge_response = client.post(
+        f"/api/returns/processing/tasks/{first_data['task_id']}/judge",
+        json={"judgement_status": "GOOD", "processing_method": "SCAN"},
+        headers=headers,
+    )
+    assert judge_response.status_code == 200
+    judged = judge_response.json()["data"]
+    assert judged["status"] == "COMPLETED"
+    assert judged["final_warehouse_id"] is not None
+    assert judged["processing_method"] == "SCAN"
+    assert db_session.query(CurrentInventory).count() == current_count
+
+
+def test_manual_processing_row_blocks_unknown_product(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "NO_DETAIL_UNKNOWN")
+    _create_user(db_session, login_id="manual_unknown_admin", role_code="INTERNAL_ADMIN", permissions=_return_permissions())
+    headers = _login(client, "manual_unknown_admin")
+
+    response = client.post(
+        "/api/returns/processing/manual-rows",
+        json={
+            "client_id": client_row.id,
+            "return_tracking_no": "ND-UNKNOWN-001",
+            "barcode": "NO-SUCH-BARCODE",
+            "quantity": 1,
+            "processing_method": "SCAN",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "RETURN_PROCESSING_MANUAL_PRODUCT_NOT_FOUND"
+
+
+def test_processing_judge_blocks_without_confirmed_warehouse(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "NO_WAREHOUSE_CLIENT")
+    product = Product(
+        client_id=client_row.id,
+        product_code="NW-P001",
+        product_name="No Warehouse Product",
+        barcode="NW-BC001",
+        active_yn=True,
+    )
+    db_session.add(product)
+    db_session.commit()
+    _create_user(db_session, login_id="no_warehouse_admin", role_code="INTERNAL_ADMIN", permissions=_return_permissions())
+    headers = _login(client, "no_warehouse_admin")
+
+    manual_response = client.post(
+        "/api/returns/processing/manual-rows",
+        json={
+            "client_id": client_row.id,
+            "return_tracking_no": "NW-TRACK-001",
+            "barcode": "NW-BC001",
+            "quantity": 1,
+            "processing_method": "SCAN",
+        },
+        headers=headers,
+    )
+    assert manual_response.status_code == 200
+    task_id = manual_response.json()["data"]["task_id"]
+
+    judge_response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "GOOD", "processing_method": "SCAN"},
+        headers=headers,
+    )
+
+    assert judge_response.status_code == 400
+    assert judge_response.json()["result_code"] == "RETURN_PROCESSING_WAREHOUSE_REQUIRED"
+
+
 def test_judge_good_completes_task_without_label(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
     _create_product(db_session, client_row.id)
+    _create_warehouse_setting(db_session, client_id=client_row.id)
     _create_user(
         db_session,
         login_id="return_judge_good_admin",
@@ -1219,9 +1363,17 @@ def test_return_closing_uses_team_route_before_client_route(client: TestClient, 
     assert current.qty_on_hand == 1
 
 
-def test_return_closing_fails_without_route_when_no_default_warehouse(client: TestClient, db_session: Session):
+def test_return_processing_judge_fails_without_route_when_no_default_warehouse(client: TestClient, db_session: Session):
     client_row = _create_client(db_session, code="CLIENT_NO_ROUTE")
-    product = _create_product(db_session, client_row.id)
+    product = Product(
+        client_id=client_row.id,
+        product_code="NO-ROUTE-P001",
+        product_name="No Route Product",
+        barcode="NO-ROUTE-BC001",
+        active_yn=True,
+    )
+    db_session.add(product)
+    db_session.commit()
     _create_user(
         db_session,
         login_id="return_closing_no_route_admin",
@@ -1246,14 +1398,14 @@ def test_return_closing_fails_without_route_when_no_default_warehouse(client: Te
             ]
         },
     )
-    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "GOOD"},
+        headers=headers,
+    )
 
-    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
-
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["reflected_rows"] == 0
-    assert data["failed_rows"] == 1
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "RETURN_PROCESSING_WAREHOUSE_REQUIRED"
     assert db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).count() == 0
 
 
@@ -2402,9 +2554,17 @@ def test_return_disposal_confirm_blocks_already_confirmed_non_disposal_and_missi
     assert missing_response.json()["result_code"] == "RETURN_DISPOSAL_TASK_NOT_FOUND"
 
 
-def test_return_closing_confirm_good_fails_without_warehouse_setting(client: TestClient, db_session: Session):
+def test_return_processing_judge_good_fails_without_warehouse_setting(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
-    _create_product(db_session, client_row.id)
+    product = Product(
+        client_id=client_row.id,
+        product_code="NO-WH-P001",
+        product_name="No Warehouse Product",
+        barcode="NO-WH-BC001",
+        active_yn=True,
+    )
+    db_session.add(product)
+    db_session.commit()
     _create_user(
         db_session,
         login_id="return_closing_no_warehouse_admin",
@@ -2416,21 +2576,34 @@ def test_return_closing_confirm_good_fails_without_warehouse_setting(client: Tes
         db_session,
         login_id="return_closing_no_warehouse_admin",
         client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-NO-WH",
+                    "return_tracking_no": "RTN-NO-WH",
+                    "product_code": product.product_code,
+                    "barcode": product.barcode,
+                    "qty": 1,
+                }
+            ]
+        },
     )
-    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
-
-    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "GOOD"},
+        headers=headers,
+    )
     row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
 
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["failed_rows"] == 1
-    assert "창고" in data["row_results"][0]["message"]
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "RETURN_PROCESSING_WAREHOUSE_REQUIRED"
+    assert row.status == "READY_FOR_PROCESSING"
     assert row.inventory_reflected_yn is False
     assert db_session.query(InventoryEvent).count() == 0
 
 
-def test_return_closing_confirm_good_fails_without_product(client: TestClient, db_session: Session):
+def test_return_processing_judge_good_fails_without_product(client: TestClient, db_session: Session):
     client_row = _create_client(db_session)
     _create_warehouse_setting(db_session, client_id=client_row.id)
     _create_user(
@@ -2446,15 +2619,16 @@ def test_return_closing_confirm_good_fails_without_product(client: TestClient, d
         client_id=client_row.id,
         rows_payload={"rows": [{"row_no": 1, "order_no": "ORDER-NO-PRODUCT", "return_tracking_no": "RTN-NO-PRODUCT", "product_code": "UNKNOWN", "qty": 1}]},
     )
-    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
-
-    response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "GOOD"},
+        headers=headers,
+    )
     row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
 
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["failed_rows"] == 1
-    assert "상품" in data["row_results"][0]["message"]
+    assert response.status_code == 400
+    assert response.json()["result_code"] == "RETURN_PROCESSING_PRODUCT_NOT_FOUND"
+    assert row.status == "READY_FOR_PROCESSING"
     assert row.inventory_reflected_yn is False
     assert db_session.query(InventoryEvent).count() == 0
 

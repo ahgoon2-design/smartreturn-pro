@@ -92,6 +92,8 @@ export interface ReturnIntakeRow {
   team_assign_status?: ReturnTeamAssignStatus | string | null;
   source_type?: string | null;
   source_origin?: string | null;
+  processing_mode?: string | null;
+  processing_method?: string | null;
   channel_return_candidate_id?: number | null;
   row_no: number;
   order_no?: string | null;
@@ -193,6 +195,8 @@ export interface ReturnProcessingTask {
   team_assign_status?: ReturnTeamAssignStatus | string | null;
   source_type?: string | null;
   source_origin?: string | null;
+  processing_mode?: string | null;
+  processing_method?: string | null;
   channel_return_candidate_id?: number | null;
   row_no: number;
   order_no?: string | null;
@@ -247,10 +251,30 @@ export interface JudgeReturnProcessingTaskPayload {
   judgement_status: ReturnJudgementStatus;
   judgement_memo?: string | null;
   print_label?: boolean;
+  processing_method?: string | null;
 }
 
 export interface JudgeReturnProcessingTaskResponse extends ReturnProcessingTask {
   message: string;
+}
+
+export interface CreateReturnProcessingManualRowPayload {
+  client_id?: number | null;
+  client_unit_id?: number | null;
+  return_tracking_no: string;
+  product_id?: number | null;
+  product_code?: string | null;
+  barcode?: string | null;
+  quantity?: number;
+  processing_method: "SCAN" | "GRID_SELECT" | "MANUAL_QUANTITY" | "BULK_CONFIRM" | string;
+  memo?: string | null;
+}
+
+export interface CreateReturnProcessingManualRowResponse extends ReturnProcessingTask {
+  message: string;
+  created: boolean;
+  processing_mode: string;
+  processing_method: string;
 }
 
 export interface ReturnProcessingAttachment {

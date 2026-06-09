@@ -1,11 +1,12 @@
-import { ClearOutlined, DeleteOutlined, PaperClipOutlined, PrinterOutlined, ScanOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, Button, Descriptions, Input, List, Space, Tooltip, Typography } from "antd";
+import { ClearOutlined, DeleteOutlined, PaperClipOutlined, PlusOutlined, PrinterOutlined, ScanOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
+import { Alert, Button, Descriptions, Input, InputNumber, List, Select, Space, Tooltip, Typography } from "antd";
 import type { InputRef } from "antd";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClientError } from "../../api/client";
-import { listReturnWarehouseRoutes } from "../../api/master";
+import { listClients, listProducts, listReturnWarehouseRoutes } from "../../api/master";
 import {
+  createReturnProcessingManualRow,
   disableReturnProcessingAttachment,
   judgeReturnProcessingTask,
   listReturnProcessingAttachments,
@@ -20,7 +21,7 @@ import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.types";
 import { ROUTE_PATHS } from "../../routes/routePaths";
-import type { ReturnWarehouseRoute } from "../../types/master";
+import type { ClientSummary, ProductSummary, ReturnWarehouseRoute } from "../../types/master";
 import type { ReturnJudgementStatus, ReturnProcessingAttachment, ReturnProcessingTask } from "../../types/returns";
 import { useNavigate } from "react-router-dom";
 
@@ -31,7 +32,7 @@ type ScanFeedback = {
 };
 
 type ProductCheckStatus = "NO_TARGET" | "PENDING" | "NEEDS_INPUT" | "MATCHED" | "MISMATCHED";
-type ProcessingMethod = "SCAN" | "GRID_SELECT";
+type ProcessingMethod = "SCAN" | "GRID_SELECT" | "MANUAL_QUANTITY" | "BULK_CONFIRM";
 
 type ProductCheckFeedback = {
   status: ProductCheckStatus;
@@ -101,9 +102,18 @@ export function ReturnProcessingWorkspacePage() {
   const [returnWarehouseRoutes, setReturnWarehouseRoutes] = useState<ReturnWarehouseRoute[]>([]);
   const [routesLoading, setRoutesLoading] = useState(false);
   const [routesErrorMessage, setRoutesErrorMessage] = useState("");
+  const [clients, setClients] = useState<ClientSummary[]>([]);
+  const [manualClientId, setManualClientId] = useState<number | null>(null);
+  const [manualQuantity, setManualQuantity] = useState(1);
+  const [manualProductKeyword, setManualProductKeyword] = useState("");
+  const [manualProducts, setManualProducts] = useState<ProductSummary[]>([]);
+  const [manualProductLoading, setManualProductLoading] = useState(false);
+  const [manualRowSaving, setManualRowSaving] = useState(false);
+  const [manualFeedback, setManualFeedback] = useState<ScanFeedback | null>(null);
 
   useEffect(() => {
     focusScanInput(scanInputRef);
+    void loadClientsForManualMode();
     void loadTasks();
   }, []);
 
@@ -270,6 +280,159 @@ export function ReturnProcessingWorkspacePage() {
     }
   }
 
+  async function loadClientsForManualMode() {
+    try {
+      const nextClients = await listClients();
+      setClients(nextClients);
+      if (nextClients.length === 1) {
+        setManualClientId(getClientOptionId(nextClients[0]));
+      }
+    } catch {
+      setClients([]);
+    }
+  }
+
+  async function searchManualProducts(keyword = manualProductKeyword) {
+    const clientId = manualClientId;
+    const cleanKeyword = keyword.trim();
+    if (!clientId) {
+      setManualFeedback({
+        type: "warning",
+        message: "고객사를 먼저 선택하세요.",
+      });
+      return;
+    }
+    if (!cleanKeyword) {
+      setManualFeedback({
+        type: "warning",
+        message: "상품코드, 바코드 또는 상품명을 입력하세요.",
+      });
+      return;
+    }
+    setManualProductLoading(true);
+    setManualFeedback(null);
+    try {
+      const response = await listProducts({ clientId, keyword: cleanKeyword, pageSize: 20 });
+      setManualProducts(response.items || []);
+      if ((response.items || []).length === 0) {
+        setManualFeedback({
+          type: "warning",
+          message: "상품마스터에 없는 상품입니다.",
+          description: "확인필요 또는 보류로 분리한 뒤 상품 연결 후 처리하세요.",
+        });
+      }
+    } catch (error) {
+      setManualFeedback({
+        type: "error",
+        message: toUserMessage(error, "상품을 검색하지 못했습니다."),
+      });
+    } finally {
+      setManualProductLoading(false);
+    }
+  }
+
+  async function createManualRowFromProduct(product: ProductSummary, processingMethod: ProcessingMethod | "MANUAL_QUANTITY") {
+    if (!noDetailTrackingNo) {
+      return;
+    }
+    if (!manualClientId) {
+      setManualFeedback({
+        type: "warning",
+        message: "고객사를 먼저 선택하세요.",
+      });
+      return;
+    }
+    const quantity = Math.max(1, manualQuantity || 1);
+    setManualRowSaving(true);
+    setManualFeedback(null);
+    try {
+      const created = await createReturnProcessingManualRow({
+        client_id: manualClientId,
+        return_tracking_no: noDetailTrackingNo,
+        product_id: product.product_id,
+        quantity,
+        processing_method: processingMethod,
+        memo: "반품처리 화면에서 세부항목 없는 반품으로 생성",
+      });
+      upsertManualTask(created);
+      setManualFeedback({
+        type: "success",
+        message: created.message,
+        description: "생성된 row를 선택했습니다. 판정별 창고를 확인한 뒤 처리완료하세요.",
+      });
+      setManualQuantity(1);
+      setManualProductKeyword("");
+      setManualProducts([]);
+      focusScanInput(productScanInputRef, { select: true });
+    } catch (error) {
+      setManualFeedback({
+        type: "error",
+        message: toUserMessage(error, "세부항목 없는 반품 row를 생성하지 못했습니다."),
+      });
+    } finally {
+      setManualRowSaving(false);
+    }
+  }
+
+  async function createManualRowFromScan(scannedValue: string) {
+    if (!manualClientId) {
+      setManualFeedback({
+        type: "warning",
+        message: "고객사를 먼저 선택하세요.",
+      });
+      return;
+    }
+    setManualRowSaving(true);
+    setManualFeedback(null);
+    try {
+      const created = await createReturnProcessingManualRow({
+        client_id: manualClientId,
+        return_tracking_no: noDetailTrackingNo,
+        barcode: scannedValue,
+        product_code: scannedValue,
+        quantity: 1,
+        processing_method: "SCAN",
+        memo: "상품 스캔으로 세부항목 없는 반품 row 생성",
+      });
+      upsertManualTask(created);
+      setProductScanValue("");
+      setManualFeedback({
+        type: "success",
+        message: created.message,
+        description: created.created ? "상품 1개를 새 row로 추가했습니다." : "같은 상품의 처리수량을 1개 증가했습니다.",
+      });
+      focusScanInput(productScanInputRef, { select: true });
+    } catch (error) {
+      setManualFeedback({
+        type: "error",
+        message: toUserMessage(error, "상품마스터에 없는 상품입니다. 확인필요 또는 보류로 분리한 뒤 상품 연결 후 처리하세요."),
+      });
+      focusScanInput(productScanInputRef, { select: true });
+    } finally {
+      setManualRowSaving(false);
+    }
+  }
+
+  function upsertManualTask(task: ReturnProcessingTask) {
+    setTasks((previous) => {
+      const exists = previous.some((item) => item.task_id === task.task_id);
+      return exists ? previous.map((item) => (item.task_id === task.task_id ? task : item)) : [task, ...previous];
+    });
+    selectProcessingTask(task, { focusProduct: true });
+    setProductCheckFeedback({
+      status: "MATCHED",
+      type: "success",
+      message: "상품 확인 완료",
+      description: "세부항목 없는 반품 row가 상품마스터 기준으로 생성되었습니다.",
+    });
+    setSelectedProcessingMethod((task.processing_method as ProcessingMethod) || "SCAN");
+    setScanFeedback({
+      type: "success",
+      message: "세부항목 없는 반품 row를 처리 화면에 추가했습니다.",
+      description: "현재 화면에서 판정/창고 확인 후 처리완료할 수 있습니다.",
+    });
+  }
+
   async function loadTaskAttachments(taskId: number) {
     setAttachmentsLoading(true);
     setAttachmentFeedback(null);
@@ -325,6 +488,10 @@ export function ReturnProcessingWorkspacePage() {
   function handleProductScanEnter() {
     const scannedBarcode = productScanValue.trim();
     if (!selectedTask) {
+      if (noDetailTrackingNo && scannedBarcode) {
+        void createManualRowFromScan(scannedBarcode);
+        return;
+      }
       setProductCheckFeedback(NO_TARGET_PRODUCT_FEEDBACK);
       focusScanInput(scanInputRef, { select: true });
       return;
@@ -457,6 +624,7 @@ export function ReturnProcessingWorkspacePage() {
         judgement_status: selectedJudgement,
         judgement_memo: buildJudgementMemoForSave(judgementMemo, selectedProcessingMethod || "GRID_SELECT"),
         print_label: isLabelRequiredJudgement(selectedJudgement),
+        processing_method: selectedProcessingMethod || "GRID_SELECT",
       });
       const updatedTask: ReturnProcessingTask = { ...selectedTask, ...response };
       setTasks((previous) => previous.map((item) => (item.task_id === updatedTask.task_id ? updatedTask : item)));
@@ -610,13 +778,91 @@ export function ReturnProcessingWorkspacePage() {
           type="warning"
           showIcon
           message="세부항목 없는 반품입니다."
-          description="해당 return_tracking_no로 처리 대기 row를 찾지 못했습니다. 반품 자료에서 상품마스터 기준 상품코드/바코드와 수량을 수동 등록한 뒤 처리대상을 생성하세요. original_tracking_no는 보조 조회 후보이며 현장 스캔 기준으로 자동확정하지 않습니다."
+          description="상품을 스캔하거나 상품을 선택해서 입고/판정 처리하세요. 반품 자료 등록은 보조 경로이며, 현장 처리는 이 화면에서 계속 진행할 수 있습니다."
           action={
             <Button size="small" onClick={() => navigate(ROUTE_PATHS.returnIntake)}>
-              반품 자료 등록
+              자료 등록 보조
             </Button>
           }
         />
+      ) : null}
+
+      {noDetailTrackingNo ? (
+        <section className="return-processing-manual-panel" aria-label="세부항목 없는 반품 row 생성">
+          <Space align="center" wrap>
+            <Typography.Text strong>현장 row 생성</Typography.Text>
+            <SmartStatusBadge status="WARNING" label="NO_DETAIL_MANUAL_INTAKE" />
+            <Typography.Text type="secondary">운송장번호 {noDetailTrackingNo}</Typography.Text>
+          </Space>
+          <Space wrap align="center">
+            <Select
+              style={{ width: 220 }}
+              placeholder="고객사 선택"
+              value={manualClientId ?? undefined}
+              options={clients.map((client) => ({
+                value: getClientOptionId(client),
+                label: `${client.client_name} (${client.client_code})`,
+              }))}
+              onChange={(value) => {
+                setManualClientId(value);
+                setManualProducts([]);
+                setManualFeedback(null);
+              }}
+            />
+            <Input
+              style={{ width: 280 }}
+              value={manualProductKeyword}
+              placeholder="상품코드/바코드/상품명 검색"
+              allowClear
+              onChange={(event) => setManualProductKeyword(event.target.value)}
+              onPressEnter={() => void searchManualProducts()}
+            />
+            <InputNumber
+              min={1}
+              value={manualQuantity}
+              onChange={(value) => setManualQuantity(Number(value || 1))}
+              addonBefore="수량"
+            />
+            <Button icon={<SearchOutlined />} loading={manualProductLoading} onClick={() => void searchManualProducts()}>
+              상품 검색
+            </Button>
+          </Space>
+          {manualFeedback ? (
+            <Alert
+              className="return-processing-placeholder"
+              type={manualFeedback.type}
+              showIcon
+              message={manualFeedback.message}
+              description={manualFeedback.description}
+            />
+          ) : null}
+          {manualProducts.length > 0 ? (
+            <List
+              size="small"
+              dataSource={manualProducts}
+              renderItem={(product) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      key="add"
+                      size="small"
+                      icon={<PlusOutlined />}
+                      loading={manualRowSaving}
+                      onClick={() => void createManualRowFromProduct(product, "MANUAL_QUANTITY")}
+                    >
+                      row 추가
+                    </Button>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={`${product.product_name} / ${product.product_code}`}
+                    description={`바코드 ${product.barcode || "-"} · 고객사 ${product.client_name}`}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : null}
+        </section>
       ) : null}
 
       <SmartErrorNotice message={errorMessage} />
@@ -665,14 +911,16 @@ export function ReturnProcessingWorkspacePage() {
               size="large"
               prefix={<ScanOutlined />}
               allowClear
-              disabled={!selectedTask || selectedTask.status === "COMPLETED"}
+              disabled={(!selectedTask && !noDetailTrackingNo) || selectedTask?.status === "COMPLETED" || manualRowSaving}
               value={productScanValue}
               placeholder={
                 selectedTask?.status === "COMPLETED"
                   ? "이미 처리 완료된 항목입니다"
                   : selectedTask
                     ? "선택된 반품 상품의 바코드를 스캔하세요"
-                    : "먼저 운송장번호를 스캔해 처리 대상을 선택하세요"
+                    : noDetailTrackingNo
+                      ? "상품 바코드를 스캔하면 현장 row를 생성합니다"
+                      : "먼저 운송장번호를 스캔해 처리 대상을 선택하세요"
               }
               onChange={(event) => setProductScanValue(event.target.value)}
               onPressEnter={handleProductScanEnter}
@@ -920,8 +1168,12 @@ export function ReturnProcessingWorkspacePage() {
             <Alert
               type="info"
               showIcon
-              message="운송장번호를 스캔하거나 목록에서 대상을 선택하세요."
-              description="조회 결과가 있으면 처리 가능한 첫 번째 row가 자동 선택됩니다."
+              message={noDetailTrackingNo ? "세부항목 없는 반품입니다." : "운송장번호를 스캔하거나 목록에서 대상을 선택하세요."}
+              description={
+                noDetailTrackingNo
+                  ? "상품을 스캔하거나 위 검색 결과에서 상품을 선택하면 현재 화면에 처리 row가 생성됩니다."
+                  : "조회 결과가 있으면 처리 가능한 첫 번째 row가 자동 선택됩니다."
+              }
             />
           )}
         </aside>
@@ -1191,12 +1443,14 @@ function toProcessingMethodLabel(method: ProcessingMethod) {
   const labels: Record<ProcessingMethod, string> = {
     SCAN: "스캔 처리",
     GRID_SELECT: "그리드 선택 처리",
+    MANUAL_QUANTITY: "수량 직접 입력",
+    BULK_CONFIRM: "일괄 확인",
   };
   return labels[method];
 }
 
 function buildJudgementMemoForSave(memo: string, method: ProcessingMethod) {
-  const cleanMemo = memo.replace(/\[처리방식: (SCAN|GRID_SELECT)\]/g, "").trim();
+  const cleanMemo = memo.replace(/\[처리방식: (SCAN|GRID_SELECT|MANUAL_QUANTITY|BULK_CONFIRM)\]/g, "").trim();
   const methodTag = `[처리방식: ${method}]`;
   return cleanMemo ? `${cleanMemo}\n${methodTag}` : methodTag;
 }
@@ -1308,4 +1562,8 @@ function toUserMessage(error: unknown, fallback: string) {
     return error.message || fallback;
   }
   return fallback;
+}
+
+function getClientOptionId(client: ClientSummary) {
+  return Number(client.client_id ?? client.id);
 }

@@ -19,6 +19,7 @@ from app.schemas.returns import (
     ReturnIntakeBatchCreateRequest,
     ReturnIntakePasteRowsRequest,
     ReturnProcessingJudgeRequest,
+    ReturnProcessingManualRowCreateRequest,
 )
 from app.services import return_intake_service
 
@@ -218,6 +219,20 @@ def judge_return_processing_task_api(
         result_code="RETURN_PROCESSING_TASK_JUDGED",
         message="반품처리 판정을 저장했습니다.",
         data=return_intake_service.judge_return_processing_task(db, auth, task_id, request),
+    )
+
+
+@router.post("/processing/manual-rows", response_model=ApiResult)
+def create_return_processing_manual_row_api(
+    request: ReturnProcessingManualRowCreateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _ensure_password_ready(auth)
+    return api_success(
+        result_code="RETURN_PROCESSING_MANUAL_ROW_SAVED",
+        message="세부항목 없는 반품 처리 row를 저장했습니다.",
+        data=return_intake_service.create_return_processing_manual_row(db, auth, request),
     )
 
 

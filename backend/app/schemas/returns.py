@@ -214,6 +214,8 @@ class ReturnProcessingTaskResponse(BaseModel):
     team_assign_status: str = "NOT_REQUIRED"
     source_type: str | None = None
     source_origin: str | None = None
+    processing_mode: str | None = None
+    processing_method: str | None = None
     channel_return_candidate_id: int | None = None
     row_no: int
     order_no: str | None = None
@@ -273,6 +275,7 @@ class ReturnProcessingJudgeRequest(BaseModel):
     judgement_status: str
     judgement_memo: str | None = None
     print_label: bool | None = None
+    processing_method: str | None = None
 
     @field_validator("judgement_status")
     @classmethod
@@ -289,6 +292,57 @@ class ReturnProcessingJudgeRequest(BaseModel):
             return None
         value = value.strip()
         return value or None
+
+    @field_validator("processing_method")
+    @classmethod
+    def _optional_method(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().upper()
+        return value or None
+
+
+class ReturnProcessingManualRowCreateRequest(BaseModel):
+    client_id: int | None = None
+    client_unit_id: int | None = None
+    return_tracking_no: str
+    product_id: int | None = None
+    product_code: str | None = None
+    barcode: str | None = None
+    quantity: int = Field(default=1, ge=1)
+    processing_method: str = "SCAN"
+    memo: str | None = None
+
+    @field_validator("return_tracking_no")
+    @classmethod
+    def _required_tracking_no(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("required")
+        return value
+
+    @field_validator("product_code", "barcode", "memo")
+    @classmethod
+    def _optional_manual_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @field_validator("processing_method")
+    @classmethod
+    def _required_processing_method(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("required")
+        return value
+
+
+class ReturnProcessingManualRowCreateResponse(ReturnProcessingTaskResponse):
+    message: str
+    created: bool
+    processing_mode: str
+    processing_method: str
 
 
 class ReturnProcessingJudgeResponse(ReturnProcessingTaskResponse):

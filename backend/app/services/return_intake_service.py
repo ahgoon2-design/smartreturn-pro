@@ -32,6 +32,8 @@ from app.schemas.returns import (
     ReturnUnitAssignmentPendingRowResponse,
     ReturnProcessingAttachmentListResponse,
     ReturnProcessingAttachmentResponse,
+    ReturnProcessingManualRowCreateRequest,
+    ReturnProcessingManualRowCreateResponse,
     ReturnClosingCandidateListResponse,
     ReturnClosingCandidateResponse,
     ReturnClosingConfirmRequest,
@@ -82,6 +84,12 @@ ROW_STATUS_READY_FOR_PROCESSING = "READY_FOR_PROCESSING"
 ROW_STATUS_PROCESSING = "PROCESSING"
 ROW_STATUS_COMPLETED = "COMPLETED"
 ROW_STATUS_HOLD = "HOLD"
+
+RETURN_PROCESSING_MODE_NORMAL_MATCHED = "NORMAL_MATCHED"
+RETURN_PROCESSING_MODE_NO_DETAIL_MANUAL_INTAKE = "NO_DETAIL_MANUAL_INTAKE"
+RETURN_PROCESSING_MODE_UNKNOWN_TRACKING_MANUAL_INTAKE = "UNKNOWN_TRACKING_MANUAL_INTAKE"
+RETURN_PROCESSING_SOURCE_NO_DETAIL = "NO_DETAIL_FIELD_INTAKE"
+ALLOWED_PROCESSING_METHODS = {"SCAN", "GRID_SELECT", "MANUAL_QUANTITY", "BULK_CONFIRM"}
 
 TEAM_ASSIGN_NOT_REQUIRED = "NOT_REQUIRED"
 TEAM_ASSIGN_PENDING = "TEAM_ASSIGN_PENDING"
@@ -380,6 +388,8 @@ def _processing_task_response(row: ReturnIntakeRow, client) -> dict:
         team_assign_status=row.team_assign_status,
         source_type=(row.raw_data or {}).get("source_type"),
         source_origin=(row.raw_data or {}).get("source_origin"),
+        processing_mode=(row.raw_data or {}).get("processing_mode"),
+        processing_method=(row.raw_data or {}).get("processing_method"),
         channel_return_candidate_id=(row.raw_data or {}).get("channel_return_candidate_id"),
         row_no=row.row_no,
         order_no=row.order_no,
@@ -1114,6 +1124,138 @@ def list_return_processing_tasks(
     ).model_dump()
 
 
+def create_return_processing_manual_row(
+    db: Session,
+    auth: AuthContext,
+    request: ReturnProcessingManualRowCreateRequest,
+) -> dict:
+    _require_return_prepare(auth)
+    effective_client_id = resolve_effective_client_id(auth, request.client_id)
+    processing_method = _ensure_processing_method(request.processing_method)
+    product = _resolve_manual_row_product(
+        db,
+        client_id=effective_client_id,
+        product_id=request.product_id,
+        product_code=request.product_code,
+        barcode=request.barcode,
+    )
+    if product is None:
+        raise _business_error(
+            "RETURN_PROCESSING_MANUAL_PRODUCT_NOT_FOUND",
+            "상품마스터에 없는 상품입니다. 확인필요 또는 보류로 분리한 뒤 상품 연결 후 처리하세요.",
+        )
+
+    if request.client_unit_id is not None:
+        unit = master_repository.get_client_unit_by_id(db, request.client_unit_id)
+        if unit is None or unit.client_id != effective_client_id or not unit.active_yn:
+            raise _business_error(
+                "RETURN_PROCESSING_MANUAL_CLIENT_UNIT_INVALID",
+                "선택한 팀/운영단위가 고객사 범위와 일치하지 않습니다.",
+            )
+
+    tracking_no = request.return_tracking_no.strip()
+    existing_row = repo.find_open_manual_processing_row(
+        db,
+        client_id=effective_client_id,
+        return_tracking_no=tracking_no,
+        product_code=product.product_code,
+    )
+    now = datetime.now(timezone.utc)
+    try:
+        if existing_row is not None:
+            existing_row.qty = (existing_row.qty or 0) + request.quantity
+            existing_row.barcode = existing_row.barcode or product.barcode or request.barcode
+            existing_row.raw_data = _merge_processing_raw_data(
+                existing_row.raw_data,
+                processing_mode=RETURN_PROCESSING_MODE_NO_DETAIL_MANUAL_INTAKE,
+                processing_method=processing_method,
+                source=RETURN_PROCESSING_SOURCE_NO_DETAIL,
+                quantity_delta=request.quantity,
+                memo=request.memo,
+            )
+            db.commit()
+            db.refresh(existing_row)
+            row = existing_row
+            created = False
+        else:
+            batch = repo.create_batch(
+                db,
+                agency_id=resolve_effective_agency_id(auth, None, allow_all_agencies=True)
+                or master_repository.get_client_agency_id(db, effective_client_id),
+                client_id=effective_client_id,
+                client_unit_id=request.client_unit_id,
+                source_type=RETURN_PROCESSING_MODE_NO_DETAIL_MANUAL_INTAKE,
+                source_name="현장 세부항목 없는 반품",
+                status=BATCH_STATUS_READY_FOR_PROCESSING,
+                created_by=auth.user_id,
+                memo=request.memo,
+            )
+            row = ReturnIntakeRow(
+                batch_id=batch.id,
+                agency_id=batch.agency_id,
+                client_id=effective_client_id,
+                client_unit_id=request.client_unit_id,
+                team_assign_status=TEAM_ASSIGN_ASSIGNED if request.client_unit_id else TEAM_ASSIGN_NOT_REQUIRED,
+                row_no=repo.get_next_row_no_for_batch(db, batch.id),
+                order_no=None,
+                return_tracking_no=tracking_no,
+                original_tracking_no=None,
+                product_code=product.product_code,
+                barcode=product.barcode or request.barcode,
+                product_name=product.product_name,
+                option_name=None,
+                qty=request.quantity,
+                return_reason="세부항목 없는 현장 처리",
+                customer_name=None,
+                customer_phone_masked=None,
+                raw_data=_merge_processing_raw_data(
+                    {
+                        "source_type": RETURN_PROCESSING_MODE_NO_DETAIL_MANUAL_INTAKE,
+                        "source_origin": "RETURN_PROCESSING_SCREEN",
+                        "created_from": RETURN_PROCESSING_SOURCE_NO_DETAIL,
+                        "manual_created_at": now.isoformat(),
+                    },
+                    processing_mode=RETURN_PROCESSING_MODE_NO_DETAIL_MANUAL_INTAKE,
+                    processing_method=processing_method,
+                    source=RETURN_PROCESSING_SOURCE_NO_DETAIL,
+                    quantity_delta=request.quantity,
+                    memo=request.memo,
+                ),
+                validation_status=ROW_VALIDATION_VALID,
+                validation_message=None,
+                status=ROW_STATUS_READY_FOR_PROCESSING,
+            )
+            repo.create_row(db, row)
+            repo.update_batch_counts(
+                db,
+                batch,
+                status=BATCH_STATUS_READY_FOR_PROCESSING,
+                total_rows=1,
+                valid_rows=1,
+                warning_rows=0,
+                error_rows=0,
+            )
+            db.commit()
+            db.refresh(row)
+            created = True
+
+        task_row = repo.get_processing_task_with_client(db, row.id)
+        if task_row is None:
+            raise _business_error("RETURN_PROCESSING_MANUAL_ROW_NOT_FOUND", "생성한 처리 row를 다시 조회하지 못했습니다.")
+        row, client = task_row
+        response_data = _processing_task_response(row, client)
+        response_data["processing_mode"] = RETURN_PROCESSING_MODE_NO_DETAIL_MANUAL_INTAKE
+        response_data["processing_method"] = processing_method
+        return ReturnProcessingManualRowCreateResponse(
+            **response_data,
+            message="세부항목 없는 반품 row를 생성했습니다." if created else "같은 상품 row의 처리수량을 증가했습니다.",
+            created=created,
+        ).model_dump()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def judge_return_processing_task(
     db: Session,
     auth: AuthContext,
@@ -1134,6 +1276,7 @@ def judge_return_processing_task(
     judgement_status = request.judgement_status.strip().upper()
     if judgement_status not in ALLOWED_JUDGEMENT_STATUSES:
         raise _business_error("RETURN_PROCESSING_JUDGEMENT_INVALID", "지원하지 않는 판정값입니다.")
+    processing_method = _ensure_processing_method(request.processing_method or "GRID_SELECT")
 
     if row.validation_status == ROW_VALIDATION_INVALID:
         raise _business_error(
@@ -1156,6 +1299,12 @@ def judge_return_processing_task(
             "처리 대기 또는 처리 중 상태에서만 판정을 저장할 수 있습니다.",
         )
 
+    _ensure_processing_task_can_complete(db, row, judgement_status)
+    _record_processing_method(
+        row,
+        processing_mode=(row.raw_data or {}).get("processing_mode") or RETURN_PROCESSING_MODE_NORMAL_MATCHED,
+        processing_method=processing_method,
+    )
     _apply_return_judgement(
         db,
         row,
@@ -2104,6 +2253,108 @@ def _normalize_scan_number(value: str | None) -> str | None:
 
 def _generate_external_outbound_batch_no(now: datetime) -> str:
     return f"EXOB-{now.strftime('%Y%m%d')}-{uuid4().hex[:8].upper()}"
+
+
+def _ensure_processing_method(value: str | None) -> str:
+    processing_method = (value or "GRID_SELECT").strip().upper()
+    if processing_method not in ALLOWED_PROCESSING_METHODS:
+        raise _business_error("RETURN_PROCESSING_METHOD_INVALID", "지원하지 않는 처리방식입니다.")
+    return processing_method
+
+
+def _merge_processing_raw_data(
+    raw_data: dict[str, Any] | None,
+    *,
+    processing_mode: str,
+    processing_method: str,
+    source: str,
+    quantity_delta: int | None = None,
+    memo: str | None = None,
+) -> dict[str, Any]:
+    next_raw_data = dict(raw_data or {})
+    next_raw_data["processing_mode"] = processing_mode
+    next_raw_data["processing_method"] = processing_method
+    next_raw_data["source"] = source
+    events = list(next_raw_data.get("processing_events") or [])
+    event: dict[str, Any] = {
+        "processing_method": processing_method,
+        "source": source,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if quantity_delta is not None:
+        event["quantity_delta"] = quantity_delta
+    safe_memo = _safe_text(memo)
+    if safe_memo:
+        event["memo"] = safe_memo
+    events.append(event)
+    next_raw_data["processing_events"] = events
+    return next_raw_data
+
+
+def _record_processing_method(row: ReturnIntakeRow, *, processing_mode: str, processing_method: str) -> None:
+    row.raw_data = _merge_processing_raw_data(
+        row.raw_data,
+        processing_mode=processing_mode,
+        processing_method=processing_method,
+        source="RETURN_PROCESSING_CONFIRM",
+    )
+
+
+def _resolve_manual_row_product(
+    db: Session,
+    *,
+    client_id: int,
+    product_id: int | None,
+    product_code: str | None,
+    barcode: str | None,
+):
+    if product_id is not None:
+        product = master_repository.get_product_by_id(db, product_id)
+        if product is not None and product.client_id == client_id and product.active_yn:
+            return product
+        return None
+
+    barcode_norm = _normalize_barcode(barcode)
+    if barcode_norm:
+        product = master_repository.find_product_by_barcode(db, client_id, barcode_norm)
+        if product is not None and product.active_yn:
+            return product
+        product_barcode = master_repository.find_product_barcode_by_norm(db, client_id, barcode_norm)
+        if product_barcode is not None and product_barcode.active_yn:
+            product = master_repository.get_product_by_id(db, product_barcode.product_id)
+            if product is not None and product.client_id == client_id and product.active_yn:
+                return product
+
+    safe_product_code = _safe_text(product_code)
+    if safe_product_code:
+        product = master_repository.find_product_by_code(db, client_id, safe_product_code)
+        if product is not None and product.active_yn:
+            return product
+    return None
+
+
+def _ensure_processing_task_can_complete(db: Session, row: ReturnIntakeRow, judgement_status: str) -> None:
+    if row.qty is None or row.qty < 1:
+        raise _business_error("RETURN_PROCESSING_QUANTITY_INVALID", "처리수량은 1 이상이어야 합니다.")
+    if _resolve_return_product(db, row) is None:
+        raise _business_error(
+            "RETURN_PROCESSING_PRODUCT_NOT_FOUND",
+            "상품마스터에 없는 상품입니다. 확인필요 또는 보류로 분리한 뒤 상품 연결 후 처리하세요.",
+        )
+    route, route_warehouse = _resolve_return_warehouse_route(db, row, judgement_status)
+    warehouse = route_warehouse if route is not None and row.client_unit_id is not None else None
+    if warehouse is None and judgement_status == JUDGEMENT_GOOD:
+        warehouse = _resolve_return_good_warehouse(db, row.client_id)
+    if warehouse is None:
+        warehouse = route_warehouse
+    if warehouse is None:
+        raise _business_error(
+            "RETURN_PROCESSING_WAREHOUSE_REQUIRED",
+            "판정별 창고가 확정되지 않아 처리완료할 수 없습니다. 고객사별 판정/창고 설정을 확인하세요.",
+        )
+    row.warehouse_route_id = route.id if route is not None else row.warehouse_route_id
+    row.recommended_warehouse_id = warehouse.id
+    row.final_warehouse_id = warehouse.id
 
 
 def _resolve_return_product(db: Session, row: ReturnIntakeRow):

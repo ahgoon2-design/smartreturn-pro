@@ -1,5 +1,7 @@
 import { apiRequest } from "./client";
 import type {
+  CreateReturnProcessingManualRowPayload,
+  CreateReturnProcessingManualRowResponse,
   ConfirmReturnDisposalTaskPayload,
   ConfirmReturnDisposalTaskResponse,
   JudgeReturnProcessingTaskPayload,
@@ -151,6 +153,13 @@ export async function listReturnProcessingTasks(options: ReturnProcessingTaskLis
 
 export async function judgeReturnProcessingTask(taskId: number, payload: JudgeReturnProcessingTaskPayload) {
   return apiRequest<JudgeReturnProcessingTaskResponse>(`/api/returns/processing/tasks/${taskId}/judge`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createReturnProcessingManualRow(payload: CreateReturnProcessingManualRowPayload) {
+  return apiRequest<CreateReturnProcessingManualRowResponse>("/api/returns/processing/manual-rows", {
     method: "POST",
     body: JSON.stringify(payload),
   });

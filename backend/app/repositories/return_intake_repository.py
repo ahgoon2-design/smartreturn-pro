@@ -92,6 +92,39 @@ def create_rows(db: Session, rows: list[ReturnIntakeRow]) -> list[ReturnIntakeRo
     return rows
 
 
+def create_row(db: Session, row: ReturnIntakeRow) -> ReturnIntakeRow:
+    db.add(row)
+    db.flush()
+    return row
+
+
+def get_next_row_no_for_batch(db: Session, batch_id: int) -> int:
+    max_row_no = db.query(func.max(ReturnIntakeRow.row_no)).filter(ReturnIntakeRow.batch_id == batch_id).scalar()
+    return int(max_row_no or 0) + 1
+
+
+def find_open_manual_processing_row(
+    db: Session,
+    *,
+    client_id: int,
+    return_tracking_no: str,
+    product_code: str,
+) -> ReturnIntakeRow | None:
+    return (
+        db.query(ReturnIntakeRow)
+        .join(ReturnIntakeBatch, ReturnIntakeBatch.id == ReturnIntakeRow.batch_id)
+        .filter(
+            ReturnIntakeRow.client_id == client_id,
+            ReturnIntakeRow.return_tracking_no == return_tracking_no,
+            ReturnIntakeRow.product_code == product_code,
+            ReturnIntakeRow.status.in_(("READY_FOR_PROCESSING", "PROCESSING")),
+            ReturnIntakeBatch.source_type.in_(("NO_DETAIL_MANUAL_INTAKE", "UNKNOWN_TRACKING_MANUAL_INTAKE")),
+        )
+        .order_by(ReturnIntakeRow.id.desc())
+        .first()
+    )
+
+
 def list_rows(
     db: Session,
     *,
