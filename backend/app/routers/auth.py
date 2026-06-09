@@ -29,6 +29,7 @@ def get_auth_context_api(auth: AuthContext = Depends(get_current_auth_context)) 
         permissions=auth.permissions,
         client_id=auth.client_id,
         agency_id=auth.agency_id,
+        agency_name=auth.agency_name,
         client_name=auth.client_name,
         default_warehouse_id=auth.default_warehouse_id,
         must_change_password=auth.must_change_password,

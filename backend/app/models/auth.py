@@ -9,6 +9,7 @@ from app.db.base import Base
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
+        Index("ix_users_agency_id", "agency_id"),
         Index("ix_users_client_id", "client_id"),
         Index("ix_users_active_yn", "active_yn"),
     )
@@ -18,6 +19,7 @@ class User(Base):
     user_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
     default_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

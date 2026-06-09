@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isPlatformAdmin = Boolean(authContext?.is_platform_admin || authContext?.roles?.includes("SUPER_ADMIN"));
   const isAgencyUser = Boolean(authContext?.is_agency_user);
   const isClientUser = Boolean(authContext?.is_client_user);
-  const canSelectClient = Boolean(authContext?.is_internal_user);
+  const canSelectClient = Boolean(authContext?.is_internal_user || authContext?.is_agency_user);
 
   const hasPermission = useCallback(
     (permission: string) => {

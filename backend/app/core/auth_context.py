@@ -55,6 +55,8 @@ def build_auth_context_from_user(
     permissions: Iterable[str] | None = None,
     client_code: str | None = None,
     client_name: str | None = None,
+    agency_name: str | None = None,
+    allowed_client_ids: list[int] | None = None,
     selected_client_id: int | None = None,
     effective_client_id: int | None = None,
 ) -> AuthContext:
@@ -84,7 +86,8 @@ def build_auth_context_from_user(
     if is_client_user and client_id is None:
         raise ClientScopeDeniedError("고객사 사용자는 client_id가 필요합니다.")
 
-    allowed_client_ids = [client_id] if is_client_user and client_id is not None else []
+    if allowed_client_ids is None:
+        allowed_client_ids = [client_id] if is_client_user and client_id is not None else []
     auth = AuthContext(
         user_id=user.id,
         login_id=user.login_id,
@@ -93,6 +96,7 @@ def build_auth_context_from_user(
         permissions=permission_codes,
         client_id=client_id,
         agency_id=agency_id,
+        agency_name=agency_name,
         client_code=client_code,
         client_name=client_name,
         default_warehouse_id=getattr(user, "default_warehouse_id", None),
@@ -134,6 +138,46 @@ def resolve_effective_client_id(
         return auth.client_id
 
     if auth.is_agency_user:
-        raise ClientScopeDeniedError("AGENCY_ADMIN client scope requires agency-client mapping.")
+        if auth.agency_id is None:
+            raise ClientScopeDeniedError("대리점 사용자는 agency_id가 필요합니다.")
+        if requested_client_id is None:
+            if allow_all_clients:
+                return None
+            raise ClientScopeDeniedError("이 API는 고객사 선택이 필요합니다.")
+        if not auth.allowed_client_ids:
+            raise ClientScopeDeniedError("대리점 사용자의 고객사 접근 목록을 확인할 수 없습니다.")
+        if requested_client_id not in auth.allowed_client_ids:
+            raise ClientScopeDeniedError("대리점 범위를 벗어난 고객사 데이터에는 접근할 수 없습니다.")
+        return requested_client_id
+
+    raise PermissionDeniedError("알 수 없는 role 조합입니다.")
+
+
+def resolve_effective_agency_id(
+    auth: AuthContext,
+    requested_agency_id: int | None,
+    *,
+    allow_all_agencies: bool = False,
+) -> int | None:
+    """요청 agency_id와 AuthContext로 최종 agency scope를 결정한다."""
+
+    if auth.is_platform_admin or auth.is_internal_user:
+        if requested_agency_id is not None:
+            return requested_agency_id
+        if allow_all_agencies:
+            return None
+        return auth.agency_id
+
+    if auth.is_agency_user:
+        if auth.agency_id is None:
+            raise ClientScopeDeniedError("대리점 사용자는 agency_id가 필요합니다.")
+        if requested_agency_id is not None and requested_agency_id != auth.agency_id:
+            raise ClientScopeDeniedError("대리점 범위를 벗어난 데이터에는 접근할 수 없습니다.")
+        return auth.agency_id
+
+    if auth.is_client_user:
+        if requested_agency_id is not None and auth.agency_id is not None and requested_agency_id != auth.agency_id:
+            raise ClientScopeDeniedError("대리점 범위를 벗어난 데이터에는 접근할 수 없습니다.")
+        return auth.agency_id
 
     raise PermissionDeniedError("알 수 없는 role 조합입니다.")

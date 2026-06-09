@@ -10,12 +10,14 @@ from app.db.base import Base
 class ReturnIntakeBatch(Base):
     __tablename__ = "return_intake_batches"
     __table_args__ = (
+        Index("ix_return_intake_batches_agency_client_created", "agency_id", "client_id", "created_at"),
         Index("ix_return_intake_batches_client_created", "client_id", "created_at"),
         Index("ix_return_intake_batches_status_created", "status", "created_at"),
         Index("ix_return_intake_batches_client_unit", "client_id", "client_unit_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
     source_type: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -40,6 +42,8 @@ class ReturnIntakeRow(Base):
     __tablename__ = "return_intake_rows"
     __table_args__ = (
         UniqueConstraint("batch_id", "row_no", name="uq_return_intake_rows_batch_row_no"),
+        Index("ix_return_intake_rows_agency_tracking", "agency_id", "client_id", "return_tracking_no"),
+        Index("ix_return_intake_rows_agency_status_created", "agency_id", "client_id", "status", "created_at"),
         Index("ix_return_intake_rows_batch_row_no", "batch_id", "row_no"),
         Index("ix_return_intake_rows_batch_validation", "batch_id", "validation_status"),
         Index("ix_return_intake_rows_client_status", "client_id", "status"),
@@ -80,6 +84,7 @@ class ReturnIntakeRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     batch_id: Mapped[int] = mapped_column(ForeignKey("return_intake_batches.id"), nullable=False)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
     team_assign_status: Mapped[str] = mapped_column(

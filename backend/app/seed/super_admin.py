@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, validate_password_policy
 from app.models.auth import Role, User, UserRole
+from app.repositories.master_repository import get_default_agency
 
 
 SUPER_ADMIN_ROLE_CODE = "SUPER_ADMIN"
@@ -82,10 +83,12 @@ def bootstrap_super_admin(
         )
 
     try:
+        default_agency = get_default_agency(db)
         user = User(
             login_id=login_id,
             user_name=user_name,
             email=email,
+            agency_id=default_agency.id if default_agency is not None else None,
             password_hash=hash_password(plain_password),
             must_change_password=True,
             active_yn=True,

@@ -16,7 +16,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.auth import Permission, Role, RolePermission, User, UserRole
 from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelReturnCandidate, ChannelSyncJob, ProductChannelMapping
-from app.models.master import Client, ClientUnit, Product, ProductBarcode, Warehouse
+from app.models.master import Agency, Client, ClientUnit, Product, ProductBarcode, Warehouse
 from app.models.returns import ReturnIntakeBatch, ReturnIntakeRow
 
 
@@ -36,6 +36,7 @@ def db_session() -> Generator[Session, None, None]:
         poolclass=StaticPool,
     )
     for table in (
+        Agency.__table__,
         Client.__table__,
         Warehouse.__table__,
         ClientUnit.__table__,
@@ -77,8 +78,17 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         app.dependency_overrides.clear()
 
 
-def _create_client(db: Session, code: str = "CLIENT_A") -> Client:
-    row = Client(client_code=code, client_name=f"{code} Name", active_yn=True)
+def _create_agency(db: Session, code: str = "AGENCY_A") -> Agency:
+    row = Agency(agency_code=code, agency_name=f"{code} Name", agency_type="DIRECT", active_yn=True)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def _create_client(db: Session, code: str = "CLIENT_A", agency_id: int | None = None) -> Client:
+    if agency_id is None:
+        agency_id = _create_agency(db, code=f"AGENCY_{code}").id
+    row = Client(agency_id=agency_id, client_code=code, client_name=f"{code} Name", active_yn=True)
     db.add(row)
     db.commit()
     return row
@@ -268,10 +278,13 @@ def test_channel_account_create_list_update_disable(client: TestClient, db_sessi
     headers = _admin_headers(client, db_session)
 
     account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id)
+    account = db_session.query(ChannelAccount).filter(ChannelAccount.id == account_id).one()
+    assert account.agency_id == client_row.agency_id
 
     list_response = client.get("/api/channels/accounts", headers=headers)
     assert list_response.status_code == 200
     assert list_response.json()["data"]["items"][0]["id"] == account_id
+    assert list_response.json()["data"]["items"][0]["agency_id"] == client_row.agency_id
     assert list_response.json()["data"]["items"][0]["credential_ref_masked"] == "chan***tore"
 
     update_response = client.patch(
@@ -687,6 +700,10 @@ def test_channel_ready_candidate_creates_return_intake_row_and_scan_finds_it(
     assert data["candidate"]["return_expected_create_status"] == "CREATED"
     row = db_session.get(ReturnIntakeRow, data["return_expected_id"])
     assert row is not None
+    batch = db_session.get(ReturnIntakeBatch, row.batch_id)
+    assert batch is not None
+    assert batch.agency_id == client_row.agency_id
+    assert row.agency_id == client_row.agency_id
     assert row.status == "READY_FOR_PROCESSING"
     assert row.validation_status == "VALID"
     assert row.return_tracking_no == "RTNCREATE"

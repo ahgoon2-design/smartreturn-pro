@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from types import SimpleNamespace
+from typing import Annotated, cast
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
@@ -35,10 +36,13 @@ def get_current_user(
             raise exc
         raise InvalidTokenError() from exc
 
-    user = db.query(User).filter(User.id == user_id).one_or_none()
+    # Only id/active_yn are needed before AuthContext is built. Keeping this
+    # narrow lets old test databases return the intended auth error before the
+    # agency migration has been applied.
+    user = db.query(User.id, User.active_yn).filter(User.id == user_id).one_or_none()
     if user is None or not user.active_yn:
         raise NotAuthenticatedError("인증된 사용자를 찾을 수 없습니다.")
-    return user
+    return cast(User, SimpleNamespace(id=user.id, active_yn=user.active_yn))
 
 
 def get_current_auth_context(

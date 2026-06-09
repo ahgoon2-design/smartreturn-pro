@@ -12,6 +12,7 @@ class InventoryEvent(Base):
     __table_args__ = (
         UniqueConstraint("event_no", name="uq_inventory_events_event_no"),
         UniqueConstraint("idempotency_key", name="uq_inventory_events_idempotency_key"),
+        Index("ix_inventory_events_agency_client_created", "agency_id", "client_id", "created_at"),
         Index("ix_inventory_events_client_product_created", "client_id", "product_id", "created_at"),
         Index("ix_inventory_events_source", "source_type", "source_id"),
         Index("ix_inventory_events_reverse_event_id", "reverse_event_id"),
@@ -20,6 +21,7 @@ class InventoryEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     event_no: Mapped[str] = mapped_column(String(80), nullable=False)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouses.id"), nullable=False)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"))
@@ -51,12 +53,14 @@ class CurrentInventory(Base):
             "stock_status",
             name="uq_current_inventory_scope",
         ),
+        Index("ix_current_inventory_agency_scope", "agency_id", "client_id", "warehouse_id", "product_id"),
         Index("ix_current_inventory_client_product", "client_id", "product_id"),
         Index("ix_current_inventory_warehouse_product", "warehouse_id", "product_id"),
         Index("ix_current_inventory_stock_scope", "client_id", "warehouse_id", "product_id", "stock_status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouses.id"), nullable=False)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"))

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.core.auth_context import resolve_effective_client_id
+from app.core.auth_context import resolve_effective_agency_id, resolve_effective_client_id
 from app.core.permissions import require_permission
 from app.repositories import inventory_repository
 from app.schemas.auth import AuthContext
@@ -31,8 +31,10 @@ def list_current_inventory(
 ) -> dict:
     require_permission(auth, "INVENTORY_VIEW")
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
     rows, total_count = inventory_repository.list_current_inventory(
         db,
+        agency_id=effective_agency_id,
         client_id=effective_client_id,
         warehouse_id=warehouse_id,
         product_code=_clean(product_code),
@@ -87,10 +89,12 @@ def list_inventory_events(
 ) -> dict:
     require_permission(auth, "INVENTORY_VIEW")
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
     safe_page = max(page, 1)
     safe_page_size = min(max(page_size, 1), 500)
     rows, total_count = inventory_repository.list_inventory_events(
         db,
+        agency_id=effective_agency_id,
         client_id=effective_client_id,
         warehouse_id=warehouse_id,
         product_code=_clean(product_code),

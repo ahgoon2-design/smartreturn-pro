@@ -37,7 +37,7 @@ def test_internal_roles_are_internal(role_code: str):
 
 
 def test_agency_admin_is_separate_from_internal_and_client_scope():
-    auth = build_auth_context_from_user(_user(), roles=["AGENCY_ADMIN"])
+    auth = build_auth_context_from_user(_user(agency_id=7), roles=["AGENCY_ADMIN"])
 
     assert is_agency_role("AGENCY_ADMIN") is True
     assert is_platform_admin_role("AGENCY_ADMIN") is False
@@ -48,6 +48,19 @@ def test_agency_admin_is_separate_from_internal_and_client_scope():
     assert auth.allowed_client_ids == []
     with pytest.raises(ClientScopeDeniedError):
         resolve_effective_client_id(auth, requested_client_id=10)
+
+
+def test_agency_admin_can_access_allowed_client_scope():
+    auth = build_auth_context_from_user(
+        _user(agency_id=7),
+        roles=["AGENCY_ADMIN"],
+        allowed_client_ids=[10, 11],
+    )
+
+    assert resolve_effective_client_id(auth, requested_client_id=10) == 10
+    assert resolve_effective_client_id(auth, requested_client_id=None, allow_all_clients=True) is None
+    with pytest.raises(ClientScopeDeniedError):
+        resolve_effective_client_id(auth, requested_client_id=20)
 
 
 @pytest.mark.parametrize("role_code", ["CLIENT_ADMIN", "CLIENT_USER", "READ_ONLY"])

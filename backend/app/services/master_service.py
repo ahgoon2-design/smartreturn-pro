@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.core.auth_context import resolve_effective_client_id
+from app.core.auth_context import resolve_effective_agency_id, resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError
 from app.core.permissions import require_permission, require_roles
 from app.repositories import master_repository as repo
@@ -251,8 +251,11 @@ def _barcode_dto(product_barcode) -> dict:
 
 
 def _client_summary(client) -> ClientSummary:
+    agency = getattr(client, "_agency", None)
     return ClientSummary(
         client_id=client.id,
+        agency_id=client.agency_id,
+        agency_name=getattr(agency, "agency_name", None),
         client_code=client.client_code,
         client_name=client.client_name,
         active_yn=client.active_yn,
@@ -260,8 +263,11 @@ def _client_summary(client) -> ClientSummary:
 
 
 def _client_detail(client) -> ClientDetail:
+    agency = getattr(client, "_agency", None)
     return ClientDetail(
         client_id=client.id,
+        agency_id=client.agency_id,
+        agency_name=getattr(agency, "agency_name", None),
         client_code=client.client_code,
         client_name=client.client_name,
         business_no=client.business_no,
@@ -428,6 +434,8 @@ def _ensure_common_code_value_available(db: Session, group_id: int, code_value: 
 def get_accessible_clients(db: Session, auth: AuthContext) -> list[dict]:
     if auth.is_internal_user:
         return [_dump(_client_summary(client)) for client in repo.list_clients(db)]
+    if auth.is_agency_user and auth.agency_id is not None:
+        return [_dump(_client_summary(client)) for client in repo.list_clients(db, agency_id=auth.agency_id)]
     if auth.is_client_user and auth.client_id is not None:
         client = repo.get_client(db, auth.client_id)
         return [_dump(_client_summary(client))] if client and client.active_yn else []
@@ -445,10 +453,15 @@ def get_client_detail(db: Session, auth: AuthContext, client_id: int) -> dict | 
 def create_client(db: Session, auth: AuthContext, request: ClientCreateRequest) -> dict:
     _require_client_manage(auth)
     _ensure_client_code_available(db, request.client_code)
+    agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=False)
+    if agency_id is None:
+        default_agency = repo.get_default_agency(db)
+        agency_id = default_agency.id if default_agency is not None else None
 
     try:
         client = repo.create_client(
             db,
+            agency_id=agency_id,
             client_code=request.client_code,
             client_name=request.client_name,
             business_no=request.business_no,

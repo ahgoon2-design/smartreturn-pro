@@ -24,6 +24,8 @@ export type ChannelReturnNextAction =
 
 export interface ChannelAccount {
   id: number;
+  agency_id?: number | null;
+  agency_name?: string | null;
   client_id: number;
   client_unit_id?: number | null;
   channel_type: ChannelType;

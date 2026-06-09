@@ -6,7 +6,7 @@
 - 운영사: 동현물류
 - 고객사/화주: `client`
 - 내부 운영자와 고객사 사용자는 `role` 기준으로 구분한다.
-- SmartReturn Pro의 최종 목표는 반품 전용 프로그램이 아니라 CJ대한통운 대리점과 함께 운영 가능한 OMS + WMS + Returns 통합 SaaS 플랫폼이다. 초기 MVP는 반품 자동화 중심으로 시작하지만, 신규 기능/DB/권한/메뉴/화면/정산/채널연동은 향후 본사 관리자, 대리점 관리자, 고객사/셀러, 현장 작업자가 함께 사용하는 플랫폼으로 확장 가능하게 설계한다. 데이터 계층은 `client_id`, `client_unit_id`를 기본으로 하며, 대리점 SaaS 확장을 위해 `agency_id` 추가 가능성을 막지 않는다. 자세한 기준은 `docs/skills/smartreturn-platform-business-architecture.md`를 따른다.
+- SmartReturn Pro의 최종 목표는 반품 전용 프로그램이 아니라 CJ대한통운 대리점과 함께 운영 가능한 OMS + WMS + Returns 통합 SaaS 플랫폼이다. 초기 MVP는 반품 자동화 중심으로 시작하지만, 신규 기능/DB/권한/메뉴/화면/정산/채널연동은 본사 관리자, 대리점 관리자, 고객사/셀러, 현장 작업자가 함께 사용하는 플랫폼 기준으로 설계한다. 데이터 계층은 처음부터 `agency_id` → `client_id` → `client_unit_id` 3단계 구조를 기본으로 하며, 핵심 운영 테이블은 대리점별 권한/통계/정산/이력 추적을 위해 `agency_id`를 직접 저장한다. 자세한 기준은 `docs/skills/smartreturn-platform-business-architecture.md`를 따른다.
 
 ## 문서 작성 언어 규칙
 - SmartReturn Pro의 모든 기준 문서, 설계 문서, 운영 문서, Codex 지시문으로 생성되는 문서는 한글로 작성한다.
@@ -20,6 +20,7 @@
 - `SUPER_ADMIN`
 - `INTERNAL_ADMIN`
 - `INTERNAL_WORKER`
+- `AGENCY_ADMIN`
 - `CLIENT_ADMIN`
 - `CLIENT_USER`
 - `READ_ONLY`
@@ -29,6 +30,7 @@
 - 내부 운영자는 고객사를 선택할 수 있다.
 - 고객사 사용자는 자기 `client_id`로 고정된다.
 - 모든 업무 데이터는 `client_id` scope를 반드시 지킨다.
+- 대리점 SaaS 범위의 업무 데이터는 `agency_id` scope를 함께 지키며, 프론트 메뉴 숨김만으로 권한을 처리하지 않는다.
 - 창고 업무는 `warehouse_id` scope를 반드시 지킨다.
 - 내부 운영자에게 `client_id`가 있어도 고객사 사용자로 판단하지 않는다.
 

@@ -11,12 +11,14 @@ class ChannelAccount(Base):
     __tablename__ = "channel_accounts"
     __table_args__ = (
         UniqueConstraint("client_id", "channel_type", "external_account_id", name="uq_channel_accounts_external"),
+        Index("ix_channel_accounts_agency_client", "agency_id", "client_id"),
         Index("ix_channel_accounts_client_channel", "client_id", "channel_type"),
         Index("ix_channel_accounts_status", "status", "auth_status"),
         Index("ix_channel_accounts_sync_enabled", "sync_enabled"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
     channel_type: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -46,12 +48,14 @@ class ChannelAccount(Base):
 class ChannelSyncJob(Base):
     __tablename__ = "channel_sync_jobs"
     __table_args__ = (
+        Index("ix_channel_sync_jobs_agency_created", "agency_id", "created_at"),
         Index("ix_channel_sync_jobs_account_created", "channel_account_id", "created_at"),
         Index("ix_channel_sync_jobs_status", "status"),
         Index("ix_channel_sync_jobs_job_type", "job_type"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     channel_account_id: Mapped[int] = mapped_column(ForeignKey("channel_accounts.id"), nullable=False)
     job_type: Mapped[str] = mapped_column(String(80), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="PENDING", server_default="PENDING")
@@ -75,6 +79,7 @@ class ChannelRawEvent(Base):
     __tablename__ = "channel_raw_events"
     __table_args__ = (
         UniqueConstraint("channel_account_id", "raw_hash", name="uq_channel_raw_events_account_hash"),
+        Index("ix_channel_raw_events_agency_collected", "agency_id", "collected_at"),
         Index("ix_channel_raw_events_account_status", "channel_account_id", "process_status"),
         Index("ix_channel_raw_events_external_claim", "channel_account_id", "external_product_order_id", "external_claim_id"),
         Index("ix_channel_raw_events_channel_type", "channel_type"),
@@ -82,6 +87,7 @@ class ChannelRawEvent(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     channel_account_id: Mapped[int] = mapped_column(ForeignKey("channel_accounts.id"), nullable=False)
     channel_type: Mapped[str] = mapped_column(String(80), nullable=False)
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -103,6 +109,7 @@ class ChannelReturnCandidate(Base):
     __tablename__ = "channel_return_candidates"
     __table_args__ = (
         UniqueConstraint("channel_raw_event_id", name="uq_channel_return_candidates_raw_event"),
+        Index("ix_channel_return_candidates_agency_status", "agency_id", "client_id", "match_status", "created_at"),
         Index("ix_channel_return_candidates_account_status", "channel_account_id", "match_status"),
         Index("ix_channel_return_candidates_client_status", "client_id", "match_status"),
         Index("ix_channel_return_candidates_external_claim", "client_id", "external_product_order_id", "external_claim_id"),
@@ -113,6 +120,7 @@ class ChannelReturnCandidate(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     channel_raw_event_id: Mapped[int] = mapped_column(ForeignKey("channel_raw_events.id"), nullable=False)
     channel_account_id: Mapped[int] = mapped_column(ForeignKey("channel_accounts.id"), nullable=False)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
     source_type: Mapped[str] = mapped_column(String(80), nullable=False, default="CHANNEL_API", server_default="CHANNEL_API")
@@ -174,6 +182,7 @@ class ChannelReturnCandidate(Base):
 class ProductChannelMapping(Base):
     __tablename__ = "product_channel_mappings"
     __table_args__ = (
+        Index("ix_product_channel_mappings_agency_channel", "agency_id", "client_id", "channel_type"),
         Index(
             "ix_product_channel_mappings_lookup",
             "client_id",
@@ -186,6 +195,7 @@ class ProductChannelMapping(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     client_unit_id: Mapped[int | None] = mapped_column(ForeignKey("client_units.id"))
     channel_type: Mapped[str] = mapped_column(String(80), nullable=False)

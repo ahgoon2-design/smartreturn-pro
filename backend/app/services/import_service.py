@@ -12,7 +12,7 @@ from zipfile import BadZipFile, ZipFile
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-from app.core.auth_context import resolve_effective_client_id
+from app.core.auth_context import resolve_effective_agency_id, resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError
 from app.core.permissions import require_permission, require_roles
 from app.repositories import master_repository
@@ -2452,6 +2452,7 @@ def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRe
     import_type = _ensure_import_type(request.import_type)
     source_type = _ensure_source_type(request.source_type)
     _ensure_requested_client(db, requested_client_id)
+    agency_id = master_repository.get_client_agency_id(db, requested_client_id)
     if request.requested_warehouse_id is not None:
         _ensure_requested_warehouse(db, request.requested_warehouse_id)
 
@@ -2468,6 +2469,7 @@ def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRe
             message=request.message,
             raw_json=request.raw_json,
             created_by=auth.user_id,
+            agency_id=agency_id,
         )
         db.commit()
         row = repo.get_import_job(db, job.id)
@@ -2514,6 +2516,7 @@ def save_paste_import_job_rows(
             job_id=job.id,
             client_id=job.requested_client_id,
             rows=rows,
+            agency_id=job.agency_id,
         )
         updated_job = repo.update_import_job_after_rows_saved(
             db,
@@ -2588,6 +2591,7 @@ def upload_excel_import_job_file(
             job_id=job.id,
             client_id=job.requested_client_id,
             rows=parsed.rows,
+            agency_id=job.agency_id,
         )
         updated_job = repo.update_import_job_after_rows_saved(
             db,
@@ -3084,10 +3088,12 @@ def list_import_jobs(
 ) -> dict:
     _require_import_view(auth)
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
     safe_page = _safe_page(page)
     safe_page_size = _safe_page_size(page_size)
     items = repo.list_import_jobs(
         db,
+        agency_id=effective_agency_id,
         client_id=effective_client_id,
         import_type=import_type,
         status=status,
@@ -3096,6 +3102,7 @@ def list_import_jobs(
     )
     total_count = repo.count_import_jobs(
         db,
+        agency_id=effective_agency_id,
         client_id=effective_client_id,
         import_type=import_type,
         status=status,

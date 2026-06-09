@@ -44,6 +44,7 @@ def get_current_inventory(
 def increase_current_inventory(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int,
     warehouse_id: int,
     location_id: int | None,
@@ -61,6 +62,7 @@ def increase_current_inventory(
     )
     if current is None:
         current = CurrentInventory(
+            agency_id=agency_id,
             client_id=client_id,
             warehouse_id=warehouse_id,
             location_id=location_id,
@@ -70,6 +72,8 @@ def increase_current_inventory(
         )
         db.add(current)
     else:
+        if current.agency_id is None and agency_id is not None:
+            current.agency_id = agency_id
         current.qty_on_hand += qty_delta
     db.flush()
     return current
@@ -78,6 +82,7 @@ def increase_current_inventory(
 def list_current_inventory(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     warehouse_id: int | None = None,
     product_code: str | None = None,
@@ -96,6 +101,8 @@ def list_current_inventory(
 
     if client_id is not None:
         query = query.filter(CurrentInventory.client_id == client_id)
+    if agency_id is not None:
+        query = query.filter(CurrentInventory.agency_id == agency_id)
     if warehouse_id is not None:
         query = query.filter(CurrentInventory.warehouse_id == warehouse_id)
     if product_code:
@@ -146,6 +153,7 @@ def list_current_inventory(
 def list_inventory_events(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     warehouse_id: int | None = None,
     product_code: str | None = None,
@@ -167,6 +175,8 @@ def list_inventory_events(
 
     if client_id is not None:
         query = query.filter(InventoryEvent.client_id == client_id)
+    if agency_id is not None:
+        query = query.filter(InventoryEvent.agency_id == agency_id)
     if warehouse_id is not None:
         query = query.filter(InventoryEvent.warehouse_id == warehouse_id)
     if product_code:

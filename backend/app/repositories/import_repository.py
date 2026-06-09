@@ -31,8 +31,10 @@ def create_import_job(
     message: str | None,
     raw_json: dict | None,
     created_by: int,
+    agency_id: int | None = None,
 ) -> ImportJob:
     job = ImportJob(
+        agency_id=agency_id,
         import_type=import_type,
         source_type=source_type,
         source_name=source_name,
@@ -67,10 +69,12 @@ def bulk_create_import_job_rows(
     job_id: int,
     client_id: int | None,
     rows: list[dict],
+    agency_id: int | None = None,
 ) -> list[ImportJobRow]:
     row_models = [
         ImportJobRow(
             job_id=job_id,
+            agency_id=agency_id,
             client_id=client_id,
             row_no=row["row_no"],
             source_row_key=row.get("source_row_key"),
@@ -305,6 +309,7 @@ def has_existing_validation_errors(db: Session, *, job_id: int) -> bool:
 def _import_job_query(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     import_type: str | None = None,
     status: str | None = None,
@@ -314,6 +319,8 @@ def _import_job_query(
         .outerjoin(Client, Client.id == ImportJob.requested_client_id)
         .outerjoin(Warehouse, Warehouse.id == ImportJob.requested_warehouse_id)
     )
+    if agency_id is not None:
+        query = query.filter(ImportJob.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ImportJob.requested_client_id == client_id)
     if import_type:
@@ -326,6 +333,7 @@ def _import_job_query(
 def list_import_jobs(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     import_type: str | None = None,
     status: str | None = None,
@@ -334,6 +342,7 @@ def list_import_jobs(
 ) -> list[tuple[ImportJob, Client | None, Warehouse | None]]:
     query = _import_job_query(
         db,
+        agency_id=agency_id,
         client_id=client_id,
         import_type=import_type,
         status=status,
@@ -349,12 +358,14 @@ def list_import_jobs(
 def count_import_jobs(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     import_type: str | None = None,
     status: str | None = None,
 ) -> int:
     return _import_job_query(
         db,
+        agency_id=agency_id,
         client_id=client_id,
         import_type=import_type,
         status=status,

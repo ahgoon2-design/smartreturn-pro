@@ -17,6 +17,7 @@ from app.models.returns import (
 def create_batch(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int,
     source_type: str,
     source_name: str | None,
@@ -26,6 +27,7 @@ def create_batch(
     memo: str | None = None,
 ) -> ReturnIntakeBatch:
     batch = ReturnIntakeBatch(
+        agency_id=agency_id,
         client_id=client_id,
         client_unit_id=client_unit_id,
         source_type=source_type,
@@ -42,11 +44,14 @@ def create_batch(
 def list_batches(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> tuple[list[tuple[ReturnIntakeBatch, Client]], int]:
     query = db.query(ReturnIntakeBatch, Client).join(Client, Client.id == ReturnIntakeBatch.client_id)
+    if agency_id is not None:
+        query = query.filter(ReturnIntakeBatch.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ReturnIntakeBatch.client_id == client_id)
     total_count = query.count()

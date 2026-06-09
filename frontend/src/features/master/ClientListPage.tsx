@@ -69,6 +69,13 @@ export function ClientListPage() {
         sortable: true,
       },
       {
+        key: "agency_name",
+        title: "대리점/운영사",
+        dataIndex: "agency_name",
+        width: 160,
+        render: (value) => toDisplayText(value, "본사 직영"),
+      },
+      {
         key: "active_yn",
         title: "사용 여부",
         dataIndex: "active_yn",

@@ -10,12 +10,14 @@ from app.db.base import Base
 class ImportJob(Base):
     __tablename__ = "import_jobs"
     __table_args__ = (
+        Index("ix_import_jobs_agency_client_type_created", "agency_id", "requested_client_id", "source_type", "created_at"),
         Index("ix_import_jobs_type_created", "import_type", "created_at"),
         Index("ix_import_jobs_status_created", "status", "created_at"),
         Index("ix_import_jobs_requested_client_created", "requested_client_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     import_type: Mapped[str] = mapped_column(String(80), nullable=False)
     source_type: Mapped[str] = mapped_column(String(80), nullable=False)
     source_name: Mapped[str | None] = mapped_column(String(255))
@@ -69,6 +71,7 @@ class ImportJobRow(Base):
     __tablename__ = "import_job_rows"
     __table_args__ = (
         UniqueConstraint("job_id", "row_no", name="uq_import_job_rows_job_row_no"),
+        Index("ix_import_job_rows_agency_client_created", "agency_id", "client_id", "created_at"),
         Index("ix_import_job_rows_job_row_no", "job_id", "row_no"),
         Index("ix_import_job_rows_job_validation", "job_id", "validation_status"),
         Index("ix_import_job_rows_row_hash", "row_hash"),
@@ -77,6 +80,7 @@ class ImportJobRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("import_jobs.id"), nullable=False)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
     row_no: Mapped[int] = mapped_column(Integer, nullable=False)
     source_row_key: Mapped[str | None] = mapped_column(String(255))

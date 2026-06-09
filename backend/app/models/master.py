@@ -6,14 +6,38 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
+class Agency(Base):
+    __tablename__ = "agencies"
+    __table_args__ = (
+        Index("ix_agencies_active_yn", "active_yn"),
+        Index("ix_agencies_agency_name", "agency_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    agency_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    agency_type: Mapped[str | None] = mapped_column(String(80))
+    active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    remarks: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class Client(Base):
     __tablename__ = "clients"
     __table_args__ = (
+        Index("ix_clients_agency_id", "agency_id"),
         Index("ix_clients_active_yn", "active_yn"),
         Index("ix_clients_client_name", "client_name"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency_id: Mapped[int | None] = mapped_column(ForeignKey("agencies.id"))
     client_code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)
     business_no: Mapped[str | None] = mapped_column(String(50))

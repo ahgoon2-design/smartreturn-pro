@@ -8,7 +8,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from app.core.auth_context import resolve_effective_client_id
+from app.core.auth_context import resolve_effective_agency_id, resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError
 from app.core.permissions import require_permission, require_roles
 from app.models.returns import ReturnIntakeRow
@@ -47,7 +47,7 @@ from app.schemas.channels import (
 )
 
 
-CHANNEL_MANAGE_ROLES = {"SUPER_ADMIN", "INTERNAL_ADMIN"}
+CHANNEL_MANAGE_ROLES = {"SUPER_ADMIN", "INTERNAL_ADMIN", "AGENCY_ADMIN"}
 CHANNEL_VIEW_PERMISSION = "RETURN_VIEW"
 CHANNEL_MANAGE_PERMISSION = "RETURN_MANAGE"
 SAFE_CREDENTIAL_PLACEHOLDER = "credential-ref-not-configured"
@@ -126,6 +126,8 @@ def _norm_text(value: str | None) -> str | None:
 def _account_response(account) -> ChannelAccountResponse:
     return ChannelAccountResponse(
         id=account.id,
+        agency_id=account.agency_id,
+        agency_name=getattr(getattr(account, "_agency", None), "agency_name", None),
         client_id=account.client_id,
         client_unit_id=account.client_unit_id,
         channel_type=account.channel_type,
@@ -627,8 +629,10 @@ class ChannelAccountService:
     ) -> dict:
         _require_channel_view(auth)
         effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+        effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
         rows = repo.list_channel_accounts(
             db,
+            agency_id=effective_agency_id,
             client_id=effective_client_id,
             channel_type=channel_type,
             include_inactive=include_inactive,
@@ -643,10 +647,12 @@ class ChannelAccountService:
     def create_account(self, db: Session, auth: AuthContext, request: ChannelAccountCreateRequest) -> dict:
         _require_channel_manage(auth)
         client_id = resolve_effective_client_id(auth, request.client_id)
+        agency_id = master_repository.get_client_agency_id(db, client_id)
         self._ensure_client_and_unit(db, client_id=client_id, client_unit_id=request.client_unit_id)
         credential_ref = self._safe_credential_ref(request.credential_ref)
         account = repo.create_channel_account(
             db,
+            agency_id=agency_id,
             client_id=client_id,
             client_unit_id=request.client_unit_id,
             channel_type=request.channel_type,
@@ -723,6 +729,9 @@ class ChannelAccountService:
         if account is None:
             raise _business_error("CHANNEL_ACCOUNT_NOT_FOUND", "채널 계정을 찾을 수 없습니다.", 404)
         resolve_effective_client_id(auth, account.client_id)
+        if account.agency_id is None:
+            account.agency_id = master_repository.get_client_agency_id(db, account.client_id)
+            db.flush()
         return account
 
     def _ensure_client_and_unit(self, db: Session, *, client_id: int, client_unit_id: int | None):
@@ -761,6 +770,7 @@ class ChannelSyncService:
         now = datetime.now(timezone.utc)
         job = repo.create_channel_sync_job(
             db,
+            agency_id=account.agency_id,
             channel_account_id=account.id,
             job_type=request.job_type,
             status="RUNNING",
@@ -859,7 +869,13 @@ class ChannelSyncService:
             rows = repo.list_channel_sync_jobs(db, account_id=account_id)
         else:
             effective_client_id = resolve_effective_client_id(auth, None, allow_all_clients=True)
-            accounts = repo.list_channel_accounts(db, client_id=effective_client_id, include_inactive=True)
+            effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
+            accounts = repo.list_channel_accounts(
+                db,
+                agency_id=effective_agency_id,
+                client_id=effective_client_id,
+                include_inactive=True,
+            )
             account_ids = {account.id for account in accounts}
             rows = [job for job in repo.list_channel_sync_jobs(db, limit=100) if job.channel_account_id in account_ids]
         return ChannelSyncJobsResponse(items=[_sync_job_response(row) for row in rows]).model_dump()
@@ -874,10 +890,12 @@ class ChannelSyncService:
     ) -> dict:
         _require_channel_view(auth)
         effective_client_id = resolve_effective_client_id(auth, None, allow_all_clients=True)
+        effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
         if account_id is not None:
             account_service._get_scoped_account(db, auth, account_id=account_id)
         rows = repo.list_channel_raw_events(
             db,
+            agency_id=effective_agency_id,
             client_id=effective_client_id,
             account_id=account_id,
             process_status=process_status,
@@ -910,11 +928,13 @@ class ChannelCanonicalTransformService:
     ) -> dict:
         _require_channel_view(auth)
         effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+        effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
         if account_id is not None:
             account_service._get_scoped_account(db, auth, account_id=account_id)
 
         accounts = repo.list_channel_accounts(
             db,
+            agency_id=effective_agency_id,
             client_id=effective_client_id,
             channel_type=channel_type,
             include_inactive=True,
@@ -928,7 +948,13 @@ class ChannelCanonicalTransformService:
         today_start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
         raw_events = [
             event
-            for event in repo.list_channel_raw_events(db, client_id=effective_client_id, account_id=account_id, limit=10000)
+            for event in repo.list_channel_raw_events(
+                db,
+                agency_id=effective_agency_id,
+                client_id=effective_client_id,
+                account_id=account_id,
+                limit=10000,
+            )
             if event.channel_account_id in account_ids
             and (channel_type is None or event.channel_type == channel_type)
             and (date_from is None or event.collected_at >= date_from)
@@ -1062,10 +1088,12 @@ class ChannelCanonicalTransformService:
     ) -> dict:
         _require_channel_view(auth)
         effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+        effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
         if account_id is not None:
             account_service._get_scoped_account(db, auth, account_id=account_id)
         rows = repo.list_channel_return_candidates(
             db,
+            agency_id=effective_agency_id,
             client_id=effective_client_id,
             account_id=account_id,
             match_status=match_status,
@@ -1103,12 +1131,20 @@ class ChannelCanonicalTransformService:
     ) -> dict:
         _require_channel_view(auth)
         effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+        effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
         if account_id is not None:
             account_service._get_scoped_account(db, auth, account_id=account_id)
-        accounts = repo.list_channel_accounts(db, client_id=effective_client_id, channel_type=channel_type, include_inactive=True)
+        accounts = repo.list_channel_accounts(
+            db,
+            agency_id=effective_agency_id,
+            client_id=effective_client_id,
+            channel_type=channel_type,
+            include_inactive=True,
+        )
         account_names = {account.id: account.account_name for account in accounts}
         rows = repo.list_product_channel_mappings(
             db,
+            agency_id=effective_agency_id,
             client_id=effective_client_id,
             client_unit_id=client_unit_id,
             channel_type=channel_type,
@@ -1566,6 +1602,7 @@ class ChannelCanonicalTransformService:
         now = datetime.now(timezone.utc)
         batch = return_intake_repository.create_batch(
             db,
+            agency_id=candidate.agency_id or master_repository.get_client_agency_id(db, candidate.client_id),
             client_id=candidate.client_id,
             client_unit_id=candidate.client_unit_id,
             source_type=RETURN_INTAKE_SOURCE_TYPE_CHANNEL_API,
@@ -1576,6 +1613,7 @@ class ChannelCanonicalTransformService:
         )
         row = ReturnIntakeRow(
             batch_id=batch.id,
+            agency_id=batch.agency_id,
             client_id=candidate.client_id,
             client_unit_id=candidate.client_unit_id,
             team_assign_status=RETURN_INTAKE_TEAM_ASSIGNED,
@@ -1667,6 +1705,9 @@ class ChannelCanonicalTransformService:
         if mapping is None:
             raise _business_error("CHANNEL_PRODUCT_MAPPING_NOT_FOUND", "채널 상품 매핑을 찾을 수 없습니다.", 404)
         resolve_effective_client_id(auth, mapping.client_id)
+        if mapping.agency_id is None:
+            mapping.agency_id = master_repository.get_client_agency_id(db, mapping.client_id)
+            db.flush()
         return mapping
 
     def _product_mapping_response(self, db: Session, mapping, *, account_names: dict[int, str] | None = None, conflicts: dict[int, str] | None = None):
@@ -2042,6 +2083,7 @@ class ChannelCanonicalTransformService:
         product = master_repository.get_product_by_id(db, candidate.manual_product_id)
         repo.upsert_product_channel_mapping(
             db,
+            agency_id=candidate.agency_id or master_repository.get_client_agency_id(db, candidate.client_id),
             client_id=candidate.client_id,
             client_unit_id=candidate.manual_client_unit_id or candidate.client_unit_id,
             channel_type=candidate.source_origin,
@@ -2072,6 +2114,9 @@ class ChannelCanonicalTransformService:
         if candidate is None:
             raise _business_error("CHANNEL_RETURN_CANDIDATE_NOT_FOUND", "채널 반품 후보를 찾을 수 없습니다.", 404)
         resolve_effective_client_id(auth, candidate.client_id)
+        if candidate.agency_id is None:
+            candidate.agency_id = master_repository.get_client_agency_id(db, candidate.client_id)
+            db.flush()
         return candidate
 
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from sqlalchemy import or_
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, aliased
 
 from app.models.master import (
+    Agency,
     Client,
     ClientUnit,
     ClientWarehouseSetting,
@@ -24,14 +26,73 @@ def _active(query, model, active_only: bool):
     return query
 
 
-def list_clients(db: Session, active_only: bool = True) -> list[Client]:
+DEFAULT_AGENCY_CODE = "DEFAULT_DIRECT"
+
+
+def get_default_agency(db: Session) -> Agency | None:
+    try:
+        agency = db.query(Agency).filter(Agency.agency_code == DEFAULT_AGENCY_CODE).one_or_none()
+    except OperationalError:
+        return None
+    if agency is None:
+        agency = Agency(
+            agency_code=DEFAULT_AGENCY_CODE,
+            agency_name="본사 직영",
+            agency_type="DIRECT",
+            active_yn=True,
+        )
+        db.add(agency)
+        db.flush()
+    return agency
+
+
+def get_agency(db: Session, agency_id: int) -> Agency | None:
+    try:
+        return db.query(Agency).filter(Agency.id == agency_id).one_or_none()
+    except OperationalError:
+        return None
+
+
+def list_clients(db: Session, active_only: bool = True, agency_id: int | None = None) -> list[Client]:
     query = db.query(Client)
+    if agency_id is not None:
+        query = query.filter(Client.agency_id == agency_id)
     query = _active(query, Client, active_only)
-    return query.order_by(Client.client_name, Client.id).all()
+    clients = query.order_by(Client.client_name, Client.id).all()
+    agency_ids = {client.agency_id for client in clients if client.agency_id is not None}
+    agencies = {
+        agency.id: agency
+        for agency in db.query(Agency).filter(Agency.id.in_(agency_ids)).all()
+    } if agency_ids else {}
+    default_agency = None
+    for client in clients:
+        agency = agencies.get(client.agency_id)
+        if agency is None and client.agency_id is None:
+            default_agency = default_agency or get_default_agency(db)
+            if default_agency is not None:
+                client.agency_id = default_agency.id
+                agency = default_agency
+        setattr(client, "_agency", agency)
+    return clients
 
 
 def get_client(db: Session, client_id: int) -> Client | None:
     return db.query(Client).filter(Client.id == client_id).one_or_none()
+
+
+def get_client_agency_id(db: Session, client_id: int | None) -> int | None:
+    if client_id is None:
+        return None
+    client = get_client(db, client_id)
+    if client is None:
+        return None
+    if client.agency_id is None:
+        default_agency = get_default_agency(db)
+        if default_agency is None:
+            return None
+        client.agency_id = default_agency.id
+        db.flush()
+    return client.agency_id
 
 
 def get_client_by_id(db: Session, client_id: int) -> Client | None:
@@ -47,6 +108,7 @@ def create_client(
     *,
     client_code: str,
     client_name: str,
+    agency_id: int | None = None,
     business_no: str | None = None,
     contact_name: str | None = None,
     contact_phone: str | None = None,
@@ -58,6 +120,7 @@ def create_client(
     remarks: str | None = None,
 ) -> Client:
     client = Client(
+        agency_id=agency_id,
         client_code=client_code,
         client_name=client_name,
         business_no=business_no,

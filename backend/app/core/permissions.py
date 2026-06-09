@@ -45,7 +45,15 @@ def require_client_access(auth: AuthContext, target_client_id: int | None) -> No
     if auth.is_internal_user:
         return
     if auth.is_agency_user:
-        raise ClientScopeDeniedError("AGENCY_ADMIN client scope requires agency-client mapping.")
+        if auth.agency_id is None:
+            raise ClientScopeDeniedError("대리점 사용자는 agency_id가 필요합니다.")
+        if target_client_id is None:
+            raise ClientScopeDeniedError("고객사 선택이 필요합니다.")
+        if not auth.allowed_client_ids:
+            raise ClientScopeDeniedError("대리점 사용자의 고객사 접근 목록을 확인할 수 없습니다.")
+        if target_client_id not in auth.allowed_client_ids:
+            raise ClientScopeDeniedError("대리점 범위를 벗어난 고객사 데이터에는 접근할 수 없습니다.")
+        return
     if not auth.is_client_user or auth.client_id is None:
         raise ClientScopeDeniedError()
     if target_client_id is None or target_client_id != auth.client_id:
@@ -64,7 +72,23 @@ def require_warehouse_access(
 
 
 def can_select_client(auth: AuthContext) -> bool:
+    return auth.is_internal_user or auth.is_agency_user
+
+
+def can_select_agency_for_user(auth: AuthContext) -> bool:
     return auth.is_internal_user
+
+
+def can_access_agency(auth: AuthContext, target_agency_id: int | None) -> bool:
+    if auth.is_internal_user:
+        return True
+    if target_agency_id is None:
+        return False
+    if auth.is_agency_user:
+        return auth.agency_id == target_agency_id
+    if auth.is_client_user:
+        return auth.agency_id is None or auth.agency_id == target_agency_id
+    return False
 
 
 def can_select_client_for_user(auth: AuthContext) -> bool:

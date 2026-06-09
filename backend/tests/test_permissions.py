@@ -112,7 +112,7 @@ def test_can_select_client_and_can_write():
     assert can_select_client(_auth(is_internal_user=True)) is True
     assert can_select_client_for_user(_auth(is_internal_user=True)) is True
     assert can_select_client(_auth(is_internal_user=False, is_client_user=True)) is False
-    assert can_select_client(_auth(roles=["AGENCY_ADMIN"], is_internal_user=False, is_agency_user=True)) is False
+    assert can_select_client(_auth(roles=["AGENCY_ADMIN"], is_internal_user=False, is_agency_user=True)) is True
     assert can_write(_auth(roles=["READ_ONLY"])) is False
     assert can_write(_auth(must_change_password=True)) is False
     assert can_write(_auth()) is True

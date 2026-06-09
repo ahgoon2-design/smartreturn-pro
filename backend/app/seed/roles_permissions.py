@@ -25,6 +25,12 @@ ROLE_SEED_DATA = [
         "active_yn": True,
     },
     {
+        "role_code": "AGENCY_ADMIN",
+        "role_name": "대리점 관리자",
+        "role_type": "AGENCY",
+        "active_yn": True,
+    },
+    {
         "role_code": "CLIENT_ADMIN",
         "role_name": "고객사 관리자",
         "role_type": "CLIENT",
@@ -289,6 +295,22 @@ CLIENT_ADMIN_PERMISSIONS = [
     "SETTLEMENT_VIEW",
 ]
 
+AGENCY_ADMIN_PERMISSIONS = [
+    "MASTER_VIEW",
+    "IMPORT_VIEW",
+    "RETURN_VIEW",
+    "RETURN_PREPARE",
+    "RETURN_PROCESS",
+    "RETURN_JUDGE",
+    "RETURN_TRACE",
+    "RETURN_CLOSE",
+    "RETURN_OUTBOUND",
+    "INBOUND_VIEW",
+    "OUTBOUND_VIEW",
+    "INVENTORY_VIEW",
+    "SETTLEMENT_VIEW",
+]
+
 CLIENT_USER_PERMISSIONS = [
     "RETURN_VIEW",
     "RETURN_TRACE",
@@ -320,6 +342,7 @@ def get_role_permission_seed_data() -> dict[str, list[str]]:
         "SUPER_ADMIN": list(all_permissions),
         "INTERNAL_ADMIN": list(INTERNAL_ADMIN_PERMISSIONS),
         "INTERNAL_WORKER": list(INTERNAL_WORKER_PERMISSIONS),
+        "AGENCY_ADMIN": list(AGENCY_ADMIN_PERMISSIONS),
         "CLIENT_ADMIN": list(CLIENT_ADMIN_PERMISSIONS),
         "CLIENT_USER": list(CLIENT_USER_PERMISSIONS),
         "READ_ONLY": list(READ_ONLY_PERMISSIONS),

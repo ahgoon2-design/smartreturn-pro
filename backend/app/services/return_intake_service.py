@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.core.auth_context import resolve_effective_client_id
+from app.core.auth_context import resolve_effective_agency_id, resolve_effective_client_id
 from app.core.exceptions import AuthError, ClientScopeDeniedError, PermissionDeniedError
 from app.core.permissions import can_write, require_permission, require_roles
 from app.models.inventory import InventoryEvent
@@ -187,7 +187,7 @@ def _require_return_view(auth: AuthContext) -> None:
 def _require_return_prepare(auth: AuthContext) -> None:
     if not can_write(auth):
         raise PermissionDeniedError("읽기 전용 사용자는 반품 접수 자료를 변경할 수 없습니다.")
-    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER", "CLIENT_ADMIN", "CLIENT_USER"})
+    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER", "AGENCY_ADMIN", "CLIENT_ADMIN", "CLIENT_USER"})
     require_permission(auth, "RETURN_PREPARE")
 
 
@@ -729,11 +729,13 @@ def create_return_intake_batch(db: Session, auth: AuthContext, request: ReturnIn
         raise ClientScopeDeniedError("반품 접수 batch에는 client_id가 필요합니다.")
     source_type = _ensure_source_type(request.source_type)
     _ensure_client(db, client_id)
+    agency_id = master_repository.get_client_agency_id(db, client_id)
     client_unit = _ensure_client_unit_for_client(db, client_id, request.client_unit_id)
 
     try:
         batch = repo.create_batch(
             db,
+            agency_id=agency_id,
             client_id=client_id,
             client_unit_id=client_unit.id if client_unit else None,
             source_type=source_type,
@@ -762,9 +764,16 @@ def list_return_intake_batches(
 ) -> dict:
     _require_return_view(auth)
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
     safe_page = max(page, 1)
     safe_page_size = min(max(page_size, 1), 200)
-    rows, total_count = repo.list_batches(db, client_id=effective_client_id, page=safe_page, page_size=safe_page_size)
+    rows, total_count = repo.list_batches(
+        db,
+        agency_id=effective_agency_id,
+        client_id=effective_client_id,
+        page=safe_page,
+        page_size=safe_page_size,
+    )
     return ReturnIntakeBatchListResponse(
         items=[ReturnIntakeBatchSummaryResponse(**_batch_summary(batch, client)) for batch, client in rows],
         page=safe_page,
@@ -807,6 +816,7 @@ def paste_return_intake_rows(
         rows.append(
             ReturnIntakeRow(
                 batch_id=batch.id,
+                agency_id=batch.agency_id,
                 client_id=batch.client_id,
                 client_unit_id=row_unit.id if row_unit else None,
                 team_assign_status=team_assign_status,
@@ -1495,6 +1505,7 @@ def confirm_return_closing(
 
             event = InventoryEvent(
                 event_no=f"RTN-CLOSE-{row.id}",
+                agency_id=row.agency_id or master_repository.get_client_agency_id(db, row.client_id),
                 client_id=row.client_id,
                 warehouse_id=warehouse.id,
                 location_id=None,
@@ -1525,6 +1536,7 @@ def confirm_return_closing(
             inventory_repository.create_inventory_event(db, event)
             inventory_repository.increase_current_inventory(
                 db,
+                agency_id=event.agency_id,
                 client_id=row.client_id,
                 warehouse_id=warehouse.id,
                 location_id=None,

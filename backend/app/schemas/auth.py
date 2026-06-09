@@ -13,6 +13,7 @@ class AuthContext(BaseModel):
     permissions: list[str] = Field(default_factory=list)
     client_id: int | None = None
     agency_id: int | None = None
+    agency_name: str | None = None
     client_code: str | None = None
     client_name: str | None = None
     default_warehouse_id: int | None = None

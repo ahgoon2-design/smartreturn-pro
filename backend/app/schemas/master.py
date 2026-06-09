@@ -16,6 +16,8 @@ class PageData(BaseModel):
 
 class ClientSummary(BaseModel):
     client_id: int
+    agency_id: int | None = None
+    agency_name: str | None = None
     client_code: str
     client_name: str
     active_yn: bool

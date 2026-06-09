@@ -3,6 +3,7 @@ from app.models.channels import ChannelAccount, ChannelRawEvent, ChannelReturnCa
 from app.models.import_job import ImportJob, ImportJobFile, ImportJobRow, ImportMappingProfile, ImportValidationError
 from app.models.inventory import CurrentInventory, InventoryEvent
 from app.models.master import (
+    Agency,
     Client,
     ClientUnit,
     ClientWarehouseSetting,
@@ -18,6 +19,7 @@ from app.models.returns import ReturnExternalOutboundBatch, ReturnIntakeBatch, R
 
 __all__ = [
     "AuthLoginLog",
+    "Agency",
     "ChannelAccount",
     "ChannelRawEvent",
     "ChannelReturnCandidate",

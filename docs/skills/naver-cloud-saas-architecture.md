@@ -10,10 +10,10 @@ SmartReturn Pro는 네이버클라우드에서 서비스하는 OMS + WMS + Retur
 
 - SmartReturn Pro의 초기 SaaS 운영은 단일 DB 멀티테넌트 구조를 기본으로 한다.
 - 고객사별 DB를 처음부터 분리하지 않는다.
-- 하나의 운영 DB 안에서 `client_id`, `client_unit_id`, 향후 `agency_id`로 데이터를 분리한다.
+- 하나의 운영 DB 안에서 `agency_id`, `client_id`, `client_unit_id` 3단계 scope로 데이터를 분리한다.
 - 고객사 사용자는 자기 `client_id` 범위만 조회하고 처리할 수 있어야 한다.
 - 내부 운영자는 권한에 따라 전체 또는 선택 고객사 데이터를 볼 수 있다.
-- 대리점 SaaS 확장을 위해 장기적으로 `agency_id` 구조를 고려한다.
+- 대리점 SaaS 확장을 위해 핵심 운영 테이블과 대량 이력 테이블에는 `agency_id` 직접 저장을 기본으로 검토한다.
 - DB와 backend는 외부 인터넷에 직접 노출하지 않는다.
 - 외부에는 Load Balancer와 웹 도메인만 노출한다.
 - 사진, 첨부파일, 라벨, 업로드 원본은 DB에 직접 저장하지 않고 Object Storage에 저장한다.
@@ -59,8 +59,9 @@ VPC 내부 구조:
 - 운영 DB는 Cloud DB for PostgreSQL 기준으로 설계한다.
 - 초기에는 하나의 PostgreSQL DB를 사용한다.
 - 모든 고객사 운영 데이터는 `client_id`를 가진다.
+- 대리점 권한, 통계, 정산, 대량 이력 조회가 필요한 핵심 운영 데이터는 `agency_id`도 직접 가진다.
 - 팀/운영단위가 필요한 데이터는 `client_unit_id`를 가진다.
-- 대리점 SaaS 확장을 고려하는 데이터는 향후 `agency_id` 추가 가능성을 막지 않는다.
+- 대리점 SaaS 확장을 고려하는 핵심 운영 데이터는 `agency_id`를 직접 저장한다.
 - 고객사별 DB 분리는 초기에는 금지한다.
 - 고객사별 DB 분리는 대형 고객 전용 요구, 법적/계약상 물리분리 요구, 특정 고객 트래픽 과다, 수억 row 이상 확장 시 검토한다.
 - 운영 테이블과 대량 이력 테이블을 구분해 관리한다.
@@ -96,6 +97,8 @@ VPC 내부 구조:
 
 대량 테이블 기본 인덱스 후보:
 
+- `agency_id`
+- `agency_id + client_id`
 - `client_id`
 - `client_id + created_at`
 - `client_id + status`
@@ -104,6 +107,7 @@ VPC 내부 구조:
 
 반품 인덱스 후보:
 
+- `return_intake_rows(agency_id, client_id, return_tracking_no)`
 - `return_intake_rows(client_id, return_tracking_no)`
 - `return_intake_rows(client_id, status, created_at)`
 - `return_intake_rows(client_id, client_unit_id, status)`
@@ -111,21 +115,27 @@ VPC 내부 구조:
 
 재고 인덱스 후보:
 
+- `current_inventory(agency_id, client_id, warehouse_id, product_id)`
 - `current_inventory(client_id, warehouse_id, product_id)`
+- `inventory_events(agency_id, client_id, created_at)`
 - `inventory_events(client_id, product_id, created_at)`
 - `inventory_events(client_id, warehouse_id, created_at)`
 
 채널 자동수집 인덱스 후보:
 
 - `channel_raw_events(channel_account_id, raw_hash)`
+- `channel_raw_events(agency_id, collected_at)`
 - `channel_raw_events(channel_account_id, external_product_order_id, external_claim_id)`
+- `channel_return_candidates(agency_id, client_id, match_status, created_at)`
 - `channel_return_candidates(client_id, match_status, created_at)`
 - `channel_return_candidates(client_id, return_tracking_no)`
 - `product_channel_mappings(client_id, channel_type, external_seller_product_code)`
 
 Import 인덱스 후보:
 
+- `import_jobs(agency_id, requested_client_id, source_type, created_at)`
 - `import_jobs(client_id, source_type, created_at)`
+- `import_job_rows(agency_id, client_id, created_at)`
 - `import_job_rows(import_job_id, row_no)`
 - `import_job_rows(client_id, created_at)`
 

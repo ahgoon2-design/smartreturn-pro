@@ -1,6 +1,8 @@
 export interface ClientSummary {
   client_id?: number;
   id?: number;
+  agency_id?: number | null;
+  agency_name?: string | null;
   client_code: string;
   client_name: string;
   active_yn: boolean;

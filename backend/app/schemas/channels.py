@@ -106,6 +106,8 @@ class ChannelAccountUpdateRequest(BaseModel):
 
 class ChannelAccountResponse(BaseModel):
     id: int
+    agency_id: int | None = None
+    agency_name: str | None = None
     client_id: int
     client_unit_id: int | None = None
     channel_type: str

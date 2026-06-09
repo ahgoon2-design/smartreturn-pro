@@ -12,24 +12,36 @@ from app.models.channels import (
     ChannelSyncJob,
     ProductChannelMapping,
 )
+from app.models.master import Agency
 from app.models.returns import ReturnIntakeRow
 
 
 def list_channel_accounts(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     channel_type: str | None = None,
     include_inactive: bool = False,
 ) -> list[ChannelAccount]:
     query = db.query(ChannelAccount)
+    if agency_id is not None:
+        query = query.filter(ChannelAccount.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ChannelAccount.client_id == client_id)
     if channel_type:
         query = query.filter(ChannelAccount.channel_type == channel_type)
     if not include_inactive:
         query = query.filter(ChannelAccount.status != "INACTIVE")
-    return query.order_by(ChannelAccount.updated_at.desc(), ChannelAccount.id.desc()).all()
+    accounts = query.order_by(ChannelAccount.updated_at.desc(), ChannelAccount.id.desc()).all()
+    agency_ids = {account.agency_id for account in accounts if account.agency_id is not None}
+    agencies = {
+        agency.id: agency
+        for agency in db.query(Agency).filter(Agency.id.in_(agency_ids)).all()
+    } if agency_ids else {}
+    for account in accounts:
+        setattr(account, "_agency", agencies.get(account.agency_id))
+    return accounts
 
 
 def get_channel_account(db: Session, account_id: int) -> ChannelAccount | None:
@@ -79,12 +91,15 @@ def update_channel_sync_job(db: Session, job: ChannelSyncJob, values: dict) -> C
 def list_channel_raw_events(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     account_id: int | None = None,
     process_status: str | None = None,
     limit: int = 100,
 ) -> list[ChannelRawEvent]:
     query = db.query(ChannelRawEvent).join(ChannelAccount, ChannelAccount.id == ChannelRawEvent.channel_account_id)
+    if agency_id is not None:
+        query = query.filter(ChannelRawEvent.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ChannelAccount.client_id == client_id)
     if account_id is not None:
@@ -121,6 +136,7 @@ def upsert_channel_raw_event(db: Session, *, account: ChannelAccount, event: dic
             .first()
         )
     values = {
+        "agency_id": account.agency_id,
         "channel_type": account.channel_type,
         "event_type": event["event_type"],
         "external_order_id": event.get("external_order_id"),
@@ -142,6 +158,8 @@ def upsert_channel_raw_event(db: Session, *, account: ChannelAccount, event: dic
         return raw_event, True
     for field, value in values.items():
         setattr(existing, field, value)
+    if existing.agency_id is None:
+        existing.agency_id = account.agency_id
     db.flush()
     return existing, False
 
@@ -161,6 +179,7 @@ def get_channel_return_candidate_by_raw_event(db: Session, raw_event_id: int) ->
 def list_channel_return_candidates(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     account_id: int | None = None,
     match_status: str | None = None,
@@ -177,6 +196,8 @@ def list_channel_return_candidates(
     limit: int = 100,
 ) -> list[ChannelReturnCandidate]:
     query = db.query(ChannelReturnCandidate)
+    if agency_id is not None:
+        query = query.filter(ChannelReturnCandidate.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ChannelReturnCandidate.client_id == client_id)
     if account_id is not None:
@@ -354,6 +375,7 @@ def upsert_product_channel_mapping(db: Session, **values) -> ProductChannelMappi
 def list_product_channel_mappings(
     db: Session,
     *,
+    agency_id: int | None = None,
     client_id: int | None = None,
     channel_type: str | None = None,
     account_id: int | None = None,
@@ -365,6 +387,8 @@ def list_product_channel_mappings(
     limit: int = 100,
 ) -> list[ProductChannelMapping]:
     query = db.query(ProductChannelMapping)
+    if agency_id is not None:
+        query = query.filter(ProductChannelMapping.agency_id == agency_id)
     if client_id is not None:
         query = query.filter(ProductChannelMapping.client_id == client_id)
     if channel_type:
@@ -446,6 +470,7 @@ def upsert_channel_return_candidate(db: Session, *, raw_event: ChannelRawEvent, 
         candidate = ChannelReturnCandidate(
             channel_raw_event_id=raw_event.id,
             channel_account_id=account.id,
+            agency_id=account.agency_id,
             client_id=account.client_id,
             **values,
         )
@@ -454,5 +479,7 @@ def upsert_channel_return_candidate(db: Session, *, raw_event: ChannelRawEvent, 
         return candidate, True
     for field, value in values.items():
         setattr(existing, field, value)
+    if existing.agency_id is None:
+        existing.agency_id = account.agency_id
     db.flush()
     return existing, False

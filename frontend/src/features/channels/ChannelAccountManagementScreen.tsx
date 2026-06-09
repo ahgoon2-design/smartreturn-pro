@@ -172,6 +172,7 @@ export function ChannelAccountManagementScreen() {
     () => [
       { key: "store_name", title: "스토어명", dataIndex: "store_name", minWidth: 180, copyable: true },
       { key: "account_name", title: "계정명", dataIndex: "account_name", minWidth: 160, copyable: true },
+      { key: "agency_name", title: "대리점/운영사", dataIndex: "agency_name", width: 150, render: (value) => toDisplayText(value, "본사 직영") },
       { key: "client_id", title: "고객사", dataIndex: "client_id", width: 150, render: (value) => clientName(Number(value)) },
       { key: "client_unit_id", title: "팀/운영단위", dataIndex: "client_unit_id", width: 150, render: (value) => unitName(Number(value)) },
       { key: "channel_type", title: "채널", dataIndex: "channel_type", width: 150, render: (value) => channelLabel(String(value)) },
