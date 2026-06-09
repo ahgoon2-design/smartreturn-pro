@@ -1,7 +1,7 @@
 import { EyeOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Select, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { listClients } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
@@ -11,6 +11,7 @@ import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid/SmartDataGrid.types";
 import type { ClientSummary } from "../../types/master";
+import { getSearchString, mergeSearchParams } from "../../utils/routeState";
 
 type ClientStatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
@@ -22,9 +23,12 @@ const CLIENT_STATUS_OPTIONS: Array<{ value: ClientStatusFilter; label: string }>
 
 export function ClientListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [clients, setClients] = useState<ClientSummary[]>([]);
-  const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ClientStatusFilter>("ALL");
+  const [keyword, setKeyword] = useState(() => getSearchString(searchParams, "keyword"));
+  const [statusFilter, setStatusFilter] = useState<ClientStatusFilter>(() =>
+    toClientStatusFilter(getSearchString(searchParams, "status", "ALL")),
+  );
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [notice, setNotice] = useState("");
@@ -32,6 +36,16 @@ export function ClientListPage() {
   useEffect(() => {
     void loadClients();
   }, []);
+
+  useEffect(() => {
+    setSearchParams(
+      mergeSearchParams(searchParams, {
+        keyword: keyword.trim(),
+        status: statusFilter === "ALL" ? undefined : statusFilter,
+      }),
+      { replace: true },
+    );
+  }, [keyword, statusFilter]);
 
   const filteredClients = useMemo(
     () =>
@@ -263,4 +277,8 @@ function toUserMessage(error: unknown) {
     return error.message || "고객사 목록을 불러오지 못했습니다.";
   }
   return "고객사 목록을 불러오지 못했습니다.";
+}
+
+function toClientStatusFilter(value: string): ClientStatusFilter {
+  return value === "ACTIVE" || value === "INACTIVE" ? value : "ALL";
 }

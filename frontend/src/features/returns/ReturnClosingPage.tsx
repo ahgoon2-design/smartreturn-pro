@@ -2,6 +2,7 @@ import { CheckCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design
 import { Alert, Button, Checkbox, Modal, Select, Space, Typography, message } from "antd";
 import type { Key } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { listClients } from "../../api/master";
 import { confirmReturnClosing, listReturnClosingCandidates } from "../../api/returnIntake";
@@ -18,6 +19,7 @@ import type {
   ReturnClosingConfirmResponse,
   ReturnJudgementStatus,
 } from "../../types/returns";
+import { getSearchBoolean, getSearchNumber, getSearchString, mergeSearchParams } from "../../utils/routeState";
 
 const JUDGEMENT_OPTIONS = [
   { value: "ALL", label: "전체 판정" },
@@ -30,20 +32,32 @@ const JUDGEMENT_OPTIONS = [
 ];
 
 export function ReturnClosingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [clients, setClients] = useState<ClientSummary[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
-  const [judgementStatus, setJudgementStatus] = useState("ALL");
+  const [selectedClientId, setSelectedClientId] = useState<number | undefined>(() => getSearchNumber(searchParams, "client_id"));
+  const [judgementStatus, setJudgementStatus] = useState(() => getSearchString(searchParams, "judgment_status", "ALL"));
   const [rows, setRows] = useState<ReturnClosingCandidate[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [confirmSummary, setConfirmSummary] = useState<ReturnClosingConfirmResponse | null>(null);
-  const [includeRoutedJudgements, setIncludeRoutedJudgements] = useState(false);
+  const [includeRoutedJudgements, setIncludeRoutedJudgements] = useState(() => getSearchBoolean(searchParams, "include_routed"));
 
   useEffect(() => {
     void initialize();
   }, []);
+
+  useEffect(() => {
+    setSearchParams(
+      mergeSearchParams(searchParams, {
+        client_id: selectedClientId,
+        judgment_status: judgementStatus === "ALL" ? undefined : judgementStatus,
+        include_routed: includeRoutedJudgements,
+      }),
+      { replace: true },
+    );
+  }, [selectedClientId, judgementStatus, includeRoutedJudgements]);
 
   const selectedRows = useMemo(
     () => rows.filter((row) => selectedRowKeys.includes(row.row_id)),

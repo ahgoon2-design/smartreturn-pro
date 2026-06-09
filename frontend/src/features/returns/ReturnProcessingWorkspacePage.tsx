@@ -23,7 +23,8 @@ import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.ty
 import { ROUTE_PATHS } from "../../routes/routePaths";
 import type { ClientSummary, ProductSummary, ReturnWarehouseRoute } from "../../types/master";
 import type { ReturnJudgementStatus, ReturnProcessingAttachment, ReturnProcessingTask } from "../../types/returns";
-import { useNavigate } from "react-router-dom";
+import { getSearchNumber, getSearchString, mergeSearchParams } from "../../utils/routeState";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 type ScanFeedback = {
   type: "info" | "success" | "warning" | "error";
@@ -76,10 +77,12 @@ const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
 
 export function ReturnProcessingWorkspacePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTaskIdRef = useRef(getSearchNumber(searchParams, "task_id"));
   const scanInputRef = useRef<InputRef>(null);
   const productScanInputRef = useRef<InputRef>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  const [trackingNo, setTrackingNo] = useState("");
+  const [trackingNo, setTrackingNo] = useState(() => getSearchString(searchParams, "tracking_no"));
   const [productScanValue, setProductScanValue] = useState("");
   const [tasks, setTasks] = useState<ReturnProcessingTask[]>([]);
   const [selectedTask, setSelectedTask] = useState<ReturnProcessingTask | null>(null);
@@ -114,7 +117,7 @@ export function ReturnProcessingWorkspacePage() {
   useEffect(() => {
     focusScanInput(scanInputRef);
     void loadClientsForManualMode();
-    void loadTasks();
+    void loadTasks(trackingNo, initialTaskIdRef.current);
   }, []);
 
   useEffect(() => {
@@ -227,7 +230,7 @@ export function ReturnProcessingWorkspacePage() {
     Boolean(selectedJudgement) &&
     !judging;
 
-  async function loadTasks(nextTrackingNo = trackingNo) {
+  async function loadTasks(nextTrackingNo = trackingNo, preferredTaskId?: number) {
     setLoading(true);
     setErrorMessage("");
     const normalizedTrackingNo = nextTrackingNo.trim();
@@ -238,10 +241,11 @@ export function ReturnProcessingWorkspacePage() {
         pageSize: 200,
       });
       const nextItems = page.items || [];
-      const nextSelectedTask = pickPreferredProcessingTask(nextItems);
+      const nextSelectedTask = pickPreferredProcessingTask(nextItems, preferredTaskId);
       setTasks(nextItems);
       setNoDetailTrackingNo(normalizedTrackingNo && nextItems.length === 0 ? normalizedTrackingNo : "");
       selectProcessingTask(nextSelectedTask, { focusProduct: Boolean(normalizedTrackingNo && nextSelectedTask) });
+      persistProcessingRouteState(normalizedTrackingNo, nextSelectedTask?.task_id);
       setScanFeedback(buildScanFeedback(normalizedTrackingNo, nextItems.length, nextSelectedTask));
       if (!nextSelectedTask || !normalizedTrackingNo) {
         focusScanInput(scanInputRef, { select: nextItems.length === 0 || Boolean(normalizedTrackingNo) });
@@ -250,6 +254,7 @@ export function ReturnProcessingWorkspacePage() {
       const message = toUserMessage(error, "반품처리 대상을 조회하지 못했습니다.");
       setTasks([]);
       selectProcessingTask(null);
+      persistProcessingRouteState(normalizedTrackingNo, undefined);
       setErrorMessage(message);
       setScanFeedback({
         type: "error",
@@ -458,12 +463,14 @@ export function ReturnProcessingWorkspacePage() {
     setTrackingNo("");
     setNoDetailTrackingNo("");
     selectProcessingTask(null);
+    persistProcessingRouteState("", undefined);
     setScanFeedback(INITIAL_SCAN_FEEDBACK);
     void loadTasks("");
   }
 
   function selectProcessingTask(task: ReturnProcessingTask | null, options: { focusProduct?: boolean } = {}) {
     setSelectedTask(task);
+    persistProcessingRouteState(trackingNo.trim() || task?.return_tracking_no || "", task?.task_id);
     setProductScanValue("");
     setSelectedJudgement(toJudgementStatus(task?.judgement_status));
     setJudgementMemo(task?.judgement_memo || "");
@@ -483,6 +490,16 @@ export function ReturnProcessingWorkspacePage() {
     if (options.focusProduct && task && task.status !== "COMPLETED") {
       focusScanInput(productScanInputRef, { select: true });
     }
+  }
+
+  function persistProcessingRouteState(nextTrackingNo: string, nextTaskId?: number) {
+    setSearchParams(
+      mergeSearchParams(searchParams, {
+        tracking_no: nextTrackingNo.trim(),
+        task_id: nextTaskId,
+      }),
+      { replace: true },
+    );
   }
 
   function handleProductScanEnter() {
@@ -1483,8 +1500,9 @@ function toProductCheckLabel(status: ProductCheckStatus) {
   return labels[status];
 }
 
-function pickPreferredProcessingTask(items: ReturnProcessingTask[]) {
+function pickPreferredProcessingTask(items: ReturnProcessingTask[], preferredTaskId?: number) {
   return (
+    items.find((item) => item.task_id === preferredTaskId) ||
     items.find((item) => item.status === "READY_FOR_PROCESSING") ||
     items.find((item) => item.status === "RECEIVED") ||
     items[0] ||

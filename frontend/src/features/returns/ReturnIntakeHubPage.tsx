@@ -1,6 +1,7 @@
 import { CheckCircleOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Modal, Select, Space, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { listClients, listClientUnits } from "../../api/master";
 import {
@@ -26,6 +27,7 @@ import type {
   ReturnIntakeRow,
   ReturnProcessingTask,
 } from "../../types/returns";
+import { getSearchNumber, getSearchString, mergeSearchParams } from "../../utils/routeState";
 
 const PASTE_SAMPLE = [
   "order_no\treturn_tracking_no\tproduct_code\tbarcode\tproduct_name\tqty\treturn_reason",
@@ -33,15 +35,16 @@ const PASTE_SAMPLE = [
 ].join("\n");
 
 export function ReturnIntakeHubPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [clients, setClients] = useState<ClientSummary[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
+  const [selectedClientId, setSelectedClientId] = useState<number | undefined>(() => getSearchNumber(searchParams, "client_id"));
   const [clientUnits, setClientUnits] = useState<ClientUnit[]>([]);
-  const [selectedClientUnitId, setSelectedClientUnitId] = useState<number | undefined>();
+  const [selectedClientUnitId, setSelectedClientUnitId] = useState<number | undefined>(() => getSearchNumber(searchParams, "client_unit_id"));
   const [sourceType, setSourceType] = useState("PASTE");
   const [sourceName, setSourceName] = useState("");
   const [pasteText, setPasteText] = useState(PASTE_SAMPLE);
   const [batches, setBatches] = useState<ReturnIntakeBatchSummary[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState<number | undefined>();
+  const [selectedBatchId, setSelectedBatchId] = useState<number | undefined>(() => getSearchNumber(searchParams, "batch_id"));
   const [rows, setRows] = useState<ReturnIntakeRow[]>([]);
   const [processingTasks, setProcessingTasks] = useState<ReturnProcessingTask[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,11 +55,23 @@ export function ReturnIntakeHubPage() {
   const [preparing, setPreparing] = useState(false);
   const [prepareSummary, setPrepareSummary] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState(() => getSearchString(searchParams, "keyword"));
 
   useEffect(() => {
     void initialize();
   }, []);
+
+  useEffect(() => {
+    setSearchParams(
+      mergeSearchParams(searchParams, {
+        client_id: selectedClientId,
+        client_unit_id: selectedClientUnitId,
+        batch_id: selectedBatchId,
+        keyword: keyword.trim(),
+      }),
+      { replace: true },
+    );
+  }, [selectedClientId, selectedClientUnitId, selectedBatchId, keyword]);
 
   useEffect(() => {
     if (selectedBatchId) {
@@ -197,7 +212,11 @@ export function ReturnIntakeHubPage() {
       setClients(clientItems);
       setSelectedClientId((current) => current || getClientId(clientItems[0]));
       setBatches(batchPage.items || []);
-      setSelectedBatchId(batchPage.items?.[0]?.batch_id);
+      setSelectedBatchId((current) =>
+        current && batchPage.items?.some((batch) => batch.batch_id === current)
+          ? current
+          : batchPage.items?.[0]?.batch_id,
+      );
     } catch (error) {
       setErrorMessage(toUserMessage(error, "반품 접수 정보를 불러오지 못했습니다."));
     } finally {

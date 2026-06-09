@@ -1,6 +1,7 @@
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Select, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { listCurrentInventory } from "../../api/inventory";
 import { listClients, listWarehouses } from "../../api/master";
@@ -13,6 +14,7 @@ import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.types";
 import type { CurrentInventoryItem } from "../../types/inventory";
 import type { ClientSummary, WarehouseSummary } from "../../types/master";
+import { getSearchNumber, getSearchString, mergeSearchParams } from "../../utils/routeState";
 
 const STOCK_STATUS_OPTIONS = [
   { value: "ALL", label: "전체 재고상태" },
@@ -20,12 +22,13 @@ const STOCK_STATUS_OPTIONS = [
 ];
 
 export function CurrentInventoryPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseSummary[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | undefined>();
-  const [keyword, setKeyword] = useState("");
-  const [stockStatus, setStockStatus] = useState("ALL");
+  const [selectedClientId, setSelectedClientId] = useState<number | undefined>(() => getSearchNumber(searchParams, "client_id"));
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | undefined>(() => getSearchNumber(searchParams, "warehouse_id"));
+  const [keyword, setKeyword] = useState(() => getSearchString(searchParams, "keyword"));
+  const [stockStatus, setStockStatus] = useState(() => getSearchString(searchParams, "stock_status", "ALL"));
   const [rows, setRows] = useState<CurrentInventoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -34,6 +37,18 @@ export function CurrentInventoryPage() {
   useEffect(() => {
     void initialize();
   }, []);
+
+  useEffect(() => {
+    setSearchParams(
+      mergeSearchParams(searchParams, {
+        client_id: selectedClientId,
+        warehouse_id: selectedWarehouseId,
+        keyword: keyword.trim(),
+        stock_status: stockStatus === "ALL" ? undefined : stockStatus,
+      }),
+      { replace: true },
+    );
+  }, [selectedClientId, selectedWarehouseId, keyword, stockStatus]);
 
   const summary = useMemo(
     () => ({

@@ -2,6 +2,7 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   CheckCircleOutlined,
+  CloseOutlined,
   CloudUploadOutlined,
   DatabaseOutlined,
   DeleteOutlined,
@@ -20,6 +21,7 @@ import { Button, Layout, Menu, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useRecentWorkTabs } from "../hooks/useRecentWorkTabs";
 import { ROUTE_PATHS } from "../routes/routePaths";
 
 const { Header, Sider, Content } = Layout;
@@ -28,6 +30,7 @@ export function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { authContext, role, hasPermission, logout } = useAuth();
+  const { tabs: workTabs, closeRecentTab } = useRecentWorkTabs(location);
   const canSeePlatformMenus = Boolean(
     authContext?.is_platform_admin || authContext?.is_internal_user || authContext?.is_agency_user,
   );
@@ -293,6 +296,35 @@ export function MainLayout() {
           />
         </Sider>
         <Content className="smart-app-content">
+          <nav className="smart-work-tabs" aria-label="최근 작업 탭">
+            {workTabs.map((tab) => {
+              const active = location.pathname === tab.key || location.pathname.startsWith(`${tab.key}/`);
+              return (
+                <Button
+                  key={tab.key}
+                  size="small"
+                  type={active ? "primary" : "default"}
+                  className={["smart-work-tab", active ? "smart-work-tab--active" : "", tab.fixed ? "smart-work-tab--fixed" : ""]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={() => navigate(tab.path)}
+                >
+                  <span className="smart-work-tab__label">{tab.label}</span>
+                  {tab.fixed ? <Tag color="blue">고정</Tag> : null}
+                  {!tab.fixed ? (
+                    <CloseOutlined
+                      aria-label={`${tab.label} 탭 닫기`}
+                      className="smart-work-tab__close"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        closeRecentTab(tab.key);
+                      }}
+                    />
+                  ) : null}
+                </Button>
+              );
+            })}
+          </nav>
           <Outlet />
         </Content>
       </Layout>

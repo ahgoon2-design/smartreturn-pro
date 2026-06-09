@@ -1,7 +1,7 @@
 import { EyeOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Select, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { listProducts } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
@@ -12,6 +12,7 @@ import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
 import { SmartImportLauncher } from "../import/SmartImportLauncher";
 import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/grid/SmartDataGrid.types";
 import type { ProductSummary } from "../../types/master";
+import { getSearchString, mergeSearchParams } from "../../utils/routeState";
 
 type ProductStatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
@@ -23,9 +24,12 @@ const PRODUCT_STATUS_OPTIONS: Array<{ value: ProductStatusFilter; label: string 
 
 export function ProductListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<ProductSummary[]>([]);
-  const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ProductStatusFilter>("ALL");
+  const [keyword, setKeyword] = useState(() => getSearchString(searchParams, "keyword"));
+  const [statusFilter, setStatusFilter] = useState<ProductStatusFilter>(() =>
+    toProductStatusFilter(getSearchString(searchParams, "status", "ALL")),
+  );
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [totalCount, setTotalCount] = useState(0);
@@ -33,6 +37,16 @@ export function ProductListPage() {
   useEffect(() => {
     void loadProducts();
   }, []);
+
+  useEffect(() => {
+    setSearchParams(
+      mergeSearchParams(searchParams, {
+        keyword: keyword.trim(),
+        status: statusFilter === "ALL" ? undefined : statusFilter,
+      }),
+      { replace: true },
+    );
+  }, [keyword, statusFilter]);
 
   const filteredProducts = useMemo(
     () =>
@@ -259,4 +273,8 @@ function toUserMessage(error: unknown) {
     return error.message || "상품 목록을 불러오지 못했습니다.";
   }
   return "상품 목록을 불러오지 못했습니다.";
+}
+
+function toProductStatusFilter(value: string): ProductStatusFilter {
+  return value === "ACTIVE" || value === "INACTIVE" ? value : "ALL";
 }

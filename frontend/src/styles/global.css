@@ -114,6 +114,41 @@ body {
     var(--smart-page-bg);
 }
 
+.smart-work-tabs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+  padding: 0 0 12px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(229, 234, 240, 0.78);
+}
+
+.smart-work-tab {
+  flex: 0 0 auto;
+  height: 30px;
+  border-radius: 999px;
+  box-shadow: var(--smart-panel-shadow-soft);
+}
+
+.smart-work-tab--fixed {
+  border-color: var(--smart-blue-border);
+}
+
+.smart-work-tab__label {
+  font-weight: 700;
+}
+
+.smart-work-tab__close {
+  margin-left: 4px;
+  color: var(--smart-text-secondary);
+}
+
+.smart-work-tab--active .smart-work-tab__close {
+  color: rgba(255, 255, 255, 0.88);
+}
+
 .smart-auth-banner,
 .smart-error-notice {
   margin-bottom: 12px;
