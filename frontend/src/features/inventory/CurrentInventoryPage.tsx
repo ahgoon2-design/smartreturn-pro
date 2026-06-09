@@ -242,8 +242,8 @@ export function CurrentInventoryPage() {
 
       <div className="smart-summary-grid">
         <SmartSummaryCard label="조회 재고" value={`${summary.total}건`} />
-        <SmartSummaryCard label="정상재고 수량" value={`${summary.goodQty.toLocaleString()}개`} />
-        <SmartSummaryCard label="표시 기준" value="current_inventory" />
+        <SmartSummaryCard label="정상재고 수량" value={`${summary.goodQty.toLocaleString()}개`} tone="success" />
+        <SmartSummaryCard label="표시 기준" value="current_inventory" tone="neutral" />
       </div>
 
       <Typography.Text type="secondary">

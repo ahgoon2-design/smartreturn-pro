@@ -1,4 +1,13 @@
-import { ApiOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
+import {
+  ApiOutlined,
+  CheckCircleOutlined,
+  EditOutlined,
+  ExclamationCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SyncOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
 import { Alert, Button, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
@@ -781,12 +790,17 @@ export function ChannelAccountManagementScreen() {
       />
 
       <section className="smart-summary-grid" aria-label="채널 자동수집 운영 요약">
-        <SmartSummaryCard label="연동 계정" value={`${dashboardSummary.active_accounts}/${dashboardSummary.total_accounts}`} />
-        <SmartSummaryCard label="오늘 수집" value={`${dashboardSummary.raw_events_today}건`} />
-        <SmartSummaryCard label="READY" value={`${dashboardSummary.ready_for_intake_count}건`} />
-        <SmartSummaryCard label="예외 필요" value={`${dashboardSummary.correction_required_count}건`} />
-        <SmartSummaryCard label="반품예정 생성" value={`${dashboardSummary.return_expected_created_count}건`} />
-        <SmartSummaryCard label="오류" value={`${dashboardSummary.error_accounts + dashboardSummary.raw_event_failed_count + dashboardSummary.return_expected_failed_count}건`} />
+        <SmartSummaryCard label="연동 계정" value={`${dashboardSummary.active_accounts}/${dashboardSummary.total_accounts}`} icon={<ApiOutlined />} />
+        <SmartSummaryCard label="오늘 수집" value={`${dashboardSummary.raw_events_today}건`} icon={<SyncOutlined />} />
+        <SmartSummaryCard label="READY" value={`${dashboardSummary.ready_for_intake_count}건`} tone="success" icon={<CheckCircleOutlined />} />
+        <SmartSummaryCard label="예외 필요" value={`${dashboardSummary.correction_required_count}건`} tone="warning" icon={<WarningOutlined />} />
+        <SmartSummaryCard label="반품예정 생성" value={`${dashboardSummary.return_expected_created_count}건`} tone="success" icon={<CheckCircleOutlined />} />
+        <SmartSummaryCard
+          label="오류"
+          value={`${dashboardSummary.error_accounts + dashboardSummary.raw_event_failed_count + dashboardSummary.return_expected_failed_count}건`}
+          tone="danger"
+          icon={<ExclamationCircleOutlined />}
+        />
       </section>
 
       <Alert
@@ -837,12 +851,12 @@ export function ChannelAccountManagementScreen() {
       </SmartDataSection>
 
       <section className="smart-summary-grid" aria-label="채널 반품 후보 상태 요약">
-        <SmartSummaryCard label="입고 준비" value={`${candidateSummary.READY_FOR_INTAKE || 0}건`} />
-        <SmartSummaryCard label="팀 배정 필요" value={`${candidateSummary.TEAM_ASSIGN_PENDING || 0}건`} />
-        <SmartSummaryCard label="상품 매칭 필요" value={`${candidateSummary.PRODUCT_MATCH_PENDING || 0}건`} />
-        <SmartSummaryCard label="반품송장 필요" value={`${candidateSummary.RETURN_TRACKING_PENDING || 0}건`} />
-        <SmartSummaryCard label="확인 필요" value={`${candidateSummary.NEEDS_REVIEW || 0}건`} />
-        <SmartSummaryCard label="차단" value={`${candidateSummary.BLOCKED || 0}건`} />
+        <SmartSummaryCard label="입고 준비" value={`${candidateSummary.READY_FOR_INTAKE || 0}건`} tone="success" />
+        <SmartSummaryCard label="팀 배정 필요" value={`${candidateSummary.TEAM_ASSIGN_PENDING || 0}건`} tone="warning" />
+        <SmartSummaryCard label="상품 매칭 필요" value={`${candidateSummary.PRODUCT_MATCH_PENDING || 0}건`} tone="warning" />
+        <SmartSummaryCard label="반품송장 필요" value={`${candidateSummary.RETURN_TRACKING_PENDING || 0}건`} tone="warning" />
+        <SmartSummaryCard label="확인 필요" value={`${candidateSummary.NEEDS_REVIEW || 0}건`} tone="warning" />
+        <SmartSummaryCard label="차단" value={`${candidateSummary.BLOCKED || 0}건`} tone="danger" />
       </section>
 
       <SmartDataSection
@@ -918,10 +932,10 @@ export function ChannelAccountManagementScreen() {
         }
       >
         <section className="smart-summary-grid" aria-label="상품 매핑 학습 요약">
-          <SmartSummaryCard label="전체 매핑" value={`${productMappingSummary.total || 0}건`} />
-          <SmartSummaryCard label="활성 매핑" value={`${productMappingSummary.active_count || 0}건`} />
-          <SmartSummaryCard label="충돌 매핑" value={`${productMappingSummary.conflict_count || 0}건`} />
-          <SmartSummaryCard label="비활성/거부" value={`${(productMappingSummary.inactive_count || 0) + (productMappingSummary.rejected_count || 0)}건`} />
+          <SmartSummaryCard label="전체 매핑" value={`${productMappingSummary.total || 0}건`} tone="system" />
+          <SmartSummaryCard label="활성 매핑" value={`${productMappingSummary.active_count || 0}건`} tone="success" />
+          <SmartSummaryCard label="충돌 매핑" value={`${productMappingSummary.conflict_count || 0}건`} tone="danger" />
+          <SmartSummaryCard label="비활성/거부" value={`${(productMappingSummary.inactive_count || 0) + (productMappingSummary.rejected_count || 0)}건`} tone="neutral" />
         </section>
         <Alert
           type={dashboardSummary.product_mapping_conflict_count > 0 ? "warning" : "info"}
