@@ -9,6 +9,7 @@ export interface LoginUserDto {
   user_name: string;
   roles: string[];
   client_id: number | null;
+  agency_id: number | null;
   client_name: string | null;
   must_change_password: boolean;
 }
@@ -30,10 +31,13 @@ export interface AuthContextResponse {
   roles: string[];
   permissions: string[];
   client_id: number | null;
+  agency_id: number | null;
   client_name: string | null;
   default_warehouse_id: number | null;
   must_change_password: boolean;
+  is_platform_admin: boolean;
   is_internal_user: boolean;
+  is_agency_user: boolean;
   is_client_user: boolean;
   effective_client_id: number | null;
 }

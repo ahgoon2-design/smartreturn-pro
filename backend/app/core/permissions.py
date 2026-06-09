@@ -44,6 +44,8 @@ def require_password_change_completed(auth: AuthContext) -> None:
 def require_client_access(auth: AuthContext, target_client_id: int | None) -> None:
     if auth.is_internal_user:
         return
+    if auth.is_agency_user:
+        raise ClientScopeDeniedError("AGENCY_ADMIN client scope requires agency-client mapping.")
     if not auth.is_client_user or auth.client_id is None:
         raise ClientScopeDeniedError()
     if target_client_id is None or target_client_id != auth.client_id:
@@ -63,6 +65,18 @@ def require_warehouse_access(
 
 def can_select_client(auth: AuthContext) -> bool:
     return auth.is_internal_user
+
+
+def can_select_client_for_user(auth: AuthContext) -> bool:
+    return can_select_client(auth)
+
+
+def can_access_client(auth: AuthContext, target_client_id: int | None) -> bool:
+    try:
+        require_client_access(auth, target_client_id)
+    except ClientScopeDeniedError:
+        return False
+    return True
 
 
 def can_write(auth: AuthContext) -> bool:

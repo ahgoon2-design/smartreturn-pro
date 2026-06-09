@@ -4,8 +4,10 @@ import pytest
 
 from app.core.auth_context import (
     build_auth_context_from_user,
+    is_agency_role,
     is_client_role,
     is_internal_role,
+    is_platform_admin_role,
     resolve_effective_client_id,
 )
 from app.core.exceptions import ClientScopeDeniedError
@@ -29,8 +31,23 @@ def test_internal_roles_are_internal(role_code: str):
     auth = build_auth_context_from_user(_user(client_id=10), roles=[role_code])
 
     assert is_internal_role(role_code) is True
+    assert auth.is_platform_admin is (role_code in {"SUPER_ADMIN", "INTERNAL_ADMIN"})
     assert auth.is_internal_user is True
     assert auth.is_client_user is False
+
+
+def test_agency_admin_is_separate_from_internal_and_client_scope():
+    auth = build_auth_context_from_user(_user(), roles=["AGENCY_ADMIN"])
+
+    assert is_agency_role("AGENCY_ADMIN") is True
+    assert is_platform_admin_role("AGENCY_ADMIN") is False
+    assert auth.is_platform_admin is False
+    assert auth.is_internal_user is False
+    assert auth.is_agency_user is True
+    assert auth.is_client_user is False
+    assert auth.allowed_client_ids == []
+    with pytest.raises(ClientScopeDeniedError):
+        resolve_effective_client_id(auth, requested_client_id=10)
 
 
 @pytest.mark.parametrize("role_code", ["CLIENT_ADMIN", "CLIENT_USER", "READ_ONLY"])

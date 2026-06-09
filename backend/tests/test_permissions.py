@@ -7,7 +7,9 @@ from app.core.exceptions import (
     WarehouseScopeDeniedError,
 )
 from app.core.permissions import (
+    can_access_client,
     can_select_client,
+    can_select_client_for_user,
     can_write,
     require_any_permission,
     require_client_access,
@@ -85,6 +87,19 @@ def test_internal_user_passes_client_scope():
     require_client_access(_auth(roles=["INTERNAL_ADMIN"], is_internal_user=True), 99)
 
 
+def test_agency_user_does_not_get_all_client_scope_before_mapping_exists():
+    auth = _auth(
+        roles=["AGENCY_ADMIN"],
+        is_internal_user=False,
+        is_agency_user=True,
+        is_client_user=False,
+    )
+
+    with pytest.raises(ClientScopeDeniedError):
+        require_client_access(auth, 99)
+    assert can_access_client(auth, 99) is False
+
+
 def test_warehouse_scope_blocks_not_allowed_warehouse():
     auth = _auth()
 
@@ -95,7 +110,9 @@ def test_warehouse_scope_blocks_not_allowed_warehouse():
 
 def test_can_select_client_and_can_write():
     assert can_select_client(_auth(is_internal_user=True)) is True
+    assert can_select_client_for_user(_auth(is_internal_user=True)) is True
     assert can_select_client(_auth(is_internal_user=False, is_client_user=True)) is False
+    assert can_select_client(_auth(roles=["AGENCY_ADMIN"], is_internal_user=False, is_agency_user=True)) is False
     assert can_write(_auth(roles=["READ_ONLY"])) is False
     assert can_write(_auth(must_change_password=True)) is False
     assert can_write(_auth()) is True

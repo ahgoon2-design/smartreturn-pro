@@ -10,12 +10,22 @@ from app.models.auth import User
 from app.schemas.auth import AuthContext
 
 
-INTERNAL_ROLES = {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER"}
+PLATFORM_ADMIN_ROLES = {"SUPER_ADMIN", "INTERNAL_ADMIN"}
+INTERNAL_ROLES = PLATFORM_ADMIN_ROLES | {"INTERNAL_WORKER"}
+AGENCY_ROLES = {"AGENCY_ADMIN"}
 CLIENT_ROLES = {"CLIENT_ADMIN", "CLIENT_USER", "READ_ONLY"}
+
+
+def is_platform_admin_role(role_code: str) -> bool:
+    return role_code in PLATFORM_ADMIN_ROLES
 
 
 def is_internal_role(role_code: str) -> bool:
     return role_code in INTERNAL_ROLES
+
+
+def is_agency_role(role_code: str) -> bool:
+    return role_code in AGENCY_ROLES
 
 
 def is_client_role(role_code: str) -> bool:
@@ -64,9 +74,12 @@ def build_auth_context_from_user(
     if not role_codes:
         raise PermissionDeniedError("사용자에게 role이 없어 업무 API에 접근할 수 없습니다.")
 
+    is_platform_admin = has_any_role(role_codes, PLATFORM_ADMIN_ROLES)
     is_internal_user = has_any_role(role_codes, INTERNAL_ROLES)
-    is_client_user = not is_internal_user and has_any_role(role_codes, CLIENT_ROLES)
+    is_agency_user = not is_internal_user and has_any_role(role_codes, AGENCY_ROLES)
+    is_client_user = not is_internal_user and not is_agency_user and has_any_role(role_codes, CLIENT_ROLES)
     client_id = getattr(user, "client_id", None)
+    agency_id = getattr(user, "agency_id", None)
 
     if is_client_user and client_id is None:
         raise ClientScopeDeniedError("고객사 사용자는 client_id가 필요합니다.")
@@ -79,11 +92,14 @@ def build_auth_context_from_user(
         roles=role_codes,
         permissions=permission_codes,
         client_id=client_id,
+        agency_id=agency_id,
         client_code=client_code,
         client_name=client_name,
         default_warehouse_id=getattr(user, "default_warehouse_id", None),
         must_change_password=bool(getattr(user, "must_change_password", False)),
+        is_platform_admin=is_platform_admin,
         is_internal_user=is_internal_user,
+        is_agency_user=is_agency_user,
         is_client_user=is_client_user,
         allowed_client_ids=allowed_client_ids,
         selected_client_id=selected_client_id,
@@ -116,5 +132,8 @@ def resolve_effective_client_id(
         if requested_client_id is not None and requested_client_id != auth.client_id:
             raise ClientScopeDeniedError("다른 고객사 데이터에는 접근할 수 없습니다.")
         return auth.client_id
+
+    if auth.is_agency_user:
+        raise ClientScopeDeniedError("AGENCY_ADMIN client scope requires agency-client mapping.")
 
     raise PermissionDeniedError("알 수 없는 role 조합입니다.")

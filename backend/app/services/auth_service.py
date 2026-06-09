@@ -95,6 +95,7 @@ def login(db: Session, request: LoginRequest) -> LoginResponse:
             user_name=auth.user_name,
             roles=auth.roles,
             client_id=auth.client_id,
+            agency_id=auth.agency_id,
             client_name=auth.client_name,
             must_change_password=auth.must_change_password,
         ),

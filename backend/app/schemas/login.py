@@ -16,6 +16,7 @@ class LoginUserDto(BaseModel):
     user_name: str
     roles: list[str] = Field(default_factory=list)
     client_id: int | None = None
+    agency_id: int | None = None
     client_name: str | None = None
     must_change_password: bool
 
@@ -37,9 +38,12 @@ class AuthContextResponse(BaseModel):
     roles: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
     client_id: int | None = None
+    agency_id: int | None = None
     client_name: str | None = None
     default_warehouse_id: int | None = None
     must_change_password: bool
+    is_platform_admin: bool
     is_internal_user: bool
+    is_agency_user: bool
     is_client_user: bool
     effective_client_id: int | None = None

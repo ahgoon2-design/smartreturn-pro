@@ -11,6 +11,10 @@ interface AuthContextValue {
   role: string;
   permissions: string[];
   mustChangePassword: boolean;
+  isPlatformAdmin: boolean;
+  isAgencyUser: boolean;
+  isClientUser: boolean;
+  canSelectClient: boolean;
   error: string;
   login: (request: LoginRequest) => Promise<AuthContextResponse>;
   logout: () => void;
@@ -103,6 +107,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const permissions = authContext?.permissions || [];
   const role = authContext?.roles?.[0] || "";
   const mustChangePassword = Boolean(authContext?.must_change_password);
+  const isPlatformAdmin = Boolean(authContext?.is_platform_admin || authContext?.roles?.includes("SUPER_ADMIN"));
+  const isAgencyUser = Boolean(authContext?.is_agency_user);
+  const isClientUser = Boolean(authContext?.is_client_user);
+  const canSelectClient = Boolean(authContext?.is_internal_user);
 
   const hasPermission = useCallback(
     (permission: string) => {
@@ -132,6 +140,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       permissions,
       mustChangePassword,
+      isPlatformAdmin,
+      isAgencyUser,
+      isClientUser,
+      canSelectClient,
       error,
       login,
       logout,
@@ -152,9 +164,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       mustChangePassword,
+      isAgencyUser,
+      isClientUser,
+      isPlatformAdmin,
       permissions,
       refreshAuthContext,
       role,
+      canSelectClient,
     ],
   );
 
