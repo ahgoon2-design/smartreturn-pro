@@ -1228,3 +1228,232 @@ def test_channel_mapping_conflict_does_not_auto_confirm_product(client: TestClie
     candidate = response.json()["data"]["candidate"]
     assert candidate["match_status"] == "PRODUCT_MATCH_PENDING"
     assert candidate["product_id"] is None
+
+
+def test_channel_dashboard_summary_counts_statuses_and_hides_sensitive_payload(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_DASH")
+    unit = _create_unit(db_session, client_row.id, "UNIT_DASH")
+    product = _create_product(db_session, client_row.id, "P-DASH")
+    headers = _admin_headers(client, db_session)
+    ready = _ready_candidate(
+        client,
+        db_session,
+        headers,
+        client_row=client_row,
+        unit=unit,
+        product=product,
+        return_tracking_no="RTN-DASH-READY",
+        external_product_order_id="PO-DASH-READY",
+        external_claim_id="CLAIM-DASH-READY",
+    )
+    account_id = ready["channel_account_id"]
+    _ready_candidate(
+        client,
+        db_session,
+        headers,
+        client_row=client_row,
+        unit=unit,
+        product=product,
+        return_tracking_no="RTN-DASH-CREATED",
+        external_product_order_id="PO-DASH-CREATED",
+        external_claim_id="CLAIM-DASH-CREATED",
+        external_account_id="dash-created-account",
+    )
+    create_response = client.post(f"/api/channels/return-candidates/{ready['id']}/create-return-expected", headers=headers)
+    assert create_response.status_code == 200
+    raw_event = _create_raw_event(
+        db_session,
+        account_id,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-DASH-PENDING",
+            "productOrderId": "PO-DASH-PENDING",
+            "claimId": "CLAIM-DASH-PENDING",
+            "returnTrackingNo": "RTN-DASH-PENDING",
+            "qty": 1,
+        },
+    )
+    pending = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+    assert pending.status_code == 200
+
+    response = client.get("/api/channels/dashboard/summary", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_accounts"] >= 1
+    assert data["raw_events_today"] >= 2
+    assert data["total_candidates"] >= 2
+    assert data["product_match_pending_count"] >= 1
+    assert data["return_expected_created_count"] >= 1
+    _assert_no_secret_fields(data)
+    assert "raw_json" not in str(data)
+
+
+def test_channel_dashboard_summary_respects_client_scope(client: TestClient, db_session: Session):
+    client_a = _create_client(db_session, "CLIENT_DASH_SCOPE_A")
+    client_b = _create_client(db_session, "CLIENT_DASH_SCOPE_B")
+    unit_a = _create_unit(db_session, client_a.id, "UNIT_DASH_SCOPE_A")
+    unit_b = _create_unit(db_session, client_b.id, "UNIT_DASH_SCOPE_B")
+    product_a = _create_product(db_session, client_a.id, "P-DASH-SCOPE-A")
+    product_b = _create_product(db_session, client_b.id, "P-DASH-SCOPE-B")
+    admin_headers = _admin_headers(client, db_session)
+    _ready_candidate(client, db_session, admin_headers, client_row=client_a, unit=unit_a, product=product_a, external_account_id="dash-scope-a")
+    _ready_candidate(client, db_session, admin_headers, client_row=client_b, unit=unit_b, product=product_b, external_account_id="dash-scope-b")
+    _create_user(
+        db_session,
+        login_id="dashboard_scope_client",
+        role_code="CLIENT_ADMIN",
+        permissions=["RETURN_VIEW"],
+        client_id=client_a.id,
+    )
+    scoped_headers = _login(client, "dashboard_scope_client")
+
+    response = client.get("/api/channels/dashboard/summary", headers=scoped_headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_accounts"] == 1
+    assert data["total_candidates"] == 1
+
+
+def test_channel_candidate_filters_and_next_actions(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_ACTION")
+    unit = _create_unit(db_session, client_row.id, "UNIT_ACTION")
+    product = _create_product(db_session, client_row.id, "P-ACTION")
+    headers = _admin_headers(client, db_session)
+    ready = _ready_candidate(
+        client,
+        db_session,
+        headers,
+        client_row=client_row,
+        unit=unit,
+        product=product,
+        external_account_id="action-ready",
+    )
+    account_id = ready["channel_account_id"]
+    no_unit_account = _create_account(client, headers, client_row.id, external_account_id="action-team")
+    team_event = _create_raw_event(
+        db_session,
+        no_unit_account,
+        {
+            "eventType": "RETURN_CLAIM",
+            "orderId": "ORDER-ACTION-TEAM",
+            "productOrderId": "PO-ACTION-TEAM",
+            "claimId": "CLAIM-ACTION-TEAM",
+            "returnTrackingNo": "RTN-ACTION-TEAM",
+            "sellerProductCode": product.product_code,
+            "qty": 1,
+        },
+    )
+    team_candidate = client.post(f"/api/channels/raw-events/{team_event.id}/transform", headers=headers).json()["data"]["candidate"]
+    create_response = client.post(f"/api/channels/return-candidates/{ready['id']}/create-return-expected", headers=headers)
+    assert create_response.status_code == 200
+
+    ready_response = client.get("/api/channels/return-candidates?match_status=READY_FOR_INTAKE", headers=headers)
+    assert ready_response.status_code == 200
+    assert all(item["match_status"] == "READY_FOR_INTAKE" for item in ready_response.json()["data"]["items"])
+    created_response = client.get("/api/channels/return-candidates?return_expected_create_status=CREATED", headers=headers)
+    assert created_response.status_code == 200
+    assert created_response.json()["data"]["items"][0]["next_recommended_action"] == "ALREADY_CREATED"
+    team_response = client.get("/api/channels/return-candidates?correction_status=NONE&match_status=TEAM_ASSIGN_PENDING", headers=headers)
+    assert team_response.status_code == 200
+    item = next(row for row in team_response.json()["data"]["items"] if row["id"] == team_candidate["id"])
+    assert item["next_recommended_action"] == "ASSIGN_TEAM"
+    assert item["safe_to_correct"] is True
+    assert item["safe_to_create_return_expected"] is False
+
+    keyword_response = client.get(
+        f"/api/channels/return-candidates?account_id={account_id}&keyword=PO-EXPECTED",
+        headers=headers,
+    )
+    assert keyword_response.status_code == 200
+    assert all("raw_json" not in item for item in keyword_response.json()["data"]["items"])
+
+
+def test_channel_candidate_next_actions_cover_pending_created_blocked(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_ACTIONS")
+    unit = _create_unit(db_session, client_row.id, "UNIT_ACTIONS")
+    product = _create_product(db_session, client_row.id, "P-ACTIONS")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="actions-account")
+    scenarios = [
+        (
+            "PRODUCT_MATCH_PENDING",
+            {
+                "eventType": "RETURN_CLAIM",
+                "orderId": "ORDER-ACTIONS-PRODUCT",
+                "productOrderId": "PO-ACTIONS-PRODUCT",
+                "claimId": "CLAIM-ACTIONS-PRODUCT",
+                "returnTrackingNo": "RTN-ACTIONS-PRODUCT",
+                "productName": "미확정 상품",
+                "qty": 1,
+            },
+            "MATCH_PRODUCT",
+        ),
+        (
+            "RETURN_TRACKING_PENDING",
+            {
+                "eventType": "RETURN_CLAIM",
+                "orderId": "ORDER-ACTIONS-TRACK",
+                "productOrderId": "PO-ACTIONS-TRACK",
+                "claimId": "CLAIM-ACTIONS-TRACK",
+                "originalTrackingNo": "ORG-ACTIONS-TRACK",
+                "sellerProductCode": product.product_code,
+                "qty": 1,
+            },
+            "ENTER_RETURN_TRACKING",
+        ),
+        (
+            "BLOCKED",
+            {
+                "eventType": "RETURN_CLAIM",
+                "qty": 1,
+            },
+            "BLOCKED_NO_ACTION",
+        ),
+    ]
+    for expected_status, payload, expected_action in scenarios:
+        raw_event = _create_raw_event(db_session, account_id, payload)
+        response = client.post(f"/api/channels/raw-events/{raw_event.id}/transform", headers=headers)
+        assert response.status_code == 200
+        candidate = response.json()["data"]["candidate"]
+        assert candidate["match_status"] == expected_status
+        assert candidate["next_recommended_action"] == expected_action
+
+
+def test_channel_product_mapping_list_marks_conflicts_and_filters(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_MAPPING_API")
+    unit = _create_unit(db_session, client_row.id, "UNIT_MAPPING_API")
+    product_a = _create_product(db_session, client_row.id, "P-MAPPING-API-A")
+    product_b = _create_product(db_session, client_row.id, "P-MAPPING-API-B")
+    headers = _admin_headers(client, db_session)
+    account_id = _create_account(client, headers, client_row.id, client_unit_id=unit.id, external_account_id="mapping-api")
+    for product in (product_a, product_b):
+        db_session.add(
+            ProductChannelMapping(
+                client_id=client_row.id,
+                client_unit_id=unit.id,
+                channel_type="NAVER_SMARTSTORE",
+                channel_account_id=account_id,
+                external_seller_product_code="SELLERCONFLICTAPI",
+                external_product_name_norm="외부상품",
+                external_option_name_norm="기본",
+                product_id=product.id,
+                product_code=product.product_code,
+                decision_type="CORRECTED",
+                confidence=100,
+                created_from_candidate_id=None,
+            )
+        )
+    db_session.commit()
+
+    response = client.get("/api/channels/product-mappings?conflict_only=true", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["summary"]["conflict_count"] == 2
+    assert len(data["items"]) == 2
+    assert {item["conflict_status"] for item in data["items"]} == {"CONFLICT"}
+    assert all(item["conflict_reason"] for item in data["items"])
+    _assert_no_secret_fields(data)
+    assert "raw_json" not in str(data)

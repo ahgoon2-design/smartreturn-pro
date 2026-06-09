@@ -1,5 +1,5 @@
 import { ApiOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
-import { Alert, Button, Form, Input, InputNumber, Select, Space, Switch, Typography, message } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Segmented, Select, Space, Switch, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
@@ -8,7 +8,9 @@ import {
   createReturnExpectedFromChannelCandidate,
   clearChannelReturnCandidateCorrection,
   disableChannelAccount,
+  getChannelDashboardSummary,
   listChannelAccounts,
+  listProductChannelMappings,
   listChannelRawEvents,
   listChannelReturnCandidates,
   listChannelSyncJobs,
@@ -33,12 +35,15 @@ import type { SmartDataGridColumn, SmartGridRowAction } from "../../components/g
 import type {
   ChannelAccount,
   ChannelAccountCreatePayload,
+  ChannelDashboardSummary,
   ChannelRawEventListItem,
   ChannelReturnCandidate,
   ChannelReturnCandidateCorrectionPayload,
+  ChannelReturnNextAction,
   ChannelReturnCandidateStatus,
   ChannelSyncJob,
   ChannelType,
+  ProductChannelMapping,
 } from "../../types/channels";
 import type { ClientSummary, ClientUnit, ProductSummary } from "../../types/master";
 
@@ -70,7 +75,9 @@ const CHANNEL_OPTIONS: Array<{ value: ChannelType; label: string }> = [
   { value: "COURIER", label: "택배사 준비" },
 ];
 
-const CANDIDATE_STATUS_OPTIONS: Array<{ value: ChannelReturnCandidateStatus | "ALL"; label: string }> = [
+type CandidateStatusFilter = ChannelReturnCandidateStatus | "ALL" | "CREATED";
+
+const CANDIDATE_STATUS_OPTIONS: Array<{ value: CandidateStatusFilter; label: string }> = [
   { value: "ALL", label: "전체" },
   { value: "READY_FOR_INTAKE", label: "입고 준비" },
   { value: "TEAM_ASSIGN_PENDING", label: "팀 배정 필요" },
@@ -78,7 +85,32 @@ const CANDIDATE_STATUS_OPTIONS: Array<{ value: ChannelReturnCandidateStatus | "A
   { value: "RETURN_TRACKING_PENDING", label: "반품송장 필요" },
   { value: "NEEDS_REVIEW", label: "확인 필요" },
   { value: "BLOCKED", label: "차단" },
+  { value: "CREATED", label: "생성됨" },
 ];
+
+const DASHBOARD_EMPTY: ChannelDashboardSummary = {
+  total_accounts: 0,
+  active_accounts: 0,
+  auth_required_accounts: 0,
+  error_accounts: 0,
+  total_raw_events: 0,
+  raw_events_today: 0,
+  raw_event_failed_count: 0,
+  total_candidates: 0,
+  candidates_today: 0,
+  ready_for_intake_count: 0,
+  team_assign_pending_count: 0,
+  product_match_pending_count: 0,
+  return_tracking_pending_count: 0,
+  needs_review_count: 0,
+  blocked_count: 0,
+  return_expected_created_count: 0,
+  return_expected_failed_count: 0,
+  correction_required_count: 0,
+  corrected_count: 0,
+  product_mapping_count: 0,
+  product_mapping_conflict_count: 0,
+};
 
 export function ChannelAccountManagementScreen() {
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
@@ -89,8 +121,13 @@ export function ChannelAccountManagementScreen() {
   const [syncJobs, setSyncJobs] = useState<ChannelSyncJob[]>([]);
   const [rawEvents, setRawEvents] = useState<ChannelRawEventListItem[]>([]);
   const [candidates, setCandidates] = useState<ChannelReturnCandidate[]>([]);
+  const [dashboardSummary, setDashboardSummary] = useState<ChannelDashboardSummary>(DASHBOARD_EMPTY);
+  const [productMappings, setProductMappings] = useState<ProductChannelMapping[]>([]);
+  const [productMappingSummary, setProductMappingSummary] = useState<Record<string, number>>({});
   const [candidateSummary, setCandidateSummary] = useState<Record<string, number>>({});
-  const [candidateStatusFilter, setCandidateStatusFilter] = useState<ChannelReturnCandidateStatus | "ALL">("ALL");
+  const [candidateStatusFilter, setCandidateStatusFilter] = useState<CandidateStatusFilter>("ALL");
+  const [candidateKeyword, setCandidateKeyword] = useState("");
+  const [mappingConflictOnly, setMappingConflictOnly] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<ChannelAccount | null>(null);
   const [editingAccount, setEditingAccount] = useState<ChannelAccount | null>(null);
   const [correctingCandidate, setCorrectingCandidate] = useState<ChannelReturnCandidate | null>(null);
@@ -107,7 +144,7 @@ export function ChannelAccountManagementScreen() {
 
   useEffect(() => {
     void loadInitialData();
-  }, [includeInactive, candidateStatusFilter]);
+  }, [includeInactive, candidateStatusFilter, mappingConflictOnly]);
 
   useEffect(() => {
     if (selectedClientId) {
@@ -202,6 +239,14 @@ export function ChannelAccountManagementScreen() {
         width: 150,
         render: (value) => <SmartStatusBadge status={String(value)} label={candidateStatusLabel(String(value))} />,
       },
+      {
+        key: "next_recommended_action",
+        title: "다음 작업",
+        dataIndex: "next_recommended_action",
+        width: 150,
+        render: (value) => <SmartStatusBadge status={String(value || "WAITING")} label={nextActionLabel(value as ChannelReturnNextAction)} />,
+      },
+      { key: "action_reason", title: "작업 사유", dataIndex: "action_reason", minWidth: 220, render: (value) => toDisplayText(value) },
       { key: "match_reason", title: "사유", dataIndex: "match_reason", minWidth: 240 },
       { key: "external_product_order_id", title: "상품주문 ID", dataIndex: "external_product_order_id", minWidth: 160, copyable: true },
       { key: "external_claim_id", title: "클레임 ID", dataIndex: "external_claim_id", minWidth: 140, copyable: true },
@@ -245,12 +290,18 @@ export function ChannelAccountManagementScreen() {
 
   const candidateActions = useMemo<SmartGridRowAction<ChannelReturnCandidate>[]>(
     () => [
-      { key: "reprocess", label: "재처리", icon: <SyncOutlined />, onClick: (record) => void handleReprocessCandidate(record) },
+      {
+        key: "reprocess",
+        label: "재처리",
+        icon: <SyncOutlined />,
+        disabled: (record) => !record.safe_to_reprocess,
+        onClick: (record) => void handleReprocessCandidate(record),
+      },
       {
         key: "correction",
         label: "보정",
         icon: <EditOutlined />,
-        disabled: (record) => Boolean(record.return_expected_id),
+        disabled: (record) => !record.safe_to_correct,
         onClick: (record) => void openCorrectionModal(record),
       },
       {
@@ -262,9 +313,33 @@ export function ChannelAccountManagementScreen() {
       {
         key: "create-return-expected",
         label: "반품예정 생성",
-        disabled: (record) => !canCreateReturnExpected(record),
+        disabled: (record) => !record.safe_to_create_return_expected,
         onClick: (record) => void handleCreateReturnExpected(record),
       },
+    ],
+    [],
+  );
+
+  const productMappingColumns = useMemo<SmartDataGridColumn<ProductChannelMapping>[]>(
+    () => [
+      {
+        key: "conflict_status",
+        title: "충돌",
+        dataIndex: "conflict_status",
+        width: 120,
+        render: (value) =>
+          value === "CONFLICT" ? <SmartStatusBadge status="ERROR" label="충돌" /> : <SmartStatusBadge status="SUCCESS" label="정상" />,
+      },
+      { key: "account_name", title: "계정", dataIndex: "account_name", width: 150, render: (value) => toDisplayText(value) },
+      { key: "external_seller_product_code", title: "외부 상품코드", dataIndex: "external_seller_product_code", minWidth: 160, copyable: true },
+      { key: "external_product_name_norm", title: "외부 상품명", dataIndex: "external_product_name_norm", minWidth: 170 },
+      { key: "external_option_name_norm", title: "외부 옵션명", dataIndex: "external_option_name_norm", minWidth: 150 },
+      { key: "product_code", title: "연결 상품코드", dataIndex: "product_code", width: 150, copyable: true },
+      { key: "decision_type", title: "이력", dataIndex: "decision_type", width: 110, render: (value) => <SmartStatusBadge status={String(value)} label={String(value)} /> },
+      { key: "confidence", title: "신뢰도", dataIndex: "confidence", width: 90, align: "right", render: (value) => `${value || 0}%` },
+      { key: "created_from_candidate_id", title: "후보 ID", dataIndex: "created_from_candidate_id", width: 100, render: (value) => toDisplayText(value) },
+      { key: "conflict_reason", title: "충돌 사유", dataIndex: "conflict_reason", minWidth: 220, render: (value) => toDisplayText(value) },
+      { key: "updated_at", title: "갱신시각", dataIndex: "updated_at", width: 150, render: formatDateTime },
     ],
     [],
   );
@@ -273,12 +348,20 @@ export function ChannelAccountManagementScreen() {
     setLoading(true);
     setErrorMessage("");
     try {
-      const [clientItems, accountResult, jobResult, rawEventResult, candidateResult] = await Promise.all([
+      const candidateOptions = {
+        matchStatus: candidateStatusFilter === "CREATED" ? undefined : candidateStatusFilter,
+        returnExpectedCreateStatus: candidateStatusFilter === "CREATED" ? "CREATED" : undefined,
+        keyword: candidateKeyword,
+        sortBy: "created_at",
+      };
+      const [clientItems, accountResult, jobResult, rawEventResult, candidateResult, dashboardResult, mappingResult] = await Promise.all([
         listClients(),
         listChannelAccounts({ includeInactive }),
         listChannelSyncJobs(),
         listChannelRawEvents(),
-        listChannelReturnCandidates(),
+        listChannelReturnCandidates(candidateOptions),
+        getChannelDashboardSummary(),
+        listProductChannelMappings({ conflictOnly: mappingConflictOnly }),
       ]);
       setClients(clientItems);
       setAccounts(accountResult.items);
@@ -286,6 +369,9 @@ export function ChannelAccountManagementScreen() {
       setRawEvents(rawEventResult.items);
       setCandidates(candidateResult.items);
       setCandidateSummary(candidateResult.summary);
+      setDashboardSummary(dashboardResult);
+      setProductMappings(mappingResult.items);
+      setProductMappingSummary(mappingResult.summary);
       setNotice("채널 연동 관리 정보를 불러왔습니다.");
     } catch (error) {
       setErrorMessage(toUserMessage(error, "채널 연동 관리 정보를 불러오지 못했습니다."));
@@ -559,9 +645,15 @@ export function ChannelAccountManagementScreen() {
 
   const selectedJobs = selectedAccount ? syncJobs.filter((job) => job.channel_account_id === selectedAccount.id) : syncJobs;
   const selectedEvents = selectedAccount ? rawEvents.filter((event) => event.channel_account_id === selectedAccount.id) : rawEvents;
-  const filteredCandidates = candidates.filter(
-    (candidate) => candidateStatusFilter === "ALL" || candidate.match_status === candidateStatusFilter,
-  );
+  const filteredCandidates = candidates.filter((candidate) => {
+    if (candidateStatusFilter === "ALL") {
+      return true;
+    }
+    if (candidateStatusFilter === "CREATED") {
+      return ["CREATED", "SKIPPED_DUPLICATE"].includes(candidate.return_expected_create_status);
+    }
+    return candidate.match_status === candidateStatusFilter;
+  });
   const selectedCandidates = selectedAccount
     ? filteredCandidates.filter((candidate) => candidate.channel_account_id === selectedAccount.id)
     : filteredCandidates;
@@ -570,7 +662,7 @@ export function ChannelAccountManagementScreen() {
     <SmartPage>
       <SmartPageHeader
         title="채널 연동 관리"
-        description="외부 채널 자동수집 계정과 dry-run 수집 상태를 관리합니다."
+        description="외부 채널 자동수집 현황, 예외 후보, 상품 매핑 학습 상태를 관리합니다."
         extra={
           <Space>
             <Switch checked={includeInactive} onChange={setIncludeInactive} checkedChildren="중지 포함" unCheckedChildren="사용중" />
@@ -584,10 +676,19 @@ export function ChannelAccountManagementScreen() {
         }
       />
 
+      <section className="smart-summary-grid" aria-label="채널 자동수집 운영 요약">
+        <SmartSummaryCard label="연동 계정" value={`${dashboardSummary.active_accounts}/${dashboardSummary.total_accounts}`} />
+        <SmartSummaryCard label="오늘 수집" value={`${dashboardSummary.raw_events_today}건`} />
+        <SmartSummaryCard label="READY" value={`${dashboardSummary.ready_for_intake_count}건`} />
+        <SmartSummaryCard label="예외 필요" value={`${dashboardSummary.correction_required_count}건`} />
+        <SmartSummaryCard label="반품예정 생성" value={`${dashboardSummary.return_expected_created_count}건`} />
+        <SmartSummaryCard label="오류" value={`${dashboardSummary.error_accounts + dashboardSummary.raw_event_failed_count + dashboardSummary.return_expected_failed_count}건`} />
+      </section>
+
       <Alert
         type="info"
         showIcon
-        message="현재는 실제 네이버 API 호출 전 skeleton 단계입니다."
+        message="현재는 실제 네이버 API 호출 전 운영 skeleton 단계입니다."
         description="secret/token은 화면에 표시하지 않습니다. return_tracking_no는 현장 스캔 기준이며 원송장은 보조 조회 후보로만 사용합니다."
       />
       <SmartErrorNotice message={errorMessage} />
@@ -631,7 +732,7 @@ export function ChannelAccountManagementScreen() {
         />
       </SmartDataSection>
 
-      <section className="smart-summary-grid" aria-label="채널 반품 후보 요약">
+      <section className="smart-summary-grid" aria-label="채널 반품 후보 상태 요약">
         <SmartSummaryCard label="입고 준비" value={`${candidateSummary.READY_FOR_INTAKE || 0}건`} />
         <SmartSummaryCard label="팀 배정 필요" value={`${candidateSummary.TEAM_ASSIGN_PENDING || 0}건`} />
         <SmartSummaryCard label="상품 매칭 필요" value={`${candidateSummary.PRODUCT_MATCH_PENDING || 0}건`} />
@@ -644,11 +745,18 @@ export function ChannelAccountManagementScreen() {
         title={selectedAccount ? `${selectedAccount.store_name} 반품접수 후보` : "반품접수 후보"}
         extra={
           <Space>
-            <Select
-              style={{ width: 180 }}
+            <Segmented
               value={candidateStatusFilter}
               options={CANDIDATE_STATUS_OPTIONS}
-              onChange={setCandidateStatusFilter}
+              onChange={(value) => setCandidateStatusFilter(value as CandidateStatusFilter)}
+            />
+            <Input.Search
+              allowClear
+              style={{ width: 220 }}
+              value={candidateKeyword}
+              placeholder="외부 ID/상품 검색"
+              onChange={(event) => setCandidateKeyword(event.target.value)}
+              onSearch={() => void loadInitialData()}
             />
             <Button
               icon={<SyncOutlined />}
@@ -677,6 +785,34 @@ export function ChannelAccountManagementScreen() {
           emptyText="변환된 반품접수 후보가 없습니다."
           rowActions={candidateActions}
           maxHeight={360}
+          enableCopy
+        />
+      </SmartDataSection>
+
+      <SmartDataSection
+        title="상품 매핑 학습"
+        extra={
+          <Space>
+            <Switch checked={mappingConflictOnly} onChange={setMappingConflictOnly} checkedChildren="충돌만" unCheckedChildren="전체" />
+            <Typography.Text type="secondary">
+              학습 {productMappingSummary.total || 0}건 / 충돌 {productMappingSummary.conflict_count || 0}건
+            </Typography.Text>
+          </Space>
+        }
+      >
+        <Alert
+          type={dashboardSummary.product_mapping_conflict_count > 0 ? "warning" : "info"}
+          showIcon
+          message="상품 매핑 학습 상태"
+          description="충돌 매핑은 자동확정 대상에서 제외됩니다. 수정/삭제 관리는 다음 단계에서 별도 화면으로 분리합니다."
+        />
+        <SmartDataGrid<ProductChannelMapping>
+          rows={productMappings}
+          rowKey="mapping_id"
+          columns={productMappingColumns}
+          loading={loading || actionLoadingId !== null}
+          emptyText="학습된 상품 매핑이 없습니다."
+          maxHeight={260}
           enableCopy
         />
       </SmartDataSection>
@@ -853,11 +989,21 @@ function correctionStatusLabel(value: string) {
   );
 }
 
+function nextActionLabel(value?: ChannelReturnNextAction | null) {
+  const labels: Record<ChannelReturnNextAction, string> = {
+    ASSIGN_TEAM: "팀 배정",
+    MATCH_PRODUCT: "상품 매칭",
+    ENTER_RETURN_TRACKING: "반품송장 입력",
+    REVIEW_CONFLICT: "충돌 확인",
+    CREATE_RETURN_EXPECTED: "반품예정 생성",
+    ALREADY_CREATED: "생성됨",
+    BLOCKED_NO_ACTION: "차단",
+  };
+  return value ? labels[value] : "-";
+}
+
 function canCreateReturnExpected(candidate: ChannelReturnCandidate) {
-  return (
-    candidate.match_status === "READY_FOR_INTAKE" &&
-    !["CREATED", "SKIPPED_DUPLICATE"].includes(candidate.return_expected_create_status)
-  );
+  return candidate.safe_to_create_return_expected;
 }
 
 function readyNotCreatedCount(candidates: ChannelReturnCandidate[]) {

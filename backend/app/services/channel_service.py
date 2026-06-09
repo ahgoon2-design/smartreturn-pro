@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import datetime, time, timezone
 import hashlib
 import json
 from typing import Protocol
@@ -21,6 +22,7 @@ from app.schemas.channels import (
     ChannelAccountsResponse,
     ChannelAccountUpdateRequest,
     ChannelConnectionTestResponse,
+    ChannelDashboardSummaryResponse,
     ChannelRawEventDetailResponse,
     ChannelRawEventListItem,
     ChannelRawEventsResponse,
@@ -37,6 +39,8 @@ from app.schemas.channels import (
     ChannelSyncDryRunResponse,
     ChannelSyncJobResponse,
     ChannelSyncJobsResponse,
+    ProductChannelMappingResponse,
+    ProductChannelMappingsResponse,
 )
 
 
@@ -181,6 +185,7 @@ def _raw_event_list_item(event) -> ChannelRawEventListItem:
 
 
 def _candidate_response(candidate) -> ChannelReturnCandidateResponse:
+    action_state = _candidate_action_state(candidate)
     return ChannelReturnCandidateResponse(
         id=candidate.id,
         channel_raw_event_id=candidate.channel_raw_event_id,
@@ -223,6 +228,12 @@ def _candidate_response(candidate) -> ChannelReturnCandidateResponse:
         return_expected_created_at=candidate.return_expected_created_at,
         return_expected_create_status=candidate.return_expected_create_status,
         return_expected_create_error=candidate.return_expected_create_error,
+        action_required=action_state["action_required"],
+        action_reason=action_state["action_reason"],
+        next_recommended_action=action_state["next_recommended_action"],
+        safe_to_create_return_expected=action_state["safe_to_create_return_expected"],
+        safe_to_reprocess=action_state["safe_to_reprocess"],
+        safe_to_correct=action_state["safe_to_correct"],
         created_at=candidate.created_at,
         updated_at=candidate.updated_at,
     )
@@ -233,6 +244,125 @@ def _candidate_summary(candidates: list) -> dict[str, int]:
     for candidate in candidates:
         summary[candidate.match_status] = summary.get(candidate.match_status, 0) + 1
     return summary
+
+
+def _candidate_action_state(candidate) -> dict[str, object]:
+    already_created = candidate.return_expected_id is not None or candidate.return_expected_create_status in {
+        RETURN_EXPECTED_CREATED,
+        RETURN_EXPECTED_SKIPPED_DUPLICATE,
+    }
+    if already_created:
+        return {
+            "action_required": False,
+            "action_reason": "이미 반품처리 row와 연결되었습니다.",
+            "next_recommended_action": "ALREADY_CREATED",
+            "safe_to_create_return_expected": False,
+            "safe_to_reprocess": False,
+            "safe_to_correct": False,
+        }
+    by_status = {
+        "READY_FOR_INTAKE": (
+            "CREATE_RETURN_EXPECTED",
+            "반품예정 생성이 가능합니다.",
+            False,
+            True,
+            True,
+            True,
+        ),
+        "TEAM_ASSIGN_PENDING": (
+            "ASSIGN_TEAM",
+            "팀/운영단위 보정이 필요합니다.",
+            True,
+            False,
+            True,
+            True,
+        ),
+        "PRODUCT_MATCH_PENDING": (
+            "MATCH_PRODUCT",
+            "상품마스터 매칭 보정이 필요합니다.",
+            True,
+            False,
+            True,
+            True,
+        ),
+        "RETURN_TRACKING_PENDING": (
+            "ENTER_RETURN_TRACKING",
+            "현장 스캔 기준 반품송장 입력이 필요합니다.",
+            True,
+            False,
+            True,
+            True,
+        ),
+        "NEEDS_REVIEW": (
+            "REVIEW_CONFLICT",
+            "충돌 또는 불확실 사유 확인이 필요합니다.",
+            True,
+            False,
+            True,
+            True,
+        ),
+        "BLOCKED": (
+            "BLOCKED_NO_ACTION",
+            "차단 사유 해소 전에는 자동 처리할 수 없습니다.",
+            True,
+            False,
+            False,
+            True,
+        ),
+    }
+    next_action, reason, required, can_create, can_reprocess, can_correct = by_status.get(
+        candidate.match_status,
+        ("REVIEW_CONFLICT", candidate.match_reason, True, False, False, True),
+    )
+    return {
+        "action_required": required,
+        "action_reason": candidate.return_expected_create_error or reason,
+        "next_recommended_action": next_action,
+        "safe_to_create_return_expected": can_create
+        and candidate.match_status == "READY_FOR_INTAKE"
+        and candidate.return_expected_create_status not in {RETURN_EXPECTED_CREATED, RETURN_EXPECTED_SKIPPED_DUPLICATE},
+        "safe_to_reprocess": can_reprocess,
+        "safe_to_correct": can_correct,
+    }
+
+
+def _product_mapping_conflict_key(mapping) -> tuple | None:
+    if mapping.external_seller_product_code:
+        return (mapping.client_id, mapping.channel_type, "SELLER_CODE", mapping.external_seller_product_code)
+    if mapping.external_product_name_norm or mapping.external_option_name_norm:
+        return (
+            mapping.client_id,
+            mapping.channel_type,
+            "NAME_OPTION",
+            mapping.external_product_name_norm,
+            mapping.external_option_name_norm,
+        )
+    return None
+
+
+def _product_mapping_conflicts(mappings: list) -> dict[int, str]:
+    grouped: dict[tuple, set[int]] = defaultdict(set)
+    row_keys: dict[int, tuple] = {}
+    for mapping in mappings:
+        key = _product_mapping_conflict_key(mapping)
+        if key is None:
+            continue
+        grouped[key].add(mapping.product_id)
+        row_keys[mapping.id] = key
+    conflict_keys = {key for key, product_ids in grouped.items() if len(product_ids) > 1}
+    result: dict[int, str] = {}
+    for row_id, key in row_keys.items():
+        if key in conflict_keys:
+            result[row_id] = "같은 외부 상품 기준이 서로 다른 SmartReturn 상품에 연결되어 자동확정에서 제외됩니다."
+    return result
+
+
+def _datetime_gte(value: datetime | None, threshold: datetime) -> bool:
+    if value is None:
+        return False
+    if value.tzinfo is None and threshold.tzinfo is not None:
+        threshold = threshold.replace(tzinfo=None)
+    return value >= threshold
 
 
 class ChannelProvider(Protocol):
@@ -735,6 +865,101 @@ class ChannelSyncService:
 
 
 class ChannelCanonicalTransformService:
+    def dashboard_summary(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        client_id: int | None = None,
+        client_unit_id: int | None = None,
+        channel_type: str | None = None,
+        account_id: int | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        status: str | None = None,
+    ) -> dict:
+        _require_channel_view(auth)
+        effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+        if account_id is not None:
+            account_service._get_scoped_account(db, auth, account_id=account_id)
+
+        accounts = repo.list_channel_accounts(
+            db,
+            client_id=effective_client_id,
+            channel_type=channel_type,
+            include_inactive=True,
+        )
+        if account_id is not None:
+            accounts = [account for account in accounts if account.id == account_id]
+        if client_unit_id is not None:
+            accounts = [account for account in accounts if account.client_unit_id == client_unit_id]
+        account_ids = {account.id for account in accounts}
+
+        today_start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
+        raw_events = [
+            event
+            for event in repo.list_channel_raw_events(db, client_id=effective_client_id, account_id=account_id, limit=10000)
+            if event.channel_account_id in account_ids
+            and (channel_type is None or event.channel_type == channel_type)
+            and (date_from is None or event.collected_at >= date_from)
+            and (date_to is None or event.collected_at <= date_to)
+        ]
+        candidates = repo.list_channel_return_candidates(
+            db,
+            client_id=effective_client_id,
+            account_id=account_id,
+            match_status=status,
+            channel_type=channel_type,
+            client_unit_id=client_unit_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=10000,
+        )
+        candidates = [candidate for candidate in candidates if candidate.channel_account_id in account_ids]
+        product_mappings = repo.list_product_channel_mappings(
+            db,
+            client_id=effective_client_id,
+            channel_type=channel_type,
+            account_id=account_id,
+            limit=10000,
+        )
+        if client_unit_id is not None:
+            product_mappings = [mapping for mapping in product_mappings if mapping.client_unit_id == client_unit_id]
+        mapping_conflicts = _product_mapping_conflicts(product_mappings)
+        last_error_account = max((account for account in accounts if account.last_error_at), key=lambda row: row.last_error_at, default=None)
+
+        return ChannelDashboardSummaryResponse(
+            total_accounts=len(accounts),
+            active_accounts=sum(1 for account in accounts if account.status == "ACTIVE"),
+            auth_required_accounts=sum(1 for account in accounts if account.auth_status in {"NOT_CONNECTED", "EXPIRED"} or account.status == "AUTH_REQUIRED"),
+            error_accounts=sum(1 for account in accounts if account.status == "ERROR" or account.auth_status == "ERROR"),
+            total_raw_events=len(raw_events),
+            raw_events_today=sum(1 for event in raw_events if _datetime_gte(event.collected_at, today_start)),
+            raw_event_failed_count=sum(1 for event in raw_events if event.process_status == "FAILED"),
+            total_candidates=len(candidates),
+            candidates_today=sum(1 for candidate in candidates if _datetime_gte(candidate.created_at, today_start)),
+            ready_for_intake_count=sum(1 for candidate in candidates if candidate.match_status == "READY_FOR_INTAKE"),
+            team_assign_pending_count=sum(1 for candidate in candidates if candidate.match_status == "TEAM_ASSIGN_PENDING"),
+            product_match_pending_count=sum(1 for candidate in candidates if candidate.match_status == "PRODUCT_MATCH_PENDING"),
+            return_tracking_pending_count=sum(1 for candidate in candidates if candidate.match_status == "RETURN_TRACKING_PENDING"),
+            needs_review_count=sum(1 for candidate in candidates if candidate.match_status == "NEEDS_REVIEW"),
+            blocked_count=sum(1 for candidate in candidates if candidate.match_status == "BLOCKED"),
+            return_expected_created_count=sum(
+                1
+                for candidate in candidates
+                if candidate.return_expected_create_status in {RETURN_EXPECTED_CREATED, RETURN_EXPECTED_SKIPPED_DUPLICATE}
+            ),
+            return_expected_failed_count=sum(1 for candidate in candidates if candidate.return_expected_create_status == RETURN_EXPECTED_FAILED),
+            correction_required_count=sum(1 for candidate in candidates if _candidate_action_state(candidate)["action_required"]),
+            corrected_count=sum(1 for candidate in candidates if candidate.correction_status in {"CORRECTED", "REVIEWED", "REPROCESS_REQUIRED"}),
+            product_mapping_count=len(product_mappings),
+            product_mapping_conflict_count=len(mapping_conflicts),
+            last_sync_at=max((account.last_sync_at for account in accounts if account.last_sync_at), default=None),
+            last_success_sync_at=max((account.last_success_sync_at for account in accounts if account.last_success_sync_at), default=None),
+            last_error_at=last_error_account.last_error_at if last_error_account else None,
+            last_error_message_summary=_safe_error_message(last_error_account.last_error_message if last_error_account else None),
+        ).model_dump()
+
     def transform_raw_event(self, db: Session, auth: AuthContext, *, raw_event_id: int) -> dict:
         _require_channel_manage(auth)
         raw_event = repo.get_channel_raw_event(db, raw_event_id)
@@ -793,9 +1018,20 @@ class ChannelCanonicalTransformService:
         *,
         account_id: int | None = None,
         match_status: str | None = None,
+        correction_status: str | None = None,
+        return_expected_create_status: str | None = None,
+        channel_type: str | None = None,
+        client_id: int | None = None,
+        client_unit_id: int | None = None,
+        has_return_tracking_no: bool | None = None,
+        has_product: bool | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        keyword: str | None = None,
+        sort_by: str | None = None,
     ) -> dict:
         _require_channel_view(auth)
-        effective_client_id = resolve_effective_client_id(auth, None, allow_all_clients=True)
+        effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
         if account_id is not None:
             account_service._get_scoped_account(db, auth, account_id=account_id)
         rows = repo.list_channel_return_candidates(
@@ -803,11 +1039,82 @@ class ChannelCanonicalTransformService:
             client_id=effective_client_id,
             account_id=account_id,
             match_status=match_status,
+            correction_status=correction_status,
+            return_expected_create_status=return_expected_create_status,
+            channel_type=channel_type,
+            client_unit_id=client_unit_id,
+            has_return_tracking_no=has_return_tracking_no,
+            has_product=has_product,
+            date_from=date_from,
+            date_to=date_to,
+            keyword=keyword,
+            sort_by=sort_by,
             limit=200,
         )
         return ChannelReturnCandidatesResponse(
             items=[_candidate_response(candidate) for candidate in rows],
             summary=_candidate_summary(rows),
+        ).model_dump()
+
+    def list_product_mappings(
+        self,
+        db: Session,
+        auth: AuthContext,
+        *,
+        client_id: int | None = None,
+        channel_type: str | None = None,
+        account_id: int | None = None,
+        decision_type: str | None = None,
+        conflict_only: bool = False,
+        keyword: str | None = None,
+    ) -> dict:
+        _require_channel_view(auth)
+        effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+        if account_id is not None:
+            account_service._get_scoped_account(db, auth, account_id=account_id)
+        accounts = repo.list_channel_accounts(db, client_id=effective_client_id, channel_type=channel_type, include_inactive=True)
+        account_names = {account.id: account.account_name for account in accounts}
+        rows = repo.list_product_channel_mappings(
+            db,
+            client_id=effective_client_id,
+            channel_type=channel_type,
+            account_id=account_id,
+            decision_type=decision_type,
+            keyword=keyword,
+            limit=200,
+        )
+        conflicts = _product_mapping_conflicts(rows)
+        if conflict_only:
+            rows = [row for row in rows if row.id in conflicts]
+        items = [
+            ProductChannelMappingResponse(
+                mapping_id=row.id,
+                client_id=row.client_id,
+                client_unit_id=row.client_unit_id,
+                channel_type=row.channel_type,
+                channel_account_id=row.channel_account_id,
+                account_name=account_names.get(row.channel_account_id) if row.channel_account_id else None,
+                external_seller_product_code=row.external_seller_product_code,
+                external_product_name_norm=row.external_product_name_norm,
+                external_option_name_norm=row.external_option_name_norm,
+                product_id=row.product_id,
+                product_code=row.product_code,
+                decision_type=row.decision_type,
+                confidence=row.confidence,
+                conflict_status="CONFLICT" if row.id in conflicts else "OK",
+                conflict_reason=conflicts.get(row.id),
+                created_from_candidate_id=row.created_from_candidate_id,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+            for row in rows
+        ]
+        return ProductChannelMappingsResponse(
+            items=items,
+            summary={
+                "total": len(rows),
+                "conflict_count": sum(1 for row in rows if row.id in conflicts),
+            },
         ).model_dump()
 
     def get_candidate(self, db: Session, auth: AuthContext, *, candidate_id: int) -> dict:

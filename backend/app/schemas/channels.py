@@ -17,6 +17,15 @@ CHANNEL_RETURN_CANDIDATE_STATUSES = {
 }
 CHANNEL_RETURN_EXPECTED_CREATE_STATUSES = {"NOT_CREATED", "CREATED", "SKIPPED_DUPLICATE", "FAILED"}
 CHANNEL_RETURN_CORRECTION_STATUSES = {"NONE", "CORRECTED", "REVIEWED", "REPROCESS_REQUIRED"}
+CHANNEL_RETURN_NEXT_ACTIONS = {
+    "ASSIGN_TEAM",
+    "MATCH_PRODUCT",
+    "ENTER_RETURN_TRACKING",
+    "REVIEW_CONFLICT",
+    "CREATE_RETURN_EXPECTED",
+    "ALREADY_CREATED",
+    "BLOCKED_NO_ACTION",
+}
 
 
 class ChannelAccountCreateRequest(BaseModel):
@@ -248,6 +257,12 @@ class ChannelReturnCandidateResponse(BaseModel):
     return_expected_created_at: datetime | None = None
     return_expected_create_status: str = "NOT_CREATED"
     return_expected_create_error: str | None = None
+    action_required: bool = False
+    action_reason: str | None = None
+    next_recommended_action: str | None = None
+    safe_to_create_return_expected: bool = False
+    safe_to_reprocess: bool = False
+    safe_to_correct: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -317,3 +332,57 @@ class ChannelReturnExpectedBulkCreateResponse(BaseModel):
     blocked_reasons: list[str] = Field(default_factory=list)
     error_summary: list[str] = Field(default_factory=list)
     candidates: list[ChannelReturnCandidateResponse] = Field(default_factory=list)
+
+
+class ChannelDashboardSummaryResponse(BaseModel):
+    total_accounts: int = 0
+    active_accounts: int = 0
+    auth_required_accounts: int = 0
+    error_accounts: int = 0
+    total_raw_events: int = 0
+    raw_events_today: int = 0
+    raw_event_failed_count: int = 0
+    total_candidates: int = 0
+    candidates_today: int = 0
+    ready_for_intake_count: int = 0
+    team_assign_pending_count: int = 0
+    product_match_pending_count: int = 0
+    return_tracking_pending_count: int = 0
+    needs_review_count: int = 0
+    blocked_count: int = 0
+    return_expected_created_count: int = 0
+    return_expected_failed_count: int = 0
+    correction_required_count: int = 0
+    corrected_count: int = 0
+    product_mapping_count: int = 0
+    product_mapping_conflict_count: int = 0
+    last_sync_at: datetime | None = None
+    last_success_sync_at: datetime | None = None
+    last_error_at: datetime | None = None
+    last_error_message_summary: str | None = None
+
+
+class ProductChannelMappingResponse(BaseModel):
+    mapping_id: int
+    client_id: int
+    client_unit_id: int | None = None
+    channel_type: str
+    channel_account_id: int | None = None
+    account_name: str | None = None
+    external_seller_product_code: str | None = None
+    external_product_name_norm: str | None = None
+    external_option_name_norm: str | None = None
+    product_id: int
+    product_code: str
+    decision_type: str
+    confidence: int
+    conflict_status: str
+    conflict_reason: str | None = None
+    created_from_candidate_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProductChannelMappingsResponse(BaseModel):
+    items: list[ProductChannelMappingResponse]
+    summary: dict[str, int] = Field(default_factory=dict)

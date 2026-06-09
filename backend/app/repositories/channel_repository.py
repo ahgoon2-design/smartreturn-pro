@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.channels import (
@@ -163,6 +164,16 @@ def list_channel_return_candidates(
     client_id: int | None = None,
     account_id: int | None = None,
     match_status: str | None = None,
+    correction_status: str | None = None,
+    return_expected_create_status: str | None = None,
+    channel_type: str | None = None,
+    client_unit_id: int | None = None,
+    has_return_tracking_no: bool | None = None,
+    has_product: bool | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    sort_by: str | None = None,
     limit: int = 100,
 ) -> list[ChannelReturnCandidate]:
     query = db.query(ChannelReturnCandidate)
@@ -172,7 +183,50 @@ def list_channel_return_candidates(
         query = query.filter(ChannelReturnCandidate.channel_account_id == account_id)
     if match_status:
         query = query.filter(ChannelReturnCandidate.match_status == match_status)
-    return query.order_by(ChannelReturnCandidate.updated_at.desc(), ChannelReturnCandidate.id.desc()).limit(limit).all()
+    if correction_status:
+        query = query.filter(ChannelReturnCandidate.correction_status == correction_status)
+    if return_expected_create_status:
+        query = query.filter(ChannelReturnCandidate.return_expected_create_status == return_expected_create_status)
+    if channel_type:
+        query = query.filter(ChannelReturnCandidate.source_origin == channel_type)
+    if client_unit_id is not None:
+        query = query.filter(ChannelReturnCandidate.client_unit_id == client_unit_id)
+    if has_return_tracking_no is not None:
+        query = query.filter(
+            ChannelReturnCandidate.return_tracking_no.isnot(None)
+            if has_return_tracking_no
+            else ChannelReturnCandidate.return_tracking_no.is_(None)
+        )
+    if has_product is not None:
+        query = query.filter(
+            ChannelReturnCandidate.product_id.isnot(None)
+            if has_product
+            else ChannelReturnCandidate.product_id.is_(None)
+        )
+    if date_from is not None:
+        query = query.filter(ChannelReturnCandidate.created_at >= date_from)
+    if date_to is not None:
+        query = query.filter(ChannelReturnCandidate.created_at <= date_to)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        query = query.filter(
+            or_(
+                ChannelReturnCandidate.external_order_id.ilike(like),
+                ChannelReturnCandidate.external_product_order_id.ilike(like),
+                ChannelReturnCandidate.external_claim_id.ilike(like),
+                ChannelReturnCandidate.product_code.ilike(like),
+                ChannelReturnCandidate.product_name.ilike(like),
+            )
+        )
+    if sort_by == "match_status":
+        query = query.order_by(ChannelReturnCandidate.match_status.asc(), ChannelReturnCandidate.updated_at.desc())
+    elif sort_by == "return_expected_created_at":
+        query = query.order_by(ChannelReturnCandidate.return_expected_created_at.desc().nullslast(), ChannelReturnCandidate.id.desc())
+    elif sort_by == "updated_at":
+        query = query.order_by(ChannelReturnCandidate.updated_at.desc(), ChannelReturnCandidate.id.desc())
+    else:
+        query = query.order_by(ChannelReturnCandidate.created_at.desc(), ChannelReturnCandidate.id.desc())
+    return query.limit(limit).all()
 
 
 def list_ready_candidates_for_return_expected(
@@ -289,6 +343,38 @@ def upsert_product_channel_mapping(db: Session, **values) -> ProductChannelMappi
     db.add(mapping)
     db.flush()
     return mapping
+
+
+def list_product_channel_mappings(
+    db: Session,
+    *,
+    client_id: int | None = None,
+    channel_type: str | None = None,
+    account_id: int | None = None,
+    decision_type: str | None = None,
+    keyword: str | None = None,
+    limit: int = 100,
+) -> list[ProductChannelMapping]:
+    query = db.query(ProductChannelMapping)
+    if client_id is not None:
+        query = query.filter(ProductChannelMapping.client_id == client_id)
+    if channel_type:
+        query = query.filter(ProductChannelMapping.channel_type == channel_type)
+    if account_id is not None:
+        query = query.filter(ProductChannelMapping.channel_account_id == account_id)
+    if decision_type:
+        query = query.filter(ProductChannelMapping.decision_type == decision_type)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        query = query.filter(
+            or_(
+                ProductChannelMapping.external_seller_product_code.ilike(like),
+                ProductChannelMapping.external_product_name_norm.ilike(like),
+                ProductChannelMapping.external_option_name_norm.ilike(like),
+                ProductChannelMapping.product_code.ilike(like),
+            )
+        )
+    return query.order_by(ProductChannelMapping.updated_at.desc(), ProductChannelMapping.id.desc()).limit(limit).all()
 
 
 def find_candidate_conflicts(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -41,6 +43,36 @@ def list_channel_accounts_api(
             client_id=client_id,
             channel_type=channel_type,
             include_inactive=include_inactive,
+        ),
+    )
+
+
+@router.get("/dashboard/summary", response_model=ApiResult)
+def get_channel_dashboard_summary_api(
+    client_id: int | None = None,
+    client_unit_id: int | None = None,
+    channel_type: str | None = None,
+    account_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_DASHBOARD_SUMMARY_FOUND",
+        message="채널 자동수집 운영 요약을 조회했습니다.",
+        data=transform_service.dashboard_summary(
+            db,
+            auth,
+            client_id=client_id,
+            client_unit_id=client_unit_id,
+            channel_type=channel_type,
+            account_id=account_id,
+            date_from=date_from,
+            date_to=date_to,
+            status=status,
         ),
     )
 
@@ -233,6 +265,17 @@ def list_channel_sync_jobs_api(
 def list_channel_return_candidates_api(
     account_id: int | None = None,
     match_status: str | None = None,
+    correction_status: str | None = None,
+    return_expected_create_status: str | None = None,
+    channel_type: str | None = None,
+    client_id: int | None = None,
+    client_unit_id: int | None = None,
+    has_return_tracking_no: bool | None = None,
+    has_product: bool | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    keyword: str | None = None,
+    sort_by: str | None = None,
     db: Session = Depends(get_db),
     auth: AuthContext = Depends(get_current_auth_context),
 ) -> ApiResult:
@@ -240,7 +283,51 @@ def list_channel_return_candidates_api(
     return api_success(
         result_code="CHANNEL_RETURN_CANDIDATES_FOUND",
         message="채널 반품접수 후보 목록을 조회했습니다.",
-        data=transform_service.list_candidates(db, auth, account_id=account_id, match_status=match_status),
+        data=transform_service.list_candidates(
+            db,
+            auth,
+            account_id=account_id,
+            match_status=match_status,
+            correction_status=correction_status,
+            return_expected_create_status=return_expected_create_status,
+            channel_type=channel_type,
+            client_id=client_id,
+            client_unit_id=client_unit_id,
+            has_return_tracking_no=has_return_tracking_no,
+            has_product=has_product,
+            date_from=date_from,
+            date_to=date_to,
+            keyword=keyword,
+            sort_by=sort_by,
+        ),
+    )
+
+
+@router.get("/product-mappings", response_model=ApiResult)
+def list_channel_product_mappings_api(
+    client_id: int | None = None,
+    channel_type: str | None = None,
+    account_id: int | None = None,
+    decision_type: str | None = None,
+    conflict_only: bool = False,
+    keyword: str | None = None,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_ready(auth)
+    return api_success(
+        result_code="CHANNEL_PRODUCT_MAPPINGS_FOUND",
+        message="채널 상품 매핑 학습 목록을 조회했습니다.",
+        data=transform_service.list_product_mappings(
+            db,
+            auth,
+            client_id=client_id,
+            channel_type=channel_type,
+            account_id=account_id,
+            decision_type=decision_type,
+            conflict_only=conflict_only,
+            keyword=keyword,
+        ),
     )
 
 

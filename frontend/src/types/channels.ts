@@ -13,6 +13,14 @@ export type ChannelReturnCandidateStatus =
   | "BLOCKED";
 export type ChannelReturnExpectedCreateStatus = "NOT_CREATED" | "CREATED" | "SKIPPED_DUPLICATE" | "FAILED";
 export type ChannelReturnCorrectionStatus = "NONE" | "CORRECTED" | "REVIEWED" | "REPROCESS_REQUIRED";
+export type ChannelReturnNextAction =
+  | "ASSIGN_TEAM"
+  | "MATCH_PRODUCT"
+  | "ENTER_RETURN_TRACKING"
+  | "REVIEW_CONFLICT"
+  | "CREATE_RETURN_EXPECTED"
+  | "ALREADY_CREATED"
+  | "BLOCKED_NO_ACTION";
 
 export interface ChannelAccount {
   id: number;
@@ -167,6 +175,12 @@ export interface ChannelReturnCandidate {
   return_expected_created_at?: string | null;
   return_expected_create_status: ChannelReturnExpectedCreateStatus;
   return_expected_create_error?: string | null;
+  action_required: boolean;
+  action_reason?: string | null;
+  next_recommended_action?: ChannelReturnNextAction | null;
+  safe_to_create_return_expected: boolean;
+  safe_to_reprocess: boolean;
+  safe_to_correct: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -224,4 +238,58 @@ export interface ChannelReturnExpectedBulkCreateResponse {
   blocked_reasons: string[];
   error_summary: string[];
   candidates: ChannelReturnCandidate[];
+}
+
+export interface ChannelDashboardSummary {
+  total_accounts: number;
+  active_accounts: number;
+  auth_required_accounts: number;
+  error_accounts: number;
+  total_raw_events: number;
+  raw_events_today: number;
+  raw_event_failed_count: number;
+  total_candidates: number;
+  candidates_today: number;
+  ready_for_intake_count: number;
+  team_assign_pending_count: number;
+  product_match_pending_count: number;
+  return_tracking_pending_count: number;
+  needs_review_count: number;
+  blocked_count: number;
+  return_expected_created_count: number;
+  return_expected_failed_count: number;
+  correction_required_count: number;
+  corrected_count: number;
+  product_mapping_count: number;
+  product_mapping_conflict_count: number;
+  last_sync_at?: string | null;
+  last_success_sync_at?: string | null;
+  last_error_at?: string | null;
+  last_error_message_summary?: string | null;
+}
+
+export interface ProductChannelMapping {
+  mapping_id: number;
+  client_id: number;
+  client_unit_id?: number | null;
+  channel_type: ChannelType;
+  channel_account_id?: number | null;
+  account_name?: string | null;
+  external_seller_product_code?: string | null;
+  external_product_name_norm?: string | null;
+  external_option_name_norm?: string | null;
+  product_id: number;
+  product_code: string;
+  decision_type: string;
+  confidence: number;
+  conflict_status: "OK" | "CONFLICT";
+  conflict_reason?: string | null;
+  created_from_candidate_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductChannelMappingListResponse {
+  items: ProductChannelMapping[];
+  summary: Record<string, number>;
 }
