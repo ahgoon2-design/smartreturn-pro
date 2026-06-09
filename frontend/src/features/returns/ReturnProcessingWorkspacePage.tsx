@@ -1,5 +1,5 @@
 import { ClearOutlined, DeleteOutlined, PaperClipOutlined, PlusOutlined, PrinterOutlined, ScanOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, Button, Descriptions, Input, InputNumber, List, Select, Space, Tooltip, Typography } from "antd";
+import { Alert, Button, Descriptions, Input, InputNumber, List, Select, Space, Tag, Tooltip, Typography } from "antd";
 import type { InputRef } from "antd";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -80,9 +80,11 @@ export function ReturnProcessingWorkspacePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTaskIdRef = useRef(getSearchNumber(searchParams, "task_id"));
   const scanInputRef = useRef<InputRef>(null);
+  const manualProductScanInputRef = useRef<InputRef>(null);
   const productScanInputRef = useRef<InputRef>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [trackingNo, setTrackingNo] = useState(() => getSearchString(searchParams, "tracking_no"));
+  const [manualProductScanValue, setManualProductScanValue] = useState("");
   const [productScanValue, setProductScanValue] = useState("");
   const [tasks, setTasks] = useState<ReturnProcessingTask[]>([]);
   const [selectedTask, setSelectedTask] = useState<ReturnProcessingTask | null>(null);
@@ -142,10 +144,10 @@ export function ReturnProcessingWorkspacePage() {
         minWidth: 120,
         render: (_value, record) => <SmartStatusBadge status={record.source_type || "MANUAL"} label={toSourceLabel(record)} />,
       },
-      { key: "row_no", title: "row", dataIndex: "row_no", width: 80, minWidth: 70, sortable: true },
+      { key: "row_no", title: "순번", dataIndex: "row_no", width: 80, minWidth: 70, sortable: true },
       {
         key: "return_tracking_no",
-        title: "운송장번호",
+        title: "반품 운송장번호",
         dataIndex: "return_tracking_no",
         width: 170,
         minWidth: 160,
@@ -211,7 +213,12 @@ export function ReturnProcessingWorkspacePage() {
   );
 
   const selectedKey = selectedTask ? [selectedTask.task_id] : [];
-  const summaryText = `${tasks.length}건 표시`;
+  const isNoDetailMode = Boolean(noDetailTrackingNo);
+  const completedCount = tasks.filter((item) => item.status === "COMPLETED").length;
+  const pendingCount = Math.max(tasks.length - completedCount, 0);
+  const summaryText = isNoDetailMode ? `추가된 상품 ${tasks.length}건` : `조회된 상품 ${tasks.length}건`;
+  const processingProgressText =
+    tasks.length > 0 ? `처리완료 ${completedCount}건 / 미처리 ${pendingCount}건` : isNoDetailMode ? "상품 추가 대기" : "운송장 조회 대기";
   const warningCount = tasks.filter((item) => item.validation_status === "WARNING").length;
   const isSelectedTaskCompleted = selectedTask?.status === "COMPLETED";
   const judgementOptions = useMemo(
@@ -222,12 +229,22 @@ export function ReturnProcessingWorkspacePage() {
     () => findWarehouseRoute(returnWarehouseRoutes, selectedTask, selectedJudgement),
     [returnWarehouseRoutes, selectedJudgement, selectedTask],
   );
+  const manualClient = clients.find((client) => getClientOptionId(client) === manualClientId) || null;
+  const contextClientName = selectedTask?.client_name || manualClient?.client_name || "고객사 선택 필요";
+  const contextUnitName = selectedTask?.client_unit_name || "운영단위 미지정";
+  const contextModeLabel = selectedTask ? toProcessingModeLabel(selectedTask) : isNoDetailMode ? "현장 수동 처리" : "운송장 조회 대기";
+  const contextWarehouseLabel = selectedWarehouseRoute
+    ? selectedWarehouseRoute.warehouse_name || selectedWarehouseRoute.warehouse_code || "창고 확인됨"
+    : selectedJudgement
+      ? "창고 확인 필요"
+      : "판정 선택 후 자동 배정";
   const canSaveJudgement =
     Boolean(selectedTask) &&
     !isSelectedTaskCompleted &&
     selectedTask?.validation_status !== "INVALID" &&
     productCheckFeedback.status === "MATCHED" &&
     Boolean(selectedJudgement) &&
+    Boolean(selectedWarehouseRoute?.warehouse_id) &&
     !judging;
 
   async function loadTasks(nextTrackingNo = trackingNo, preferredTaskId?: number) {
@@ -357,22 +374,22 @@ export function ReturnProcessingWorkspacePage() {
         product_id: product.product_id,
         quantity,
         processing_method: processingMethod,
-        memo: "반품처리 화면에서 세부항목 없는 반품으로 생성",
+        memo: "반품처리 화면에서 세부항목 없는 반품 상품 추가",
       });
       upsertManualTask(created);
       setManualFeedback({
         type: "success",
         message: created.message,
-        description: "생성된 row를 선택했습니다. 판정별 창고를 확인한 뒤 처리완료하세요.",
+        description: "추가된 상품을 선택했습니다. 판정별 창고를 확인한 뒤 처리완료하세요.",
       });
       setManualQuantity(1);
       setManualProductKeyword("");
       setManualProducts([]);
-      focusScanInput(productScanInputRef, { select: true });
+      focusScanInput(manualProductScanInputRef, { select: true });
     } catch (error) {
       setManualFeedback({
         type: "error",
-        message: toUserMessage(error, "세부항목 없는 반품 row를 생성하지 못했습니다."),
+        message: toUserMessage(error, "세부항목 없는 반품 상품을 추가하지 못했습니다."),
       });
     } finally {
       setManualRowSaving(false);
@@ -397,22 +414,22 @@ export function ReturnProcessingWorkspacePage() {
         product_code: scannedValue,
         quantity: 1,
         processing_method: "SCAN",
-        memo: "상품 스캔으로 세부항목 없는 반품 row 생성",
+        memo: "상품 스캔으로 세부항목 없는 반품 상품 추가",
       });
       upsertManualTask(created);
-      setProductScanValue("");
+      setManualProductScanValue("");
       setManualFeedback({
         type: "success",
         message: created.message,
-        description: created.created ? "상품 1개를 새 row로 추가했습니다." : "같은 상품의 처리수량을 1개 증가했습니다.",
+        description: created.created ? "상품 1개를 추가했습니다." : "같은 상품의 처리수량을 1개 늘렸습니다.",
       });
-      focusScanInput(productScanInputRef, { select: true });
+      focusScanInput(manualProductScanInputRef, { select: true });
     } catch (error) {
       setManualFeedback({
         type: "error",
         message: toUserMessage(error, "상품마스터에 없는 상품입니다. 확인필요 또는 보류로 분리한 뒤 상품 연결 후 처리하세요."),
       });
-      focusScanInput(productScanInputRef, { select: true });
+      focusScanInput(manualProductScanInputRef, { select: true });
     } finally {
       setManualRowSaving(false);
     }
@@ -428,12 +445,12 @@ export function ReturnProcessingWorkspacePage() {
       status: "MATCHED",
       type: "success",
       message: "상품 확인 완료",
-      description: "세부항목 없는 반품 row가 상품마스터 기준으로 생성되었습니다.",
+      description: "세부항목 없는 반품 상품이 상품마스터 기준으로 추가되었습니다.",
     });
     setSelectedProcessingMethod((task.processing_method as ProcessingMethod) || "SCAN");
     setScanFeedback({
       type: "success",
-      message: "세부항목 없는 반품 row를 처리 화면에 추가했습니다.",
+      message: "세부항목 없는 반품 상품을 처리 화면에 추가했습니다.",
       description: "현재 화면에서 판정/창고 확인 후 처리완료할 수 있습니다.",
     });
   }
@@ -505,10 +522,6 @@ export function ReturnProcessingWorkspacePage() {
   function handleProductScanEnter() {
     const scannedBarcode = productScanValue.trim();
     if (!selectedTask) {
-      if (noDetailTrackingNo && scannedBarcode) {
-        void createManualRowFromScan(scannedBarcode);
-        return;
-      }
       setProductCheckFeedback(NO_TARGET_PRODUCT_FEEDBACK);
       focusScanInput(scanInputRef, { select: true });
       return;
@@ -530,7 +543,7 @@ export function ReturnProcessingWorkspacePage() {
       setProductCheckFeedback({
         status: "MISMATCHED",
         type: "warning",
-        message: "선택 row에 비교할 바코드/상품코드가 없습니다.",
+        message: "선택 상품에 비교할 바코드/상품코드가 없습니다.",
         description: "상품마스터 또는 접수 자료 보강이 필요합니다.",
       });
       focusScanInput(productScanInputRef, { select: true });
@@ -542,7 +555,7 @@ export function ReturnProcessingWorkspacePage() {
         status: "MATCHED",
         type: "success",
         message: "상품 확인 완료",
-        description: "스캔한 바코드/상품코드가 선택된 상품과 일치합니다. 처리방식은 SCAN으로 기록됩니다.",
+        description: "스캔한 바코드/상품코드가 선택된 상품과 일치합니다. 처리방식은 스캔 처리로 기록됩니다.",
       });
       setSelectedProcessingMethod("SCAN");
       setProductScanValue("");
@@ -554,9 +567,23 @@ export function ReturnProcessingWorkspacePage() {
       status: "MISMATCHED",
       type: "error",
       message: "바코드가 일치하지 않습니다.",
-      description: "선택된 row의 바코드 또는 상품코드와 다른 값입니다. 상품을 다시 확인하세요.",
+      description: "선택 상품의 바코드 또는 상품코드와 다른 값입니다. 상품을 다시 확인하세요.",
     });
     focusScanInput(productScanInputRef, { select: true });
+  }
+
+  function handleManualProductScanEnter() {
+    const scannedBarcode = manualProductScanValue.trim();
+    if (!scannedBarcode) {
+      setManualFeedback({
+        type: "warning",
+        message: "상품 바코드를 입력하세요.",
+        description: "상품을 스캔하거나 상품코드/바코드를 입력한 뒤 Enter를 누르세요.",
+      });
+      focusScanInput(manualProductScanInputRef, { select: true });
+      return;
+    }
+    void createManualRowFromScan(scannedBarcode);
   }
 
   function handleGridSelectConfirm() {
@@ -578,7 +605,7 @@ export function ReturnProcessingWorkspacePage() {
       setProductCheckFeedback({
         status: "MISMATCHED",
         type: "error",
-        message: "오류 row는 선택 처리할 수 없습니다.",
+        message: "오류 항목은 선택 처리할 수 없습니다.",
         description: "반품 자료 화면에서 오류/누락을 먼저 보정하세요.",
       });
       return;
@@ -596,7 +623,7 @@ export function ReturnProcessingWorkspacePage() {
       status: "MATCHED",
       type: "success",
       message: "그리드 선택 확인 완료",
-      description: "실물 확인 후 선택 row를 처리 대상으로 지정했습니다. 처리방식은 GRID_SELECT로 기록됩니다.",
+      description: "실물 확인 후 선택 상품을 처리 대상으로 지정했습니다. 처리방식은 선택 처리로 기록됩니다.",
     });
     setSelectedProcessingMethod("GRID_SELECT");
   }
@@ -633,6 +660,14 @@ export function ReturnProcessingWorkspacePage() {
       });
       return;
     }
+    if (!selectedWarehouseRoute?.warehouse_id) {
+      setJudgementFeedback({
+        type: "warning",
+        message: "창고가 확정되어야 처리완료할 수 있습니다.",
+        description: "고객사 판정/창고 설정을 확인하거나 창고가 자동 배정되는 판정을 선택하세요.",
+      });
+      return;
+    }
 
     setJudging(true);
     setJudgementFeedback(null);
@@ -651,7 +686,7 @@ export function ReturnProcessingWorkspacePage() {
       setSelectedProcessingMethod(null);
       setJudgementFeedback({
         type: "success",
-        message: "판정을 저장했습니다.",
+        message: "처리완료했습니다.",
         description: buildJudgementSavedDescription(updatedTask),
       });
       setTrackingNo("");
@@ -659,7 +694,7 @@ export function ReturnProcessingWorkspacePage() {
     } catch (error) {
       setJudgementFeedback({
         type: "error",
-        message: toUserMessage(error, "판정을 저장하지 못했습니다."),
+        message: toUserMessage(error, "처리완료하지 못했습니다."),
         description: "처리 상태와 권한을 확인한 뒤 다시 시도하세요.",
       });
     } finally {
@@ -779,6 +814,7 @@ export function ReturnProcessingWorkspacePage() {
         </div>
         <div className="return-processing-scan-status">
           <Typography.Text strong>{summaryText}</Typography.Text>
+          <Typography.Text type="secondary">{processingProgressText}</Typography.Text>
           <Typography.Text type={warningCount > 0 ? "warning" : "secondary"}>경고 {warningCount}건</Typography.Text>
         </div>
         <Alert
@@ -790,26 +826,36 @@ export function ReturnProcessingWorkspacePage() {
         />
       </SmartScanPanel>
 
-      {noDetailTrackingNo ? (
-        <Alert
-          type="warning"
-          showIcon
-          message="세부항목 없는 반품입니다."
-          description="상품을 스캔하거나 상품을 선택해서 입고/판정 처리하세요. 반품 자료 등록은 보조 경로이며, 현장 처리는 이 화면에서 계속 진행할 수 있습니다."
-          action={
-            <Button size="small" onClick={() => navigate(ROUTE_PATHS.returnIntake)}>
-              자료 등록 보조
-            </Button>
-          }
-        />
-      ) : null}
+      <div className="return-processing-context-strip" aria-label="반품 처리 흐름과 작업 맥락">
+        <Space wrap size={[6, 6]}>
+          {["1. 운송장 확인", "2. 상품 추가", "3. 판정", "4. 창고 확정", "5. 처리완료"].map((step) => (
+            <Tag key={step} className="return-processing-step-tag">
+              {step}
+            </Tag>
+          ))}
+        </Space>
+        <Space wrap size={[6, 6]}>
+          <Tag>고객사: {contextClientName}</Tag>
+          <Tag>운영단위: {contextUnitName}</Tag>
+          <Tag>처리 모드: {contextModeLabel}</Tag>
+          <Tag>창고: {contextWarehouseLabel}</Tag>
+        </Space>
+      </div>
 
       {noDetailTrackingNo ? (
-        <section className="return-processing-manual-panel" aria-label="세부항목 없는 반품 row 생성">
+        <section className="return-processing-manual-panel" aria-label="세부항목 없는 반품 상품 추가">
           <Space align="center" wrap>
-            <Typography.Text strong>현장 row 생성</Typography.Text>
-            <SmartStatusBadge status="WARNING" label="NO_DETAIL_MANUAL_INTAKE" />
-            <Typography.Text type="secondary">운송장번호 {noDetailTrackingNo}</Typography.Text>
+            <Typography.Text strong>상품 추가</Typography.Text>
+            <SmartStatusBadge status="WARNING" label="현장 수동 처리" />
+            <Typography.Text type="secondary">반품 운송장번호 {noDetailTrackingNo}</Typography.Text>
+          </Space>
+          <Space wrap align="center">
+            <Typography.Text type="secondary">
+              원자료가 없더라도 현재 화면에서 처리할 수 있습니다. 필요하면 나중에 원자료를 보정하세요.
+            </Typography.Text>
+            <Button type="link" size="small" onClick={() => navigate(ROUTE_PATHS.returnIntake)}>
+              원자료 보정
+            </Button>
           </Space>
           <Space wrap align="center">
             <Select
@@ -844,6 +890,17 @@ export function ReturnProcessingWorkspacePage() {
               상품 검색
             </Button>
           </Space>
+          <Input
+            ref={manualProductScanInputRef}
+            size="large"
+            prefix={<ScanOutlined />}
+            allowClear
+            disabled={!manualClientId || manualRowSaving}
+            value={manualProductScanValue}
+            placeholder={manualClientId ? "상품 바코드 스캔 후 Enter" : "고객사를 먼저 선택해야 상품을 추가할 수 있습니다."}
+            onChange={(event) => setManualProductScanValue(event.target.value)}
+            onPressEnter={handleManualProductScanEnter}
+          />
           {manualFeedback ? (
             <Alert
               className="return-processing-placeholder"
@@ -867,7 +924,7 @@ export function ReturnProcessingWorkspacePage() {
                       loading={manualRowSaving}
                       onClick={() => void createManualRowFromProduct(product, "MANUAL_QUANTITY")}
                     >
-                      row 추가
+                      상품 추가
                     </Button>,
                   ]}
                 >
@@ -892,7 +949,7 @@ export function ReturnProcessingWorkspacePage() {
             columns={columns}
             loading={loading}
             error={null}
-            emptyText="반품처리 대기 대상이 없습니다."
+            emptyText={noDetailTrackingNo ? "아직 추가된 상품이 없습니다. 상품을 스캔하거나 검색해서 추가하세요." : "반품처리 대기 대상이 없습니다."}
             enableCopy
             preserveOriginalOrder
             originalOrderKey="row_no"
@@ -913,8 +970,20 @@ export function ReturnProcessingWorkspacePage() {
           />
         </section>
 
-        <aside className="return-processing-detail-panel" aria-label="선택 row 상세">
-          <Typography.Title level={4}>선택 row 상세</Typography.Title>
+        <aside className="return-processing-detail-panel" aria-label={selectedTask ? "선택 상품 처리" : "상품 추가 안내"}>
+          <Typography.Title level={4}>{selectedTask ? "선택 상품 처리" : tasks.length > 0 ? "처리할 상품 선택" : "상품 추가 안내"}</Typography.Title>
+          {!selectedTask && tasks.length === 0 ? (
+            <Alert
+              type="info"
+              showIcon
+              message="아직 추가된 상품이 없습니다."
+              description={noDetailTrackingNo ? "상품을 스캔하거나 검색해서 추가하세요." : "운송장번호를 스캔하면 처리할 상품을 조회합니다."}
+            />
+          ) : null}
+          {!selectedTask && tasks.length > 0 ? (
+            <Alert type="info" showIcon message="처리할 상품을 선택하세요." description="목록에서 상품을 선택하면 판정/창고/처리완료 영역이 표시됩니다." />
+          ) : null}
+          {selectedTask ? (
           <div className="return-processing-product-scan" aria-label="상품 바코드 스캔">
             <Space align="center" wrap>
               <Typography.Text strong>상품 바코드 스캔</Typography.Text>
@@ -935,9 +1004,7 @@ export function ReturnProcessingWorkspacePage() {
                   ? "이미 처리 완료된 항목입니다"
                   : selectedTask
                     ? "선택된 반품 상품의 바코드를 스캔하세요"
-                    : noDetailTrackingNo
-                      ? "상품 바코드를 스캔하면 현장 row를 생성합니다"
-                      : "먼저 운송장번호를 스캔해 처리 대상을 선택하세요"
+                    : "먼저 운송장번호를 스캔해 처리 대상을 선택하세요"
               }
               onChange={(event) => setProductScanValue(event.target.value)}
               onPressEnter={handleProductScanEnter}
@@ -954,17 +1021,21 @@ export function ReturnProcessingWorkspacePage() {
                 onClick={handleGridSelectConfirm}
                 disabled={!selectedTask || selectedTask.status === "COMPLETED"}
               >
-                선택 row 실물 확인
+                선택 상품 확인
               </Button>
               <Typography.Text type="secondary">
-                스캔이 어려운 소량/예외 건은 그리드에서 row를 선택한 뒤 실물 확인으로 처리할 수 있습니다.
+                스캔이 어려운 소량/예외 건은 목록에서 상품을 선택한 뒤 실물 확인으로 처리할 수 있습니다.
               </Typography.Text>
             </Space>
           </div>
+          ) : null}
           {selectedTask ? (
             <>
               <Descriptions size="small" column={1} bordered>
-                <Descriptions.Item label="운송장번호">{toDisplayText(selectedTask.return_tracking_no)}</Descriptions.Item>
+                <Descriptions.Item label="반품 운송장번호">{toDisplayText(selectedTask.return_tracking_no)}</Descriptions.Item>
+                <Descriptions.Item label="고객사">{toDisplayText(selectedTask.client_name)}</Descriptions.Item>
+                <Descriptions.Item label="운영단위">{toDisplayText(selectedTask.client_unit_name)}</Descriptions.Item>
+                <Descriptions.Item label="창고">{contextWarehouseLabel}</Descriptions.Item>
                 <Descriptions.Item label="주문번호">{toDisplayText(selectedTask.order_no)}</Descriptions.Item>
                 <Descriptions.Item label="상품코드">{toDisplayText(selectedTask.product_code)}</Descriptions.Item>
                 <Descriptions.Item label="바코드">{toDisplayText(selectedTask.barcode)}</Descriptions.Item>
@@ -1045,9 +1116,9 @@ export function ReturnProcessingWorkspacePage() {
                   </Tooltip>
                 </Space>
               </section>
-              <section className="return-processing-judgement-panel" aria-label="판정 저장">
+              <section className="return-processing-judgement-panel" aria-label="판정/창고/처리완료">
                 <Space align="center" wrap>
-                  <Typography.Text strong>판정 선택</Typography.Text>
+                  <Typography.Text strong>판정/창고</Typography.Text>
                   {selectedJudgement ? (
                     <SmartStatusBadge status="SUCCESS" label={toJudgementLabel(selectedJudgement)} />
                   ) : (
@@ -1066,11 +1137,18 @@ export function ReturnProcessingWorkspacePage() {
                       type={selectedJudgement === option.value ? "primary" : "default"}
                       disabled={isSelectedTaskCompleted || judging}
                       onClick={() => {
+                        const nextWarehouseRoute = findWarehouseRoute(returnWarehouseRoutes, selectedTask, option.value);
                         setSelectedJudgement(option.value);
                         setJudgementFeedback({
-                          type: "info",
+                          type: nextWarehouseRoute ? "info" : "warning",
                           message: `${option.label} 판정을 선택했습니다.`,
-                          description: buildLabelPolicyDescription(option.value),
+                          description: buildSelectedJudgementDescription(
+                            option.value,
+                            nextWarehouseRoute,
+                            returnWarehouseRoutes.length,
+                            routesErrorMessage,
+                            routesLoading,
+                          ),
                         });
                       }}
                     >
@@ -1096,8 +1174,11 @@ export function ReturnProcessingWorkspacePage() {
                   }
                 />
                 <Button type="primary" onClick={handleJudgementSave} disabled={!canSaveJudgement} loading={judging}>
-                  판정 저장
+                  처리완료
                 </Button>
+                {selectedJudgement && !selectedWarehouseRoute?.warehouse_id ? (
+                  <Typography.Text type="warning">창고가 확정되어야 처리완료할 수 있습니다.</Typography.Text>
+                ) : null}
               </section>
               <section className="return-processing-attachments-panel" aria-label="사진/증빙">
                 <Space align="center" wrap>
@@ -1106,7 +1187,7 @@ export function ReturnProcessingWorkspacePage() {
                   <SmartStatusBadge status="WAITING" label="선택 사항" />
                 </Space>
                 <Typography.Text type="secondary">
-                  필요한 경우 사진을 첨부하세요. 사진이 없어도 판정 저장은 가능합니다.
+                  필요한 경우 사진을 첨부하세요. 사진이 없어도 처리완료는 가능합니다.
                 </Typography.Text>
                 <Typography.Text type="secondary">
                   리퍼, 제조사반품, 보류, 폐기 등은 사진 첨부를 권장합니다.
@@ -1178,21 +1259,10 @@ export function ReturnProcessingWorkspacePage() {
                 type="info"
                 showIcon
                 message="재고반영 시점"
-                description="판정 저장은 현장 처리완료입니다. 현재고는 즉시 변경하지 않고, 반품 일마감 또는 반출/폐기 확정 단계에서 확정된 고객사/팀/창고/상품/판정 기준으로 반영합니다."
+                description="반품입고 완료 처리했습니다. 현재고는 아직 변경되지 않았습니다. 재고는 일마감/반출 확정 후 반영됩니다."
               />
             </>
-          ) : (
-            <Alert
-              type="info"
-              showIcon
-              message={noDetailTrackingNo ? "세부항목 없는 반품입니다." : "운송장번호를 스캔하거나 목록에서 대상을 선택하세요."}
-              description={
-                noDetailTrackingNo
-                  ? "상품을 스캔하거나 위 검색 결과에서 상품을 선택하면 현재 화면에 처리 row가 생성됩니다."
-                  : "조회 결과가 있으면 처리 가능한 첫 번째 row가 자동 선택됩니다."
-              }
-            />
-          )}
+          ) : null}
         </aside>
       </div>
     </SmartPage>
@@ -1279,7 +1349,28 @@ function toSourceLabel(task: ReturnProcessingTask) {
   if (task.source_type === "CHANNEL_API") {
     return task.source_origin ? `채널:${task.source_origin}` : "채널 자동수집";
   }
-  return task.source_type || "수동/업로드";
+  if (task.source_type === "NO_DETAIL_MANUAL_INTAKE") {
+    return "현장 수동 처리";
+  }
+  if (task.source_type === "UNKNOWN_TRACKING_MANUAL_INTAKE") {
+    return "운송장 수동 처리";
+  }
+  if (task.source_type === "MANUAL") {
+    return "수동/업로드";
+  }
+  return task.source_type ? "접수자료" : "수동/업로드";
+}
+
+function toProcessingModeLabel(task: ReturnProcessingTask) {
+  const processingMode = String((task as { processing_mode?: string }).processing_mode || task.source_type || "");
+  const labels: Record<string, string> = {
+    NORMAL_MATCHED: "자료 매칭 처리",
+    NO_DETAIL_MANUAL_INTAKE: "현장 수동 처리",
+    UNKNOWN_TRACKING_MANUAL_INTAKE: "운송장 수동 처리",
+    CHANNEL_API: "채널 수집 처리",
+    MANUAL: "수동/업로드 처리",
+  };
+  return labels[processingMode] || toSourceLabel(task);
 }
 
 function getLabelNumber(task: ReturnProcessingTask) {
@@ -1339,7 +1430,7 @@ function buildLabelPolicyDescription(judgementStatus: ReturnJudgementStatus) {
   if (judgementStatus === "DISPOSAL") {
     return "폐기는 1차 정책에서 기본 라벨 미출력 대상입니다. 필요 시 후속 정책으로 선택 출력 여부를 정합니다.";
   }
-  return "양품은 기본 라벨 미출력 대상입니다. 재고는 판정 저장 즉시가 아니라 일마감 확정 후 반영됩니다.";
+  return "양품은 기본 라벨 미출력 대상입니다. 재고는 처리완료 즉시가 아니라 일마감 확정 후 반영됩니다.";
 }
 
 function buildSelectedJudgementDescription(
@@ -1350,7 +1441,7 @@ function buildSelectedJudgementDescription(
   routesLoading: boolean,
 ) {
   if (!judgementStatus) {
-    return "상품 스캔 또는 그리드 선택 확인 후 판정을 선택하고 저장하세요.";
+    return "상품 스캔 또는 선택 처리 확인 후 판정과 창고를 확정하세요.";
   }
   if (routesLoading) {
     return "고객사별 판정-창고 라우팅 설정을 확인하는 중입니다.";
@@ -1359,12 +1450,12 @@ function buildSelectedJudgementDescription(
     return `${routeErrorMessage} 현재는 기본 판정 세트를 표시합니다. 일마감 시 최종 창고가 없으면 재고반영이 차단됩니다.`;
   }
   if (route) {
-    return `${buildLabelPolicyDescription(judgementStatus)} 추천 창고: ${route.warehouse_name || route.warehouse_code || route.warehouse_id}.`;
+    return `${buildLabelPolicyDescription(judgementStatus)} 배정 창고: ${route.warehouse_name || route.warehouse_code || "창고 확인됨"}.`;
   }
   if (routeCount > 0) {
-    return "이 판정은 선택 고객사/팀의 활성 판정-창고 라우팅에 없습니다. 저장 전 고객사 기준정보의 판정 라우팅을 확인하세요.";
+    return "이 판정은 선택 고객사/팀의 활성 판정-창고 라우팅에 없습니다. 창고가 확정되어야 처리완료할 수 있습니다.";
   }
-  return buildLabelPolicyDescription(judgementStatus);
+  return "고객사 판정 설정이 없어 기본 판정을 표시합니다. 운영 전 고객사별 판정/창고 설정을 확인하세요. 창고가 확정되어야 처리완료할 수 있습니다.";
 }
 
 function getJudgementHelpMessage(
@@ -1384,7 +1475,7 @@ function getJudgementHelpMessage(
   if (!judgementStatus) {
     return "판정을 선택하세요.";
   }
-  return "판정을 저장할 수 있습니다. 저장 후에도 현재고는 즉시 변경되지 않습니다.";
+  return "처리완료할 수 있습니다. 완료 후에도 현재고는 즉시 변경되지 않습니다.";
 }
 
 function buildJudgementSavedDescription(task: ReturnProcessingTask) {
@@ -1413,7 +1504,7 @@ function buildPendingProductFeedback(task: ReturnProcessingTask): ProductCheckFe
       status: "PENDING",
       type: "warning",
       message: "선택된 상품을 확인하세요.",
-      description: "선택 row에 비교할 바코드/상품코드가 없습니다. 실물과 접수 자료를 확인한 뒤 그리드 선택 확인으로 처리할 수 있습니다.",
+      description: "선택 상품에 비교할 바코드/상품코드가 없습니다. 실물과 접수 자료를 확인한 뒤 선택 처리로 진행할 수 있습니다.",
     };
   }
 
@@ -1459,7 +1550,7 @@ function hasAnyProductHint(task: ReturnProcessingTask) {
 function toProcessingMethodLabel(method: ProcessingMethod) {
   const labels: Record<ProcessingMethod, string> = {
     SCAN: "스캔 처리",
-    GRID_SELECT: "그리드 선택 처리",
+    GRID_SELECT: "선택 처리",
     MANUAL_QUANTITY: "수량 직접 입력",
     BULK_CONFIRM: "일괄 확인",
   };
@@ -1467,8 +1558,10 @@ function toProcessingMethodLabel(method: ProcessingMethod) {
 }
 
 function buildJudgementMemoForSave(memo: string, method: ProcessingMethod) {
-  const cleanMemo = memo.replace(/\[처리방식: (SCAN|GRID_SELECT|MANUAL_QUANTITY|BULK_CONFIRM)\]/g, "").trim();
-  const methodTag = `[처리방식: ${method}]`;
+  const cleanMemo = memo
+    .replace(/\[처리방식: (SCAN|GRID_SELECT|MANUAL_QUANTITY|BULK_CONFIRM|스캔 처리|선택 처리|수량 직접 입력|일괄 확인)\]/g, "")
+    .trim();
+  const methodTag = `[처리방식: ${toProcessingMethodLabel(method)}]`;
   return cleanMemo ? `${cleanMemo}\n${methodTag}` : methodTag;
 }
 
@@ -1515,8 +1608,7 @@ function buildScanFeedback(trackingNo: string, resultCount: number, selectedTask
     return {
       type: "warning",
       message: "세부항목 없는 반품입니다.",
-      description:
-        "이 return_tracking_no로 처리 대기 row를 찾지 못했습니다. 운송장만 도착했거나 세부자료가 없으면 반품 자료에서 상품을 수동 등록한 뒤 처리하세요.",
+      description: "상품을 스캔하거나 검색해서 현장 처리 상품을 추가한 뒤 판정하세요.",
     };
   }
 
