@@ -1,0 +1,24 @@
+{
+  "server": {
+    "base_url": "http://127.0.0.1:8000"
+  },
+  "agent": {
+    "agent_id": "local-example-agent",
+    "agent_name": "작업장 PC 예시",
+    "device_role": "RETURN_LABEL"
+  },
+  "sound": {
+    "enabled": true,
+    "volume": 80
+  },
+  "printer": {
+    "enabled": false,
+    "dry_run": true,
+    "printer_name": ""
+  },
+  "label": {
+    "output_dir": "./outputs/labels",
+    "width_mm": 50,
+    "height_mm": 30
+  }
+}

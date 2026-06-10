@@ -1,0 +1,117 @@
+.smart-data-grid {
+  --smart-grid-header-height: 38px;
+  --smart-grid-row-height: 36px;
+  --smart-grid-font-size: 13px;
+  --smart-grid-cell-padding-y: 7px;
+  --smart-grid-cell-padding-x: 10px;
+  --smart-grid-border: var(--smart-border, #e5eaf0);
+  --smart-grid-hover: #f6faff;
+  --smart-grid-selected: var(--smart-blue-soft, #eaf4ff);
+  --smart-grid-focused: #d9edff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.smart-data-grid--standard {
+  --smart-grid-row-height: 40px;
+  --smart-grid-font-size: 14px;
+  --smart-grid-cell-padding-y: 9px;
+  --smart-grid-cell-padding-x: 12px;
+}
+
+.smart-data-grid--comfortable {
+  --smart-grid-row-height: 46px;
+  --smart-grid-font-size: 14px;
+  --smart-grid-cell-padding-y: 11px;
+  --smart-grid-cell-padding-x: 14px;
+}
+
+.smart-grid-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.smart-grid-error {
+  margin-bottom: 0;
+}
+
+.smart-data-grid .ant-table {
+  font-size: var(--smart-grid-font-size);
+  border: 1px solid var(--smart-grid-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.035);
+}
+
+.smart-data-grid .ant-table-thead > tr > th {
+  height: var(--smart-grid-header-height);
+  padding: var(--smart-grid-cell-padding-y) var(--smart-grid-cell-padding-x);
+  font-weight: 600;
+  color: var(--smart-text-primary, #172033);
+  background: #f8fbff;
+  border-bottom: 1px solid var(--smart-grid-border);
+}
+
+.smart-data-grid .ant-table-tbody > tr > td {
+  min-height: var(--smart-grid-row-height);
+  padding: var(--smart-grid-cell-padding-y) var(--smart-grid-cell-padding-x);
+  border-bottom: 1px solid #edf2f8;
+}
+
+.smart-data-grid .ant-table-tbody > tr:hover > td {
+  background: var(--smart-grid-hover);
+}
+
+.smart-data-grid .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: var(--smart-grid-selected);
+}
+
+.smart-data-grid .ant-table-tbody > tr:focus-within > td {
+  background: var(--smart-grid-focused);
+}
+
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-error > td {
+  background: var(--smart-red-soft, #fff1f2);
+}
+
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-error:hover > td {
+  background: #ffe8eb;
+}
+
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-warning > td {
+  background: var(--smart-orange-soft, #fff6e8);
+}
+
+.smart-data-grid .ant-table-tbody > tr.smart-grid-row-warning:hover > td {
+  background: #fff0d6;
+}
+
+.smart-data-grid--sticky-header .ant-table-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.smart-grid-cell-error {
+  background: var(--smart-red-soft, #fff1f2);
+}
+
+.smart-grid-cell-warning {
+  background: var(--smart-orange-soft, #fff6e8);
+}
+
+.smart-grid-copy-cell {
+  max-width: 100%;
+}
+
+.smart-grid-copy-cell > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-grid-action-cell {
+  justify-content: flex-end;
+  width: 100%;
+}

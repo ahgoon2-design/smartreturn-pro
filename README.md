@@ -26,6 +26,15 @@ SmartReturn Pro는 3PL 고객사 관리 통합 플랫폼이다. OMS, WMS, RETURN
 
 현재 저장소는 신규 프로젝트 기준 문서 작성 단계다. 아직 프론트엔드, 백엔드, DB 연결, 패키지 설치, 개발환경 세팅 전이다.
 
+## 개발 폴더 구조
+
+- `backend/`: 향후 FastAPI 백엔드가 들어갈 위치
+- `frontend/`: 향후 React + TypeScript + Vite 프론트엔드가 들어갈 위치
+- `local_agent/`: 향후 사운드, 라벨, 프린터, 장치 제어용 Local Agent가 들어갈 위치
+- `scripts/`: 개발 보조 스크립트 후보 위치
+
+현재 단계는 폴더와 설정 예시 준비 단계다. 실제 실행 환경은 아직 생성 전이며, `.env.example`을 복사해 `.env`로 사용하는 작업은 후속 개발환경 세팅에서 진행한다.
+
 ## 추천 제작 순서
 
 1. 기준 문서 확정
@@ -69,6 +78,9 @@ SmartReturn Pro는 3PL 고객사 관리 통합 플랫폼이다. OMS, WMS, RETURN
 - [반품 MVP API schema](docs/business/smartreturn-pro-return-api-schema.md)
 - [권한/client scope API 정책](docs/business/smartreturn-pro-auth-client-scope-api-policy.md)
 - [Smart Import Mapper / 저장전검증 UX 기준](docs/db/smart-import-mapper-pipeline.md)
+- [role/permission seed 정책](docs/business/smartreturn-pro-role-permission-seed-policy.md)
+- [초기 SUPER_ADMIN bootstrap 정책](docs/business/smartreturn-pro-super-admin-bootstrap-policy.md)
+- [P0 개발환경 세팅 전 계획](docs/dev/smartreturn-pro-p0-dev-environment-plan.md)
 
 ## 주의사항
 

@@ -1,0 +1,67 @@
+# 환경/비밀값
+.env
+.env.*
+!.env.example
+config.json
+secrets/
+*.pem
+*.key
+*.local.json
+*.secret.json
+config.local.json
+local.secret.json
+backend/config.local.json
+backend/local.secret.json
+backend/*.local.json
+backend/*.secret.json
+!backend/local.secret.example.json
+backend/uploads/
+backend/pytest-cache-files*/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+coverage.xml
+
+# Node/Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.npm-cache/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 로그/출력/임시
+logs/
+outputs/
+tmp/
+temp/
+*.log
+*.tmp
+*.bak
+
+# 배포/압축/실행파일
+dist/
+build/
+*.zip
+*.exe
+*.msi
+
+# Local Agent
+local_agent/config.json
+local_agent/logs/
+local_agent/outputs/
+local_agent/dist/
+local_agent/build/
