@@ -21,6 +21,7 @@ export const ROUTE_PATHS = {
   returnHistory: "/returns/history",
   inventoryCurrent: "/inventory/current",
   inventoryEvents: "/inventory/events",
+  settingsPlans: "/settings/plans",
   forbidden: "/forbidden",
   notFound: "/not-found",
 } as const;

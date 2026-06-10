@@ -2,6 +2,7 @@ import {
   AppstoreOutlined,
   DatabaseOutlined,
   LogoutOutlined,
+  MessageOutlined,
   RollbackOutlined,
   ScanOutlined,
   ShoppingOutlined,
@@ -28,24 +29,30 @@ export function PortalLayout() {
   const agencyLabel = authContext?.agency_name;
 
   const menuItems: MenuProps["items"] = [
-    { key: ROUTE_PATHS.portalDashboard, icon: <AppstoreOutlined />, label: "포털 홈" },
+    { key: ROUTE_PATHS.portalDashboard, icon: <AppstoreOutlined />, label: "대시보드" },
     {
       key: "portal-returns-group",
+      icon: <RollbackOutlined />,
       label: "반품",
-      type: "group",
       children: [
-        { key: "portal-return-intake-ready", icon: <RollbackOutlined />, label: "반품 접수 준비중", disabled: true },
-        { key: "portal-return-status-ready", icon: <ScanOutlined />, label: "처리 현황 준비중", disabled: true },
+        { key: "portal-return-status-ready", icon: <ScanOutlined />, label: "반품 처리현황 준비중", disabled: true },
+        { key: "portal-return-intake-ready", icon: <RollbackOutlined />, label: "반품 접수 등록 준비중", disabled: true },
       ],
     },
     {
       key: "portal-catalog-group",
+      icon: <ShoppingOutlined />,
       label: "상품/재고",
-      type: "group",
       children: [
         { key: "portal-product-ready", icon: <ShoppingOutlined />, label: "상품마스터 준비중", disabled: true },
         { key: "portal-inventory-ready", icon: <DatabaseOutlined />, label: "재고/정산 준비중", disabled: true },
       ],
+    },
+    {
+      key: "portal-support-group",
+      icon: <MessageOutlined />,
+      label: "지원",
+      children: [{ key: "portal-inquiry-ready", icon: <MessageOutlined />, label: "문의/보류 준비중", disabled: true }],
     },
   ];
 
@@ -78,6 +85,7 @@ export function PortalLayout() {
           <Menu
             mode="inline"
             selectedKeys={[location.pathname]}
+            defaultOpenKeys={["portal-returns-group", "portal-catalog-group", "portal-support-group"]}
             items={menuItems}
             onClick={({ key }) => {
               if (String(key).startsWith("/")) {

@@ -23,6 +23,7 @@ import { ReturnExternalOutboundPage } from "../features/returns/ReturnExternalOu
 import { ReturnHistoryPage } from "../features/returns/ReturnHistoryPage";
 import { ReturnHoldManagementPage } from "../features/returns/ReturnHoldManagementPage";
 import { ReturnProcessingWorkspacePage } from "../features/returns/ReturnProcessingWorkspacePage";
+import { PricingPlansPage } from "../features/billing/PricingPlansPage";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import { NotFoundPage } from "../pages/not-found/NotFoundPage";
 import { ProtectedRoute, PublicRoute } from "./RouteGuard";
@@ -179,6 +180,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["INVENTORY_VIEW"]}>
             <InventoryEventsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "settings/plans",
+        element: (
+          <ProtectedRoute area="internal">
+            <PricingPlansPage />
           </ProtectedRoute>
         ),
       },

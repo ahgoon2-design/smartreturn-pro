@@ -43,6 +43,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# 브라우저 테스트(Playwright MCP) 산출물
+.playwright-mcp/
+
 # 로그/출력/임시
 logs/
 outputs/
