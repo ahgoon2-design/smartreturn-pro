@@ -95,6 +95,7 @@ def build_auth_context_from_user(
         roles=role_codes,
         permissions=permission_codes,
         client_id=client_id,
+        client_unit_id=getattr(user, "client_unit_id", None),
         agency_id=agency_id,
         agency_name=agency_name,
         client_code=client_code,

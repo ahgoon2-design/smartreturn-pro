@@ -18,6 +18,7 @@ export interface LoginUserDto {
   user_name: string;
   roles: RoleCode[];
   client_id: number | null;
+  client_unit_id: number | null;
   agency_id: number | null;
   agency_name: string | null;
   client_name: string | null;
@@ -41,6 +42,7 @@ export interface AuthContextResponse {
   roles: RoleCode[];
   permissions: string[];
   client_id: number | null;
+  client_unit_id: number | null;
   agency_id: number | null;
   agency_name: string | null;
   client_name: string | null;

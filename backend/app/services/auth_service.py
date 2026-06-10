@@ -138,6 +138,7 @@ def login(db: Session, request: LoginRequest) -> LoginResponse:
             user_name=auth.user_name,
             roles=auth.roles,
             client_id=auth.client_id,
+            client_unit_id=auth.client_unit_id,
             agency_id=auth.agency_id,
             agency_name=auth.agency_name,
             client_name=auth.client_name,

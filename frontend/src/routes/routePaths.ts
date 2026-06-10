@@ -1,6 +1,8 @@
 export const ROUTE_PATHS = {
   home: "/",
   dashboard: "/dashboard",
+  portalHome: "/portal",
+  portalDashboard: "/portal/dashboard",
   login: "/login",
   passwordChange: "/auth/password-change",
   importPreview: "/imports/preview",

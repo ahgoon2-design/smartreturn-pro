@@ -12,6 +12,7 @@ interface AuthContextValue {
   permissions: string[];
   mustChangePassword: boolean;
   isPlatformAdmin: boolean;
+  isInternalUser: boolean;
   isAgencyUser: boolean;
   isClientUser: boolean;
   canSelectClient: boolean;
@@ -108,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const role = authContext?.roles?.[0] || "";
   const mustChangePassword = Boolean(authContext?.must_change_password);
   const isPlatformAdmin = Boolean(authContext?.is_platform_admin || authContext?.roles?.includes("SUPER_ADMIN"));
+  const isInternalUser = Boolean(authContext?.is_internal_user);
   const isAgencyUser = Boolean(authContext?.is_agency_user);
   const isClientUser = Boolean(authContext?.is_client_user);
   const canSelectClient = Boolean(authContext?.is_internal_user || authContext?.is_agency_user);
@@ -141,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       permissions,
       mustChangePassword,
       isPlatformAdmin,
+      isInternalUser,
       isAgencyUser,
       isClientUser,
       canSelectClient,
@@ -164,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       mustChangePassword,
+      isInternalUser,
       isAgencyUser,
       isClientUser,
       isPlatformAdmin,

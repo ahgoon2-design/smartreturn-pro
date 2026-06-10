@@ -4,8 +4,9 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
+import { resolveHomePathForUser } from "../../routes/RouteGuard";
 import { ROUTE_PATHS } from "../../routes/routePaths";
-import type { LoginRequest } from "../../types/auth";
+import type { AuthContextResponse, LoginRequest } from "../../types/auth";
 
 interface LocationState {
   from?: {
@@ -31,7 +32,7 @@ export function LoginPage() {
         navigate(ROUTE_PATHS.passwordChange, { replace: true });
         return;
       }
-      navigate(resolveRedirectPath(state?.from?.pathname), { replace: true });
+      navigate(resolvePostLoginPath(context, state?.from?.pathname), { replace: true });
     } catch (error) {
       setErrorMessage(toLoginErrorMessage(error));
     } finally {
@@ -64,11 +65,20 @@ export function LoginPage() {
   );
 }
 
-function resolveRedirectPath(path?: string) {
-  if (!path || path === ROUTE_PATHS.login || path === ROUTE_PATHS.passwordChange) {
-    return ROUTE_PATHS.dashboard;
+function resolvePostLoginPath(context: AuthContextResponse, fromPath?: string) {
+  const home = resolveHomePathForUser({
+    isClientUser: context.is_client_user,
+    isInternalUser: context.is_internal_user,
+    isPlatformAdmin: context.is_platform_admin,
+  });
+  // 고객 사용자는 직전 내부 경로로 되돌리지 않고 고객 포털로 보낸다.
+  if (context.is_client_user) {
+    return home;
   }
-  return path;
+  if (!fromPath || fromPath === ROUTE_PATHS.login || fromPath === ROUTE_PATHS.passwordChange) {
+    return home;
+  }
+  return fromPath;
 }
 
 function toLoginErrorMessage(error: unknown) {
