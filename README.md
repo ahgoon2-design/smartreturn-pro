@@ -5,9 +5,11 @@ SmartReturn Pro는 3PL 고객사 관리 통합 플랫폼이다. OMS, WMS, RETURN
 ## 기본 개념
 
 - 운영사: 동현물류
+- 플랫폼 계층: `platform_owner → agency_id → client_id → client_unit_id → warehouse_id`
 - 고객사/화주: `client`
 - 내부 운영자와 고객사 사용자는 `role` 기준으로 구분한다.
-- 모든 업무 데이터는 `client_id` scope를 기준으로 관리한다.
+- Basic/Pro/Ultra 플랜은 데이터 계층을 바꾸지 않고 기능 사용 범위, 화면 잠금, 정산 항목, AI 보조 수준을 제어한다.
+- 모든 업무 데이터는 `agency_id`, `client_id`, `client_unit_id` scope를 기준으로 관리한다.
 - 창고 업무는 `warehouse_id` scope를 함께 지킨다.
 
 ## 핵심 제작 원칙
@@ -45,6 +47,8 @@ SmartReturn Pro는 3PL 고객사 관리 통합 플랫폼이다. OMS, WMS, RETURN
 - [AGENTS.md](AGENTS.md)
 - [문서 색인](docs/smartreturn-pro-doc-index.md)
 - [핵심 제작 원칙](docs/smartreturn-pro-core-principles.md)
+- [CJ대리점 청구형 반품대행 모델](docs/business/agency-return-outsourcing-business-model.md)
+- [Basic/Pro/Ultra 플랜 정책](docs/business/smartreturn-service-plan-policy.md)
 - [UI 페이지 템플릿](docs/ui/smartreturn-pro-ui-page-templates.md)
 - [공통 UI 컴포넌트 props](docs/ui/smartreturn-pro-common-component-props.md)
 - [반품 MVP 화면 설계](docs/ui/smartreturn-pro-return-screen-design.md)
@@ -57,9 +61,14 @@ SmartReturn Pro는 3PL 고객사 관리 통합 플랫폼이다. OMS, WMS, RETURN
 - [MVP 범위](docs/business/smartreturn-pro-mvp-scope.md)
 - [메뉴 및 화면 목록](docs/business/smartreturn-pro-menu-and-screen-map.md)
 - [반품 MVP 상세 업무흐름](docs/business/smartreturn-pro-return-mvp-flow.md)
+- [반품처리 업무흐름 및 UX/UI 최종 설계](docs/business/return-processing-workflow-ux-design.md)
+- [고객사별 판정표/체크리스트/AI 판정도우미 정책](docs/business/return-judgment-checklist-ai-policy.md)
+- [세트상품/구성품/사은품/합포장 정책](docs/business/set-product-component-fulfillment-policy.md)
+- [부품적출/부품교체/폐기 처리 정책](docs/business/return-part-action-policy.md)
 - [반품 MVP API 정책](docs/business/smartreturn-pro-return-api-policy.md)
 - [반품 MVP API schema](docs/business/smartreturn-pro-return-api-schema.md)
 - [권한/client scope API 정책](docs/business/smartreturn-pro-auth-client-scope-api-policy.md)
+- [Smart Import Mapper / 저장전검증 UX 기준](docs/db/smart-import-mapper-pipeline.md)
 
 ## 주의사항
 

@@ -11,6 +11,10 @@
 
 ## scope 원칙
 
+- SmartReturn Pro의 데이터 계층은 `platform_owner → agency_id → client_id → client_unit_id → warehouse_id` 기준이다.
+- Basic, Pro, Ultra 플랜은 이 계층을 바꾸지 않는다.
+- 핵심 운영 테이블은 대리점별 조회, 정산, 감사, 장애추적을 위해 `agency_id` 직접 저장을 고려한다.
+- `client_id`가 있는 row는 요청 body가 아니라 `clients.agency_id` 기준으로 `agency_id`를 확정한다.
 - 모든 업무 데이터는 `client_id` scope를 반드시 가진다.
 - 창고 업무 데이터는 `warehouse_id` scope를 반드시 가진다.
 - 고객사 사용자는 자기 `client_id`로 고정된다.
@@ -31,6 +35,16 @@
 - `import_validation_errors`: row별 검증 오류와 경고를 관리한다.
 - 실제 업무 테이블과 import job은 분리한다.
 - import job은 업무 처리의 준비 단계이며 업무 원장 자체가 아니다.
+
+## Smart Import Mapper UX 기준
+
+Smart Import Mapper와 저장전검증 화면은 `docs/db/smart-import-mapper-pipeline.md`를 따른다.
+
+- 같은 운송장 여러 상품은 무조건 확인필요가 아니다. 출고도 합포장이고 반품도 나간 만큼 들어온 경우 정상일 수 있다.
+- 기존 저장자료 중복은 “오류” 하나로만 표시하지 않고 “이미 저장됨”, “중복 후보”, “재등록 확인” 등으로 구분한다.
+- 기존 저장자료와 값이 다르면 어떤 컬럼이 다른지 기존 값/업로드 값을 함께 보여준다.
+- 컬럼매핑 수정 후에는 변경 전/후, 재검증 범위, 결과를 명확히 보여준다.
+- 원본보기, 수정보기, 검증결과보기 상태를 구분한다.
 
 ## 원본 보존 원칙
 
@@ -79,6 +93,8 @@
 ## Codex 구현 전 체크
 
 - `client_id`와 `warehouse_id` scope가 명확한가?
+- `agency_id`가 필요한 운영 row에서 누락되지 않았는가?
+- request body의 `agency_id`를 그대로 믿고 있지 않은가?
 - 원본 row와 업무 테이블이 분리되어 있는가?
 - `batch_id`를 업무 처리 중심키로 사용하지 않았는가?
 - `row_no`, `row_hash`, `source_row_key`를 보존하는가?

@@ -8,6 +8,8 @@
 - 화면 구현 전에 공통 컴포넌트의 책임과 사용 기준을 먼저 확인한다.
 - 같은 역할의 UI는 같은 컴포넌트를 사용한다.
 - AG Grid는 직접 사용하지 않고 공통 래퍼를 통해서만 사용한다.
+- 현장 작업자 화면은 내부 enum, DB 필드명, 개발자 용어를 숨기고 작업자가 이해하는 말로 표시한다.
+- 주요 업무 화면은 다음 행동이 제일 먼저 보여야 하며 같은 의미의 안내문을 반복하지 않는다.
 
 ## 공통 컴포넌트 후보
 
@@ -20,6 +22,7 @@
 - `SmartEditableDataGrid`: 편집 가능한 업무 입력 그리드 래퍼다.
 - `SmartExcelPreviewGrid`: 엑셀 원본 preview와 검증 결과 표시 기준이다.
 - `SmartScanPanel`: 스캔 입력, 최근 스캔, 매칭 결과를 묶는다.
+- `SmartScanPanel`은 스캔 처리만 강제하지 않고 필요 시 그리드 선택 처리와 같은 backend 검증 흐름으로 이어져야 한다.
 - `SmartActionBar`: 저장, 확정, 취소, 처리 같은 주요 액션을 고정 배치한다.
 - `SmartModalShell`: 공통 모달 크기, header, body, footer를 통일한다.
 - `SmartLookupModal`: 고객사, 상품, 창고 등 조회 선택을 통일한다.

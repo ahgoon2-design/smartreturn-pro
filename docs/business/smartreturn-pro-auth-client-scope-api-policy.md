@@ -1,4 +1,4 @@
-# SmartReturn Pro 권한/client scope API 정책
+# SmartReturn Pro 권한/agency/client scope API 정책
 
 이 문서는 SmartReturn Pro 신규 제작 기준이며, 기존 SmartReturn 구현기록을 그대로 따르지 않는다.
 
@@ -6,12 +6,12 @@
 
 ## 1. 문서 목적
 
-SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 일관되게 적용해야 한다. 기준정보, 반품, 입고, 출고, 재고, 정산 API가 서로 다른 권한 해석을 가지면 고객사 데이터 격리와 창고 범위 제한이 무너진다.
+SmartReturn Pro의 모든 API는 `role`, `agency_id`, `client_id`, `client_unit_id`, `warehouse_id` 기준을 일관되게 적용해야 한다. 기준정보, 반품, 입고, 출고, 재고, 정산 API가 서로 다른 권한 해석을 가지면 대리점/고객사 데이터 격리와 창고 범위 제한이 무너진다.
 
 이 문서는 다음 기준을 고정한다.
 
 - 내부 운영자와 고객사 사용자는 `client_id` 유무가 아니라 `role` 기준으로 구분한다.
-- 서버는 요청마다 인증 컨텍스트를 만들고, 그 컨텍스트로 `effective_client_id`와 `effective_warehouse_id`를 결정한다.
+- 서버는 요청마다 인증 컨텍스트를 만들고, 그 컨텍스트로 `effective_agency_id`, `effective_client_id`, `effective_client_unit_id`, `effective_warehouse_id`를 결정한다.
 - 프론트의 고객사/창고 선택 제한은 사용자 경험일 뿐이며, 실제 보안은 백엔드 API에서 강제한다.
 - 권한 검증 실패 시 데이터 생성, 수정, 확정, 취소, 재고 이벤트 생성은 발생하면 안 된다.
 
@@ -22,6 +22,7 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 | 내부 운영자 | `SUPER_ADMIN` | 동현물류 최고 관리자. 전체 운영, 시스템 설정, 위험 작업 권한을 가진다. |
 | 내부 운영자 | `INTERNAL_ADMIN` | 동현물류 운영 관리자. 고객사/업무 운영과 대부분의 관리 작업을 수행한다. |
 | 내부 운영자 | `INTERNAL_WORKER` | 동현물류 작업자. 반품, 입고, 출고 등 현장 업무를 수행한다. |
+| 대리점 사용자 | `AGENCY_ADMIN` | 자기 `agency_id` 소속 고객사와 업무 자료를 관리한다. |
 | 고객사 사용자 | `CLIENT_ADMIN` | 특정 고객사 관리자. 자기 고객사 자료 조회와 일부 업로드 후보 권한을 가진다. |
 | 고객사 사용자 | `CLIENT_USER` | 특정 고객사 일반 사용자. 자기 고객사 조회 중심으로 사용한다. |
 | 고객사 사용자 | `READ_ONLY` | 조회 전용 사용자. 변경 작업을 수행하지 않는다. |
@@ -32,7 +33,17 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 - 고객사 사용자는 특정 `client_id`에 소속된 고객사/화주 사용자다.
 - `client_id`가 있는 내부 운영자도 고객사 사용자로 판단하지 않는다.
 - `role`이 비어 있거나 알 수 없는 사용자는 기본적으로 접근을 제한한다.
-- legacy role이 필요하다면 후속 호환 정책으로 분리하고, Pro 신규 기준은 위 6개 role을 표준으로 삼는다.
+- legacy role이 필요하다면 후속 호환 정책으로 분리하고, Pro 신규 기준은 위 role을 표준으로 삼는다.
+
+## 2-1. agency scope 기본 원칙
+
+- 기본 계층은 `platform_owner → agency_id → client_id → client_unit_id → warehouse_id`다.
+- `client_id`가 있는 업무 row는 `clients.agency_id` 기준으로 `agency_id`를 확정한다.
+- 요청 body의 `agency_id`를 그대로 신뢰하지 않는다.
+- `AGENCY_ADMIN`은 자기 `agency_id` 소속 client 자료만 조회, 생성, 수정할 수 있다.
+- `client_unit_id`는 해당 `client_id`에 속해야 한다.
+- `warehouse_id`는 해당 `agency_id`, `client_id`, 필요 시 `client_unit_id` 범위에 맞아야 한다.
+- 프론트 메뉴 숨김만으로 agency 권한을 처리하지 않는다.
 
 ## 3. client scope 기본 원칙
 
@@ -68,6 +79,7 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 | `user_name` | 사용자 표시명 |
 | `roles` | 사용자에게 부여된 role 목록 |
 | `client_id` | 사용자가 소속된 고객사 후보 |
+| `agency_id` | 사용자가 소속되거나 접근 가능한 대리점 후보 |
 | `client_code` | 고객사 코드 |
 | `client_name` | 고객사명 |
 | `default_warehouse_id` | 기본 창고 후보 |
@@ -75,7 +87,10 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 | `is_internal_user` | 내부 운영자 여부 |
 | `is_client_user` | 고객사 사용자 여부 |
 | `allowed_client_ids` | 접근 가능한 고객사 목록 후보 |
+| `allowed_agency_ids` | 접근 가능한 대리점 목록 후보 |
 | `selected_client_id` | 프론트 또는 요청에서 선택한 고객사 후보 |
+| `selected_agency_id` | 프론트 또는 요청에서 선택한 대리점 후보 |
+| `effective_agency_id` | 서버가 최종 결정한 대리점 scope |
 | `effective_client_id` | 서버가 최종 결정한 고객사 scope |
 
 정책은 다음과 같다.
@@ -95,7 +110,10 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 | `get_current_auth_context` | 요청 사용자와 role/client 정보를 검증해 `AuthContext`를 만든다. | 토큰, 세션, 요청 메타 | `AuthContext` | 인증 실패 시 401, 비활성 사용자면 403 |
 | `is_internal_user` | 내부 운영자 여부를 판정한다. | `roles` | boolean | 알 수 없는 role이면 false |
 | `is_client_user` | 고객사 사용자 여부를 판정한다. | `roles` | boolean | 알 수 없는 role이면 false |
+| `resolve_agency_scope` | 요청의 대리점 범위를 서버 기준으로 확정한다. | `AuthContext`, `requested_agency_id`, API scope 옵션 | `effective_agency_id` 또는 전체 scope 허용 표시 | 접근 불가 시 403 |
 | `resolve_client_scope` | 요청의 고객사 범위를 서버 기준으로 확정한다. | `AuthContext`, `requested_client_id`, API scope 옵션 | `effective_client_id` 또는 전체 scope 허용 표시 | 접근 불가 시 403 |
+| `resolve_client_unit_scope` | 요청의 운영단위가 고객사 범위에 맞는지 확정한다. | `effective_client_id`, `requested_client_unit_id` | `effective_client_unit_id` | 불일치 시 400/403 |
+| `resolve_agency_id_from_client` | 고객사 기준으로 대리점 scope를 확정한다. | `client_id` | `agency_id` | 고객사 없음/권한 밖이면 404/403 |
 | `require_client_access` | 대상 row의 `client_id` 접근 가능 여부를 검증한다. | `AuthContext`, `row.client_id` | 검증 통과 | 접근 불가 시 403 |
 | `require_warehouse_access` | `warehouse_id`가 선택 고객사의 사용창고인지 검증한다. | `AuthContext`, `effective_client_id`, `warehouse_id` | 검증 통과 | 접근 불가 시 403 |
 | `require_roles` | API 호출에 필요한 role을 확인한다. | `AuthContext`, 허용 role 목록 | 검증 통과 | 권한 부족 시 403 |
@@ -240,6 +258,7 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 | `SUPER_ADMIN` | 전체 가능 | 전체 가능 | 가능 | 가능 | 가능 | 가능 | 가능 | 가능 | 가능 | 전체 가능 | 전체 가능 |
 | `INTERNAL_ADMIN` | 가능 | 가능 | 가능 | 가능 | 가능 | 가능 | 가능 | 제한적 가능 | 가능 | 가능 | 일부 위험 설정 제한 후보 |
 | `INTERNAL_WORKER` | 업무 범위에서 가능 | 조회 중심 | 가능 | 제한적 가능 | 가능 | 가능 | 가능 | 제한 | 제한 | 불가 | 불가 |
+| `AGENCY_ADMIN` | 자기 대리점 범위 | 자기 대리점 고객사 기준 | 제한/계약 기준 | 제한/계약 기준 | 제한/계약 기준 | 제한 | 자기 대리점 고객사 조회 | 불가 | 자기 대리점 정산 조회 | 자기 대리점 사용자 후보 | 불가 |
 | `CLIENT_ADMIN` | 자기 고객사 고정 | 자기 고객사 조회/일부 요청 후보 | 제한 | 불가 | 불가 | 불가 | 자기 고객사 조회 | 불가 | 자기 고객사 조회 | 자기 고객사 사용자 후보 | 불가 |
 | `CLIENT_USER` | 자기 고객사 고정 | 조회 중심 | 제한 | 불가 | 불가 | 불가 | 자기 고객사 조회 | 불가 | 자기 고객사 조회 | 불가 | 불가 |
 | `READ_ONLY` | 자기 고객사 또는 허용 범위 | 조회만 | 조회만 | 조회만 | 조회만 | 조회만 | 조회만 | 불가 | 조회만 | 불가 | 불가 |
@@ -266,6 +285,9 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 
 - `client_id`가 있는 내부 운영자를 고객사 사용자로 오판하는 경우.
 - 고객사 사용자가 query/body의 `client_id`를 바꿔 타 고객사 자료를 조회하는 경우.
+- 대리점 사용자가 query/body의 `agency_id`를 바꿔 타 대리점 자료를 조회하는 경우.
+- `client_id`와 `clients.agency_id`가 불일치하는 row 생성을 허용하는 경우.
+- `client_unit_id`가 선택 고객사에 속하지 않는데 저장되는 경우.
 - `task_id`, `receipt_id`, `event_id` 같은 path id만 보고 client 검증 없이 처리하는 경우.
 - 창고 select가 전체 창고를 보여주고 API도 전체 창고를 허용하는 경우.
 - import job은 권한 검증했지만 저장 확정 시 target 업무 row client 검증을 빠뜨리는 경우.
@@ -279,19 +301,24 @@ SmartReturn Pro의 모든 API는 `role`, `client_id`, `warehouse_id` 기준을 �
 1. `AuthContext` 모델/스키마
 2. role seed
 3. password 정책
-4. client scope dependency
-5. warehouse scope dependency
-6. 기준정보 API 적용
-7. import job API 적용
-8. 반품 API 적용
-9. 재고 API 적용
-10. 프론트 client/warehouse 선택 유틸 적용
+4. agency scope dependency
+5. client scope dependency
+6. client_unit scope dependency
+7. warehouse scope dependency
+8. 기준정보 API 적용
+9. import job API 적용
+10. 반품 API 적용
+11. 재고 API 적용
+12. 프론트 agency/client/client_unit/warehouse 선택 유틸 적용
 
 ## 12. Codex 구현 전 체크
 
 - 이 API는 어떤 role이 호출할 수 있는가?
+- 이 API는 `agency_id` scope가 필요한가?
 - 이 API는 `client_id` scope가 필요한가?
+- 이 API는 `client_unit_id` scope가 필요한가?
 - 이 API는 `warehouse_id` scope가 필요한가?
+- 요청 `agency_id`를 그대로 믿고 있지 않은가?
 - 요청 `client_id`를 그대로 믿고 있지 않은가?
 - path id로 조회한 row의 `client_id`를 검증했는가?
 - 고객사 사용자가 다른 고객사의 row를 볼 수 없는가?

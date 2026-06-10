@@ -5,10 +5,27 @@
 ## 신규 제작 원칙
 
 - SmartReturn Pro는 3PL 고객사 관리 통합 플랫폼으로 확장 가능한 구조를 목표로 한다.
+- SmartReturn Pro는 CJ대리점 기반 이커머스 풀필먼트/반품 SaaS를 전제로 한다.
 - OMS, WMS, RETURN, 재고, 정산, 고객사 포털은 하나의 기준 위에서 단계적으로 확장한다.
 - 업무 기준, DB 기준, 공통 UI 기준을 먼저 세우고 화면과 기능 구현은 그 다음에 진행한다.
 - 내부 운영자와 고객사 사용자는 `role` 기준으로 구분한다.
 - 모든 업무 데이터는 `client_id` scope를 지키고, 창고 업무는 `warehouse_id` scope를 함께 지킨다.
+
+## 플랫폼 계층 원칙
+
+SmartReturn Pro의 기본 계층은 아래 순서로 고정한다.
+
+```text
+platform_owner
+→ agency_id
+→ client_id
+→ client_unit_id
+→ warehouse_id
+```
+
+Basic, Pro, Ultra 플랜은 이 계층을 바꾸지 않는다. 플랜은 이 계층 위에서 기능 사용 범위, 화면 잠금, 정산 항목, AI 보조 수준을 제어하는 정책이다.
+
+관련 기준은 `docs/business/agency-return-outsourcing-business-model.md`와 `docs/business/smartreturn-service-plan-policy.md`를 따른다.
 
 ## 기존 SmartReturn 복사 금지
 
@@ -62,13 +79,21 @@
 - 원격 설정 강제 변경
 - 고객사 포털 전체 구현
 - 정산 고도화
-- AI 도우미
+- 사진/영상 AI 자동판별 1차 구현
+
+## 고도화 설계 기준
+
+- AI 판정도우미는 최종 판정자가 아니라 판정지원 도우미다. 최종 판정은 작업자가 확정한다.
+- 세트·구성품 관리는 제조 BOM이 아니라 이커머스 풀필먼트 세트/사은품/합포장 기준이다.
+- 부품적출/부품교체는 1차 `MEMO_ONLY` 이력 중심으로 설계하고, 고가/청구/분쟁 가능 부품만 재고관리로 확장한다.
+- 세부 설계는 `docs/business/return-judgment-checklist-ai-policy.md`, `docs/business/set-product-component-fulfillment-policy.md`, `docs/business/return-part-action-policy.md`를 따른다.
 
 ## Codex 구현 전 체크
 
 - `AGENTS.md`와 이 문서를 먼저 읽었는가?
 - 관련 세부 문서를 확인했는가?
 - 기존 SmartReturn 구현을 복사하지 않았는가?
+- `agency_id → client_id → client_unit_id → warehouse_id` 계층을 플랜별로 바꾸지 않았는가?
 - 화면 1개가 업무 목적 1개만 가지는가?
 - 공통 UI 없이 화면별 임시 컴포넌트를 만들고 있지 않은가?
 - import job, 업무 테이블, 로그, 원장이 분리되어 있는가?

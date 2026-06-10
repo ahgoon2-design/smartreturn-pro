@@ -8,7 +8,11 @@
 
 - PostgreSQL 우선 설계로 작성한다.
 - 특정 DB 기능에 과도하게 종속되지 않도록 DB 중립성을 고려한다.
+- 기본 계층은 `platform_owner → agency_id → client_id → client_unit_id → warehouse_id`다.
+- Basic, Pro, Ultra 플랜은 이 계층을 바꾸지 않는다.
+- 핵심 운영 테이블은 대리점별 조회, 정산, 감사, 장애추적을 위해 `agency_id` 직접 저장을 고려한다.
 - 모든 업무 테이블은 `client_id` scope를 고려한다.
+- 고객사 내부 팀/브랜드/운영단위가 필요한 업무는 `client_unit_id` scope를 고려한다.
 - 창고 관련 업무는 `warehouse_id` scope를 고려한다.
 - 기준정보와 업무 데이터는 삭제보다 `active_yn` 또는 `status`를 통한 사용중지를 우선한다.
 - 주요 테이블은 `created_at`, `updated_at`을 기본으로 가진다.
@@ -24,7 +28,7 @@
 | 테이블 | 역할 | 주요 관계/주의사항 |
 | --- | --- | --- |
 | `users` | 사용자 계정과 로그인 상태를 관리한다. | `client_id`, `must_change_password`, `status`를 고려한다. |
-| `roles` | 표준 role을 관리한다. | `SUPER_ADMIN`, `INTERNAL_ADMIN`, `INTERNAL_WORKER`, `CLIENT_ADMIN`, `CLIENT_USER`, `READ_ONLY`를 기준으로 한다. |
+| `roles` | 표준 role을 관리한다. | `SUPER_ADMIN`, `INTERNAL_ADMIN`, `INTERNAL_WORKER`, `AGENCY_ADMIN`, `CLIENT_ADMIN`, `CLIENT_USER`, `READ_ONLY`를 기준으로 한다. |
 | `user_roles` | 사용자와 role의 연결을 관리한다. | 한 사용자가 여러 role을 가질 수 있는지 후속 결정한다. |
 | `permissions` | 세부 권한 단위를 관리한다. | 메뉴 접근, 조회, 생성, 수정, 확정, 삭제 권한을 분리한다. |
 | `role_permissions` | role과 permission의 연결을 관리한다. | role 기준 권한 확장의 중심 테이블이다. |
@@ -34,6 +38,7 @@
 
 - 내부 운영자와 고객사 사용자는 `role` 기준으로 구분한다.
 - `client_id` 유무로 사용자 성격을 판단하지 않는다.
+- 대리점 관리자는 자기 `agency_id` 범위의 고객사만 조회/관리한다.
 - 첫 로그인 또는 초기화 후 `must_change_password`를 지원한다.
 - 운영사 관리자는 비밀번호를 조회할 수 없고 초기화/재발급만 할 수 있다.
 - 평문 비밀번호는 저장하거나 응답하지 않는다.
@@ -45,11 +50,14 @@
 | 테이블 | 역할 | 주요 관계/주의사항 |
 | --- | --- | --- |
 | `clients` | 고객사/화주 기본 정보를 관리한다. | 모든 업무 scope의 기준이다. |
+| `agencies` | CJ대리점 또는 본사 직영 운영 단위를 관리한다. | `clients.agency_id`의 상위 기준이다. |
+| `client_units` | 고객사 내부 팀/브랜드/운영단위를 관리한다. | 반품 판정, 창고, 채널, 정산 분기에 사용한다. |
 | `warehouses` | 창고 기본 정보를 관리한다. | 창고 업무와 재고 scope의 기준이다. |
 | `client_warehouses` 또는 `client_warehouse_settings` | 고객사별 사용창고와 설정을 관리한다. | 고객사-창고 연결은 필수다. |
 | `locations` | 창고 내 위치를 관리한다. | `warehouse_id` scope를 가진다. |
 | `products` | 고객사별 상품 기준정보를 관리한다. | `client_id`, `product_code`, 대표 `barcode`를 가진다. |
 | `product_barcodes` | 추가/박스/카톤/외부 바코드를 관리한다. | `unit_qty`는 필수 후보로 둔다. |
+| `product_components` 또는 `product_set_components` | 세트상품/구성품/사은품 관계를 관리한다. | 제조 BOM이 아니라 이커머스 풀필먼트 세트/합포장 기준이다. |
 | `common_code_groups` | 공통코드 그룹을 관리한다. | 업무 상태, 사유, 택배사 등 그룹을 정의한다. |
 | `common_codes` | 공통코드 값을 관리한다. | 화면 하드코딩을 막기 위한 기준이다. |
 
@@ -58,6 +66,8 @@
 - 고객사-창고 연결은 필수다.
 - 창고 선택은 선택 고객사의 사용창고만 표시한다.
 - 상품 바코드는 대표 바코드와 추가 바코드를 분리한다.
+- 세트상품은 주문/판매 단위이고 구성품은 피킹/검수/재고 단위다.
+- 사은품, 이벤트 구성품, 합포장은 상품 구성 정책으로 다루되 제조 BOM처럼 설계하지 않는다.
 - `products.barcode`는 대표 낱개 바코드다.
 - `product_barcodes.unit_qty`는 스캔 1회당 반영 수량으로 필수 후보다.
 - 공통코드는 화면 하드코딩을 금지하기 위한 기준정보다.
@@ -95,6 +105,7 @@
 | `return_receipt_items` | 반품처리 상품/수량/판정 항목을 관리한다. | 실제 확정 상품과 수량을 기록한다. |
 | `return_units` | 반품관리번호 단위 추적 대상을 관리한다. | 리퍼/제조사반품/샘플/보류 추적에 사용한다. |
 | `return_label_print_logs` | 라벨 출력/재출력 이력을 관리한다. | 출력 실패는 판정 저장 실패가 아니다. |
+| `return_part_actions` | 부품적출/부품교체/구성품 보충 이력을 관리한다. | 1차는 `MEMO_ONLY` 중심이며 필요한 경우만 재고 이벤트와 연결한다. |
 | `return_closing_sessions` | 반품 마감 세션을 관리한다. | 기간, 고객사, 판정 상태 기준 대조를 관리한다. |
 | `return_closing_items` | 마감 대상과 대조 결과를 관리한다. | 마감은 재고반영이 아니라 대조 흐름이다. |
 | `return_external_outbound_batches` | 외부 반출 묶음을 관리한다. | 마감과 별도 흐름이다. |

@@ -6,6 +6,8 @@
 | --- | --- | --- | --- |
 | `README.md` | 저장소 첫 화면에서 프로젝트 목적, 현재 단계, 추천 제작 순서, 주요 문서 링크를 안내한다. | 저장소를 처음 열거나 신규 참여자가 전체 맥락을 파악할 때 | 권장 |
 | `docs/smartreturn-pro-core-principles.md` | 프로젝트 전체 제작 원칙, 제외 범위, 설계 우선 원칙을 정한다. | 신규 기능, 화면, DB, 업무 흐름을 설계하기 전 | 필수 |
+| `docs/business/agency-return-outsourcing-business-model.md` | CJ대리점 청구형 반품대행 사업모델과 `agency_id → client_id → client_unit_id` 책임/청구 기준을 정한다. | 대리점, 정산, 반품대행, 플랫폼 계층을 설계할 때 | 플랫폼/사업 설계 시 필수 |
+| `docs/business/smartreturn-service-plan-policy.md` | Basic/Pro/Ultra 플랜이 데이터 계층이 아니라 기능 gate/화면 잠금/정산/AI 보조 수준을 제어한다는 기준을 정한다. | 플랜, 업셀 UX, feature gate, 정산 항목을 설계할 때 | 플랜 작업 시 필수 |
 | `docs/ui/smartreturn-pro-ui-page-templates.md` | 화면 타입별 페이지 골격과 레이아웃 계약을 정한다. | 화면 또는 사용자 흐름을 만들기 전 | UI 작업 시 필수 |
 | `docs/ui/smartreturn-pro-common-components.md` | 공통 UI 컴포넌트 후보와 사용 원칙을 정한다. | 화면별 table/input/button/select/modal을 만들기 전 | UI 작업 시 필수 |
 | `docs/ui/smartreturn-pro-common-component-props.md` | SmartReturn Pro 공통 UI 컴포넌트의 책임, props 후보, 상태 처리, 금지 패턴을 정리하는 문서다. | 프론트 공통 컴포넌트 구현 전 또는 반품 화면 구현 전 | 프론트 UI 구현 전 필수 |
@@ -21,12 +23,17 @@
 | `docs/business/smartreturn-pro-menu-and-screen-map.md` | 1차 메뉴 구조, 화면 목록, 화면별 책임과 넣지 말 것을 정한다. | 라우팅, 메뉴, 화면 설계를 시작하기 전 | UI/업무 설계 시 필수 |
 | `docs/business/smartreturn-pro-return-policy.md` | 반품접수, 반품예정, 반품처리, 마감, 반출의 경계를 정한다. | RETURN 메뉴 또는 반품 관련 데이터 흐름을 만들기 전 | 반품 작업 시 필수 |
 | `docs/business/smartreturn-pro-return-mvp-flow.md` | 반품 MVP의 실제 업무흐름과 화면 책임을 고정한다. | 반품 관련 DB/API/화면 구현 전 | 반품 작업 시 필수 |
+| `docs/business/return-processing-workflow-ux-design.md` | 반품처리 최종 업무흐름, 세부항목 없는 반품, 스캔/선택 처리, sticky/문구 UX 기준을 고정한다. | `/returns/processing`, 반품 처리완료, 판정/창고 UI를 작업할 때 | 반품처리 작업 시 필수 |
+| `docs/business/return-judgment-checklist-ai-policy.md` | 고객사별 판정표, 체크리스트, AI 판정도우미의 추천/최종확정 경계를 정한다. | 판정표, 체크리스트, AI도우미, 사진 증빙 기능을 설계할 때 | 판정/AI 작업 시 필수 |
+| `docs/business/set-product-component-fulfillment-policy.md` | 세트상품/구성품/사은품/합포장 기준을 제조 BOM이 아닌 이커머스 풀필먼트 기준으로 정한다. | 상품 관리, 출고 피킹, 반품 구성품 확인, 사은품 정책을 설계할 때 | 세트/구성품 작업 시 필수 |
+| `docs/business/return-part-action-policy.md` | 부품적출/부품교체/폐기 처리와 `MEMO_ONLY` 우선 정책을 정한다. | 폐기, 부품적출, 교체 출고, 구성품 보충 기능을 설계할 때 | 부품 처리 작업 시 필수 |
 | `docs/business/smartreturn-pro-return-api-policy.md` | 반품 MVP API 책임, 엔드포인트 후보, 권한, 상태 전이, 재고/스캔 이벤트 연결 기준을 정리하는 문서다. | 반품 백엔드 router/service/schema 구현 전 | 반품 API 구현 전 필수 |
 | `docs/business/smartreturn-pro-return-api-schema.md` | 반품 MVP API request/response schema 후보와 결과코드, sound_code, UI 노출 기준을 정리하는 문서다. | 반품 Pydantic schema, API router/service 구현 전 | 반품 schema 구현 전 필수 |
 | `docs/business/smartreturn-pro-inbound-outbound-policy.md` | 입고/출고 자료 준비, 검수, 확정, 재고 반영 원칙을 정한다. | 입고 또는 출고 업무를 설계하기 전 | 입출고 작업 시 필수 |
 | `docs/business/smartreturn-pro-scan-local-agent-inventory-policy.md` | 스캔 매칭, Local Agent 역할, 재고 이벤트 반영 기준을 정한다. | 스캔, 프린터, 사운드, 재고 반영 기능을 만들기 전 | 스캔/재고 작업 시 필수 |
 | `docs/business/smartreturn-pro-auth-password-policy.md` | role 기준 권한, 고객사 scope, 첫 로그인 비밀번호 정책을 정한다. | 인증, 권한, 사용자 관리 기능을 만들기 전 | 인증/권한 작업 시 필수 |
 | `docs/business/smartreturn-pro-auth-client-scope-api-policy.md` | SmartReturn Pro 모든 API의 role, client scope, warehouse scope 권한 기준을 정리하는 문서다. | 백엔드 인증/권한, 기준정보 API, 반품/입고/출고/재고 API 구현 전 | API 구현 전 필수 |
+| `docs/db/smart-import-mapper-pipeline.md` | Smart Import Mapper와 저장전검증의 다상품 운송장, 중복, 값 차이, 컬럼매핑 재검증 UX 기준을 정한다. | import mapper, 저장전검증, 컬럼매핑 화면을 설계할 때 | Import 작업 시 필수 |
 | `docs/dev/smartreturn-pro-test-and-release-policy.md` | 테스트, 빌드, 커밋 전 점검, 배포 제외 범위를 정한다. | 검증, 릴리스, 커밋 요청을 처리하기 전 | 변경 완료 전 필수 |
 
 ## 사용 원칙
@@ -36,3 +43,12 @@
 - 작업 범위와 맞는 세부 문서를 읽은 뒤 설계와 구현을 진행한다.
 - 여러 업무가 걸친 기능은 관련 문서를 모두 읽는다.
 - 문서 간 충돌이 있으면 `AGENTS.md`와 핵심 원칙 문서를 우선 기준으로 보고, 충돌 내용을 먼저 정리한다.
+
+## 문서 그룹
+
+- 플랫폼/사업 구조: `docs/business/agency-return-outsourcing-business-model.md`, `docs/business/smartreturn-service-plan-policy.md`, `docs/smartreturn-pro-core-principles.md`
+- 반품처리/판정: `docs/business/smartreturn-pro-return-policy.md`, `docs/business/smartreturn-pro-return-mvp-flow.md`, `docs/business/return-processing-workflow-ux-design.md`
+- 세트·구성품/부품처리: `docs/business/set-product-component-fulfillment-policy.md`, `docs/business/return-part-action-policy.md`
+- AI 판정도우미: `docs/business/return-judgment-checklist-ai-policy.md`
+- 화면 UX/Grid: `docs/ui/smartreturn-pro-ui-page-templates.md`, `docs/ui/smartreturn-pro-return-screen-design.md`, `docs/ui/smartreturn-pro-common-components.md`
+- Import Mapper: `docs/db/smart-import-mapper-pipeline.md`, `docs/db/smartreturn-pro-db-and-import-policy.md`
