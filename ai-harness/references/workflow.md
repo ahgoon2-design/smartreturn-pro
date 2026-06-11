@@ -22,3 +22,12 @@
 - agent 보고: `ai-harness/workflow/02-agent-report.md`
 - test 보고: `ai-harness/workflow/03-test-report.md`
 - 다음 지시: `ai-harness/workflow/04-next-instruction.md`
+
+## Platform Branch Rule
+
+- `main`은 SmartReturn 플랫폼 라인이다.
+- `smartreturn-pro`는 SmartReturn Pro 플랫폼 라인이다.
+- 두 브랜치는 단순 main/feature 관계가 아니라 서로 다른 플랫폼 라인이다.
+- 현재 브랜치가 `smartreturn-pro`이면 SmartReturn Pro 규칙과 문서를 기준으로 작업한다.
+- 사용자가 명시적으로 요청하지 않는 한 `smartreturn-pro`를 `main`에 병합·동기화하라고 제안하지 않는다.
+- 브랜치 전략을 권고하기 전에 항상 현재 브랜치를 먼저 확인한다.

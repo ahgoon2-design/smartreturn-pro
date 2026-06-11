@@ -200,3 +200,12 @@ Smart AI Dev Harness는 ChatGPT, Claude Code, Codex를 함께 사용하여 프�
 - 관련 frontend build
 
 검증 실패 시 원인 파일과 실패 명령을 보고한다.
+
+## 7. Platform Branch Rule
+
+- `main`은 SmartReturn 플랫폼 라인이다.
+- `smartreturn-pro`는 SmartReturn Pro 플랫폼 라인이다.
+- 두 브랜치는 단순 main/feature 관계가 아니라 서로 다른 플랫폼 라인이다.
+- 현재 브랜치가 `smartreturn-pro`이면 SmartReturn Pro 규칙과 문서를 기준으로 작업한다.
+- 사용자가 명시적으로 요청하지 않는 한 `smartreturn-pro`를 `main`에 병합·동기화하라고 제안하지 않는다.
+- 브랜치 전략을 권고하기 전에 항상 현재 브랜치를 먼저 확인한다.
