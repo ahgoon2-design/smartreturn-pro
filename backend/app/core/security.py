@@ -31,11 +31,21 @@ def validate_password_policy(plain_password: str) -> list[str]:
 
 
 def hash_password(plain_password: str) -> str:
-    """평문 비밀번호를 저장용 해시 문자열로 변환한다."""
+    """평문 비밀번호를 저장용 해시 문자열로 변환한다(최소 정책 검증 포함)."""
 
     errors = validate_password_policy(plain_password)
     if errors:
         raise ValueError("비밀번호 정책을 통과하지 못했습니다.")
+
+    return hash_password_unchecked(plain_password)
+
+
+def hash_password_unchecked(plain_password: str) -> str:
+    """비밀번호 정책 검증 없이 동일한 해시 알고리즘으로 해시만 생성한다.
+
+    로컬 개발용 seed 등에서 정책 길이 미만의 테스트 비밀번호를 넣어야 하는 내부 용도 전용이다.
+    일반 비밀번호 생성/변경/회원가입 경로는 반드시 `hash_password`를 사용한다(정책은 그대로 유지).
+    """
 
     salt = secrets.token_bytes(_SALT_BYTES)
     digest = hashlib.pbkdf2_hmac(
