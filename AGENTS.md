@@ -149,3 +149,54 @@
   - `docs/skills/channel-return-auto-collection.md`
 - DB/파일/사진/로그/배포/채널 자동수집/백업/보안/대량 이력 테이블 작업:
   - `docs/skills/naver-cloud-saas-architecture.md`
+
+# Smart AI Dev Harness - Agent Constitution
+
+> 이 섹션은 위의 SmartReturn Pro 작업 기준을 대체하지 않고 보완한다. 충돌 시 보안·중단 조건·문서 언어 규칙이 우선한다.
+
+## 1. Purpose
+
+Smart AI Dev Harness는 ChatGPT, Claude Code, Codex를 함께 사용하여 프로젝트를 설계, 구현, 검증, 보고까지 반복 수행하기 위한 AI 개발팀 운영 하네스다.
+
+## 2. Project Root Rule
+
+- 모든 경로는 현재 작업 중인 프로젝트폴더(`<PROJECT_ROOT>`)를 기준으로 해석한다.
+- 지시문, agent 문서, reference 문서, 예시 명령에는 로컬 절대경로를 하드코딩하지 않는다.
+- 특정 PC의 폴더명이나 드라이브 경로를 문서에 고정하지 않는다.
+- Claude Code/Codex는 실행 시작 시 현재 working directory를 `<PROJECT_ROOT>`로 간주한다.
+- 작업 전 `<PROJECT_ROOT>/AGENTS.md` 존재 여부를 확인한다.
+
+## 3. Worker Compatibility
+
+- 이 하네스는 Claude Code 전용이 아니다.
+- Claude Code와 Codex를 모두 작업자로 사용할 수 있다.
+- Claude Code는 `CLAUDE.md`와 `.claude/agents/`를 추가로 따른다.
+- Codex는 `CODEX.md`를 추가로 따른다.
+- 공통 업무 규칙과 역할 정의는 `ai-harness/` 아래에 둔다.
+
+## 4. Agent Chaining Rule
+
+- 모든 agent 파일을 한 번에 읽지 않는다.
+- 현재 작업의 주관 agent를 먼저 선택한다.
+- 주관 agent의 참조 문서와 handoff 대상만 단계적으로 읽는다.
+- agent 간 인수인계는 `ai-harness/workflow/02-agent-report.md`에 기록한다.
+- QA 완료 전에는 최종 완료 보고를 작성하지 않는다.
+
+## 5. Safety Rules
+
+- secret, env, key, token, local secret 파일은 읽거나 출력하지 않는다.
+- 운영 데이터 삭제, destructive migration, 대량 cleanup은 사용자 명시 없이는 금지한다.
+- 기존 공통 컴포넌트와 기존 API를 먼저 확인하고 중복 구현하지 않는다.
+- 문서만 만들고 완료하지 않는다. 구현 작업은 테스트 가능한 상태까지 진행한다.
+- 실행하지 못한 검증은 통과라고 쓰지 말고 "미실행"으로 보고한다.
+
+## 6. Verification Rules
+
+가능한 경우 작업 후 아래 검증을 실행한다.
+
+- `git status --short`
+- `git diff --check`
+- 관련 backend test
+- 관련 frontend build
+
+검증 실패 시 원인 파일과 실패 명령을 보고한다.
