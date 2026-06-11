@@ -153,3 +153,12 @@
 
 ### qa-tester
 - `npm run build` 통과(3103 modules). backend DEFECTIVE/외부반출 타깃 테스트 3종 재실행 통과(기존 backend 미변경).
+
+---
+
+## /returns/processing 브라우저 검증 (Claude Code, qa-tester) — 일부 수행
+
+- 정적: `git diff --check` clean, `npm run build` ✅, `pytest tests/test_return_intake_api.py` ✅ 80 passed.
+- Playwright 스모크: ahgoon(SUPER_ADMIN) 로그인 → `/returns/processing` 정상 진입(헤더/스캔/1~5단계/그리드/우측패널). 크래시 없음, 현대화 메뉴 정상.
+- 한계: 로컬 DB 처리대기 데이터 0건 → 판정 버튼(불량/리퍼A·B·C)·엑셀 다운로드 버튼은 데이터 의존이라 브라우저 직접 확인 미수행. 해당 동작은 backend 테스트로 API 레벨 검증됨. 상세 항목은 `03-test-report.md`의 User Browser Test Checklist로 분리.
+- 코드 변경 없음(보고서/체크리스트 문서만).
