@@ -53,9 +53,10 @@ const NO_TARGET_PRODUCT_FEEDBACK: ProductCheckFeedback = {
   message: "먼저 운송장번호를 스캔해 처리 대상을 선택하세요.",
 };
 
+// 정본 판정 코드(7등급/명확 코드). generic REFURB는 신규 판정 선택지로 제공하지 않는다(레거시 표시용 라벨만 유지).
+// NOTE: DEFECTIVE 추가는 backend enum/창고 라우팅 정합(Codex)이 선행되어야 하므로 이번 frontend 변경에서는 노출하지 않는다.
 const JUDGEMENT_OPTIONS: Array<{ value: ReturnJudgementStatus; label: string }> = [
   { value: "GOOD", label: "양품" },
-  { value: "REFURB", label: "리퍼" },
   { value: "REFURB_A", label: "리퍼A" },
   { value: "REFURB_B", label: "리퍼B" },
   { value: "REFURB_C", label: "리퍼C" },
@@ -66,7 +67,6 @@ const JUDGEMENT_OPTIONS: Array<{ value: ReturnJudgementStatus; label: string }> 
 ];
 
 const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
-  "REFURB",
   "REFURB_A",
   "REFURB_B",
   "REFURB_C",
@@ -135,6 +135,7 @@ export function ReturnProcessingWorkspacePage() {
         width: 130,
         minWidth: 120,
         render: (value) => <SmartStatusBadge status={String(value)} label={toRowStatusLabel(value)} />,
+        exportValue: (record) => toRowStatusLabel(record.status),
       },
       {
         key: "source_type",
@@ -143,6 +144,7 @@ export function ReturnProcessingWorkspacePage() {
         width: 130,
         minWidth: 120,
         render: (_value, record) => <SmartStatusBadge status={record.source_type || "MANUAL"} label={toSourceLabel(record)} />,
+        exportValue: (record) => toSourceLabel(record),
       },
       { key: "row_no", title: "순번", dataIndex: "row_no", width: 80, minWidth: 70, sortable: true },
       {
@@ -152,10 +154,11 @@ export function ReturnProcessingWorkspacePage() {
         width: 170,
         minWidth: 160,
         copyable: true,
+        exportAsText: true,
       },
-      { key: "order_no", title: "주문번호", dataIndex: "order_no", width: 160, minWidth: 150, copyable: true },
-      { key: "product_code", title: "상품코드", dataIndex: "product_code", width: 140, minWidth: 130, copyable: true },
-      { key: "barcode", title: "바코드", dataIndex: "barcode", width: 150, minWidth: 140, copyable: true },
+      { key: "order_no", title: "주문번호", dataIndex: "order_no", width: 160, minWidth: 150, copyable: true, exportAsText: true },
+      { key: "product_code", title: "상품코드", dataIndex: "product_code", width: 140, minWidth: 130, copyable: true, exportAsText: true },
+      { key: "barcode", title: "바코드", dataIndex: "barcode", width: 150, minWidth: 140, copyable: true, exportAsText: true },
       { key: "product_name", title: "상품명", dataIndex: "product_name", width: 220, minWidth: 190 },
       { key: "option_name", title: "옵션명", dataIndex: "option_name", width: 180, minWidth: 160, render: (value) => toDisplayText(value) },
       { key: "qty", title: "수량", dataIndex: "qty", width: 80, minWidth: 70, align: "right" },
@@ -167,6 +170,7 @@ export function ReturnProcessingWorkspacePage() {
         width: 120,
         minWidth: 110,
         render: (value) => <SmartStatusBadge status={String(value)} label={toValidationLabel(value)} />,
+        exportValue: (record) => toValidationLabel(record.validation_status),
       },
       {
         key: "work_status",
@@ -175,6 +179,7 @@ export function ReturnProcessingWorkspacePage() {
         width: 130,
         minWidth: 120,
         render: (value) => <SmartStatusBadge status={String(value)} label={toRowStatusLabel(value)} />,
+        exportable: false,
       },
       {
         key: "judgement",
@@ -188,6 +193,7 @@ export function ReturnProcessingWorkspacePage() {
           ) : (
             <Typography.Text type="secondary">미판정</Typography.Text>
           ),
+        exportValue: (record) => (record.judgement_status ? toJudgementLabel(record.judgement_status) : "미판정"),
       },
       {
         key: "return_label_no",
@@ -197,6 +203,7 @@ export function ReturnProcessingWorkspacePage() {
         minWidth: 160,
         copyable: true,
         render: (_value, record) => renderLabelNumber(record),
+        exportAsText: true,
       },
       { key: "photo", title: "사진", width: 100, minWidth: 90, render: () => <Typography.Text type="secondary">후속</Typography.Text> },
       {
@@ -951,6 +958,7 @@ export function ReturnProcessingWorkspacePage() {
             error={null}
             emptyText={noDetailTrackingNo ? "아직 추가된 상품이 없습니다. 상품을 스캔하거나 검색해서 추가하세요." : "반품처리 대기 대상이 없습니다."}
             enableCopy
+            exportFileName="반품처리"
             preserveOriginalOrder
             originalOrderKey="row_no"
             enableOriginalOrderReset

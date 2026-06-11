@@ -31,6 +31,14 @@ export interface SmartDataGridColumn<TRecord extends object> {
   statusMap?: Record<string, SmartGridStatusMapItem>;
   sortable?: boolean | ((left: TRecord, right: TRecord) => number);
   copyable?: boolean;
+  /** 엑셀 다운로드 포함 여부. 기본은 dataIndex 또는 exportValue가 있으면 포함. 액션/사진/버튼 컬럼은 false로 둔다. */
+  exportable?: boolean;
+  /** 엑셀 다운로드 헤더 라벨. 생략 시 문자열 title을 사용한다. */
+  exportHeader?: string;
+  /** 엑셀 다운로드 셀 값. 생략 시 dataIndex 값을 사용한다(상태/판정 등은 한글 라벨 권장). */
+  exportValue?: (record: TRecord) => string | number | null | undefined;
+  /** 운송장번호/상품코드/바코드처럼 숫자로 깨지면 안 되는 값은 true로 두어 문자열로 내보낸다. */
+  exportAsText?: boolean;
   tooltip?: ReactNode;
   fixed?: "left" | "right";
   errorHighlight?: boolean | ((record: TRecord) => boolean);
@@ -69,6 +77,8 @@ export interface SmartDataGridProps<TRecord extends object> {
   getRowClassName?: (record: TRecord, index: number) => string;
   footerActions?: ReactNode;
   enableCopy?: boolean;
+  /** 값이 있으면 조회형 그리드에 "엑셀 다운로드" 버튼을 표시하고, 이 값을 파일명으로 사용한다. */
+  exportFileName?: string;
   enableMultiSelect?: boolean;
   className?: string;
 }

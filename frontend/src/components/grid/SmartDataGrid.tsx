@@ -3,6 +3,7 @@ import type { Key } from "react";
 import { useMemo, useState } from "react";
 import { SmartGridActionCell } from "./SmartGridActionCell";
 import { getSmartRowKey, sortByOriginalOrder, toAntTableColumns } from "./SmartDataGrid.helpers";
+import { buildGridCsv, downloadGridCsv } from "./SmartDataGrid.export";
 import { SmartGridToolbar } from "./SmartGridToolbar";
 import type { SmartDataGridColumn, SmartDataGridProps } from "./SmartDataGrid.types";
 import "./SmartDataGrid.css";
@@ -29,6 +30,7 @@ export function SmartDataGrid<TRecord extends object>({
   getRowClassName,
   footerActions,
   enableCopy,
+  exportFileName,
   enableMultiSelect = true,
   className,
 }: SmartDataGridProps<TRecord>) {
@@ -75,11 +77,17 @@ export function SmartDataGrid<TRecord extends object>({
     setTableVersion((value) => value + 1);
   }
 
+  function handleExcelDownload() {
+    // 현재 표시 중인 행(원본 정렬 포함)과 컬럼 정의 기준으로 다운로드한다.
+    downloadGridCsv(exportFileName as string, buildGridCsv(columns, orderedRows));
+  }
+
   return (
     <div className={gridClassName}>
       <SmartGridToolbar
         enableOriginalOrderReset={enableOriginalOrderReset}
         onOriginalOrderReset={handleOriginalOrderReset}
+        onExcelDownload={exportFileName && orderedRows.length > 0 ? handleExcelDownload : undefined}
         footerActions={footerActions}
       />
       {error ? <Alert className="smart-grid-error" type="error" showIcon message={toSafeErrorMessage(error)} /> : null}
