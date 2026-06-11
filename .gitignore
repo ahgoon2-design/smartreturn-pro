@@ -46,6 +46,10 @@ pnpm-debug.log*
 # 브라우저 테스트(Playwright MCP) 산출물
 .playwright-mcp/
 
+# 로컬 AI 작업 산출물(추적 제외). .claude/agents 와 ai-harness 는 추적 대상이므로 ignore하지 않는다.
+.claude/skills/
+지시문/
+
 # 로그/출력/임시
 logs/
 outputs/
