@@ -11,7 +11,8 @@ export type ReturnJudgementStatus =
   | "SAMPLE"
   | "MANUFACTURER_RETURN"
   | "DISPOSAL"
-  | "HOLD";
+  | "HOLD"
+  | "DEFECTIVE";
 export type ReturnLabelPrintStatus =
   | "NOT_REQUIRED"
   | "PRINT_PENDING"

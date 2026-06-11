@@ -132,3 +132,24 @@
 ### qa-tester (완료)
 - 신규 테스트 3종 추가(`test_return_intake_api.py`): REFURB_A의 EXTERNAL_OUTBOUND_TARGET 후보 포함, DEFECTIVE 라우팅 있을 때 처리완료+반품관리번호, DEFECTIVE 라우팅 없을 때 처리완료 차단.
 - `pytest tests/test_return_intake_api.py` 80 passed, master/route 관련 139 passed. 회귀 없음.
+
+---
+
+## DEFECTIVE 정책 확정 + frontend 노출 (Claude Code) — 완료
+
+### smartreturn-architect / 정책
+- `DEFECTIVE`(불량) 정책 확정: 판매가능 재고 아님 / 외부반출 자동후보 아님 / 고객사 창고 라우팅 설정 있어야 처리완료(없으면 차단, default 창고 하드코딩 금지) / 처리완료 시 재고 미반영 유지 / 라벨(반품관리번호) 대상. 불량 전용 재고화는 후속 TODO.
+- 문서 반영: `docs/business/return-processing-workflow-ux-design.md`에 "DEFECTIVE(불량) 판정 정책" 섹션 추가, `ai-harness/references/backend.md`에 판정 정본/DEFECTIVE 규칙 한 줄 추가.
+
+### backend-engineer / 점검 (코드 변경 없음)
+- 현재 backend가 정책과 정확히 일치함을 확인: `JUDGEMENT_DEFECTIVE` ∈ `ALLOWED_JUDGEMENT_STATUSES`(119) + `LABEL_REQUIRED_JUDGEMENT_STATUSES`(129), master `RETURN_WAREHOUSE_ROUTE_JUDGMENT_CODES`(83). **`INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES`·`EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES`에는 미포함**(정책 부합). backend 코드 추가 변경 불필요.
+
+### frontend-engineer / 노출
+- `types/returns.ts` `ReturnJudgementStatus`에 `DEFECTIVE` 추가.
+- `ReturnProcessingWorkspacePage.tsx`: 판정 옵션에 `{ value: "DEFECTIVE", label: "불량" }` 추가, `LABEL_REQUIRED_JUDGEMENTS`·`toJudgementLabel`에 DEFECTIVE 반영. 내부 코드는 화면 미노출(한글 "불량"만). 창고 라우팅 없으면 기존 `canSaveJudgement` 가드로 처리완료 차단 유지. 재고 미반영 안내 유지.
+
+### ux-grid-specialist
+- 판정 버튼 1개 추가(불량)로 영역 과밀 없음. 엑셀 다운로드/복사/loading 미변경.
+
+### qa-tester
+- `npm run build` 통과(3103 modules). backend DEFECTIVE/외부반출 타깃 테스트 3종 재실행 통과(기존 backend 미변경).

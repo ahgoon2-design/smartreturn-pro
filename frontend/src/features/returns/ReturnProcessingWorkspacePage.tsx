@@ -53,8 +53,8 @@ const NO_TARGET_PRODUCT_FEEDBACK: ProductCheckFeedback = {
   message: "먼저 운송장번호를 스캔해 처리 대상을 선택하세요.",
 };
 
-// 정본 판정 코드(7등급/명확 코드). generic REFURB는 신규 판정 선택지로 제공하지 않는다(레거시 표시용 라벨만 유지).
-// NOTE: DEFECTIVE 추가는 backend enum/창고 라우팅 정합(Codex)이 선행되어야 하므로 이번 frontend 변경에서는 노출하지 않는다.
+// 정본 판정 코드(명확 코드). generic REFURB는 신규 판정 선택지로 제공하지 않는다(레거시 표시용 라벨만 유지).
+// DEFECTIVE("불량")는 backend ALLOWED + 창고 라우팅 허용 코드에 포함되어 지원된다(고객사 DEFECTIVE 창고 라우팅 설정 없으면 처리완료 차단).
 const JUDGEMENT_OPTIONS: Array<{ value: ReturnJudgementStatus; label: string }> = [
   { value: "GOOD", label: "양품" },
   { value: "REFURB_A", label: "리퍼A" },
@@ -62,6 +62,7 @@ const JUDGEMENT_OPTIONS: Array<{ value: ReturnJudgementStatus; label: string }> 
   { value: "REFURB_C", label: "리퍼C" },
   { value: "SAMPLE", label: "샘플" },
   { value: "MANUFACTURER_RETURN", label: "제조사반품" },
+  { value: "DEFECTIVE", label: "불량" },
   { value: "DISPOSAL", label: "폐기" },
   { value: "HOLD", label: "보류" },
 ];
@@ -72,6 +73,7 @@ const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
   "REFURB_C",
   "SAMPLE",
   "MANUFACTURER_RETURN",
+  "DEFECTIVE",
   "HOLD",
 ]);
 
@@ -1310,6 +1312,7 @@ function toJudgementLabel(value: unknown) {
     REFURB_C: "리퍼C",
     SAMPLE: "샘플",
     MANUFACTURER_RETURN: "제조사반품",
+    DEFECTIVE: "불량",
     DISPOSAL: "폐기",
     HOLD: "보류",
   };
