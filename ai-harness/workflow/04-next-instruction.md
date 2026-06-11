@@ -1,35 +1,23 @@
 # Next Instruction
 
-> Phase 1 frontend(Claude Code)는 완료. 아래는 Phase 1을 마무리하기 위한 **Codex(backend) 후속 지시문 초안**이다.
+> Backend Phase 1(외부반출 generic REFURB 필터 버그 수정 + DEFECTIVE 지원 + 테스트)은 Claude Code(backend-engineer 체인)로 완료. 아래는 남은 후속 작업이다.
 
----
+## 선결 정책 결정 (사용자 확정 필요)
+- **DEFECTIVE 후속 흐름**: 일마감 재고반영(`INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES`) 및 외부반출 자동후보(`EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES`)에 DEFECTIVE를 포함할지. 현재는 미포함(판정/창고/라벨까지만). 정책 확정 시 해당 세트에 추가 + 테스트.
 
-실행 대상: Codex (backend 레인)
-모드: 목표추진모드
-이유: `/returns/processing` Phase 1의 frontend(엑셀 다운로드 + generic REFURB 제거)는 완료됐고, 판정 enum 정합과 DEFECTIVE 지원, 테스트 보강이 backend에 남아 있다.
+## 후속 1 — frontend DEFECTIVE 노출 (Claude Code)
+- backend가 DEFECTIVE를 지원하므로(`ALLOWED` + 창고 라우팅 허용), `ReturnProcessingWorkspacePage.tsx` `JUDGEMENT_OPTIONS`에 `{ value: "DEFECTIVE", label: "불량" }` 추가.
+- 라벨/창고 안내 문구 정합. 고객사에 DEFECTIVE 창고 라우팅이 없으면 처리완료 차단(정상)임을 화면 안내.
+- `npm run build`.
 
-현재 작업 중인 프로젝트폴더를 `<PROJECT_ROOT>`로 간주한다.
-`<PROJECT_ROOT>/AGENTS.md`, `<PROJECT_ROOT>/CODEX.md`를 먼저 읽는다.
-현재 브랜치 `smartreturn-pro`(SmartReturn Pro 라인) 기준으로만 작업하고, `main` 병합/동기화는 제안하지 않는다.
+## 후속 2 — 엑셀 다운로드 확대 (Claude Code)
+- `exportFileName`을 다른 조회형 화면(반품 이력/마감·반출·보류·폐기 후보)에도 적용.
+- 각 화면 그리드의 id류 컬럼에 `exportAsText`, 상태/판정 컬럼에 `exportValue`(한글 라벨) 부여.
 
-## 정본 판정 코드
-`GOOD / REFURB_A / REFURB_B / REFURB_C / MANUFACTURER_RETURN / SAMPLE / HOLD / DISPOSAL / DEFECTIVE`
-(generic `REFURB`는 신규 저장 기준에서 사용하지 않음. 레거시 데이터 호환은 mapping으로만.)
+## 후속 3 — DEFECTIVE 정책 반영 (backend, 정책 확정 후)
+- 정책에 따라 `INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES`/`EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES`에 DEFECTIVE 추가 + 일마감/외부반출 테스트 보강.
 
-## 목표 (backend)
-1. **외부반출 후보 쿼리 정합**: `return_intake_repository.py`의 generic `("REFURB", ...)` 필터를 `REFURB_A/B/C` 포함 기준으로 수정(레거시 `REFURB` 호환 포함 검토). closing/outbound/inventory 분기의 판정 기준 통일.
-2. **DEFECTIVE 지원**: 판정 코드로 저장/조회 가능하게 하고, 고객사 창고 라우팅(`return_warehouse_routes`)에 DEFECTIVE 경로가 없을 때의 처리(미배정 시 처리완료 차단 유지)를 명확히.
-3. **테스트 보강**: judge / manual-row / closing(일마감 시에만 재고반영) / agency·client scope 회귀 pytest 추가.
-
-## 금지
-- 처리완료 시 재고 즉시 반영으로 변경 금지(일마감/반출 확정에서만 반영).
-- frontend 임의 수정 금지(완료된 frontend 계약 유지).
-- secret/env/local secret 읽기·출력 금지, main 병합/동기화 제안 금지.
-
-## backend 계약 변경 후 frontend 후속(Claude Code)
-- backend가 DEFECTIVE를 정식 지원하면, frontend `JUDGEMENT_OPTIONS`에 `DEFECTIVE`(라벨 "불량") 추가.
-
-## 검증
-- `python -m pytest`(반품 관련 범위)
-- `git diff --check`, `git status --short`
-- 보고: `ai-harness/workflow/02-agent-report.md`(backend 섹션), `03-test-report.md`
+## 공통 규칙
+- 현재 브랜치 `smartreturn-pro`(SmartReturn Pro 라인) 기준, `main` 병합/동기화 제안 금지.
+- 처리완료 시 재고 즉시 반영 금지(일마감/반출 확정에서만).
+- secret/env/local secret 읽기·출력 금지.

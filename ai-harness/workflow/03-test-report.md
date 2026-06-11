@@ -2,14 +2,18 @@
 
 ## Commands
 
-- `npm --prefix frontend run build` (tsc --noEmit + vite build)
-- `git diff --check`
-- `git status --short`
+- `python -m pytest tests/test_return_intake_api.py -k "external_outbound_target_followup or defective_judgement"` (신규 3종)
+- `python -m pytest tests/test_return_intake_api.py` (반품 전체)
+- `python -m pytest tests/ -k "master or warehouse or route or judgement"` (변경 영향 범위)
+- `npm --prefix frontend run build` (직전 frontend Phase 1, 참고)
+- `git diff --check`, `git status --short`
 
 ## Results
 
-- frontend build: ✅ 통과 — 3103 modules transformed, 빌드 성공(약 14s). TS 타입 오류 없음.
-- git diff --check: clean (LF→CRLF 경고만).
+- 신규 backend 테스트: ✅ 3 passed, 77 deselected.
+- 반품 전체: ✅ **80 passed** (1:46).
+- master/route 범위: ✅ **139 passed**, 259 deselected (1:41). 회귀 없음.
+- frontend build(직전 커밋 954d9f1a): ✅ 통과(참고).
 
 ## Failed
 
@@ -17,11 +21,9 @@
 
 ## Not Run
 
-- backend pytest(judge/manual/closing/재고반영): **미실행** — backend는 Codex 담당이며 이번 frontend 레인에서 backend 파일을 수정하지 않았다. enum 정합·테스트 보강은 Codex 작업으로 분리.
+- 전체 backend pytest 풀스위트(시간): 미실행. 변경 영향 범위(반품 + master/route)는 실행해 통과 확인.
 
 ## Manual Check Needed
 
-- 브라우저: `/returns/processing`에서 대기 대상이 1건 이상일 때 "엑셀 다운로드" 버튼 노출 및 다운로드(CSV) 확인.
-- 다운로드 CSV에서 운송장/상품코드/바코드가 숫자로 깨지지 않는지(Excel) 확인.
-- 판정 버튼에 generic "리퍼"(REFURB)가 더 이상 없고 리퍼A/B/C로 표시되는지 확인.
-- 기존 Ctrl+C 셀 복사가 정상인지 확인.
+- 브라우저: REFURB_A/B/C 판정 후 반품 이력 `EXTERNAL_OUTBOUND_TARGET` 필터에 노출 확인.
+- DEFECTIVE는 frontend 미노출 상태(backend 지원만 완료). frontend 노출은 후속 작업에서 추가.

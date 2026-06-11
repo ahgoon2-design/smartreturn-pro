@@ -677,6 +677,17 @@ def list_return_history(
     return items, total_count
 
 
+# 외부반출 대상 판정 코드. 신규 명확 코드(REFURB_A/B/C)를 포함하고, 레거시 generic REFURB도 호환 조회한다.
+EXTERNAL_OUTBOUND_TARGET_JUDGEMENTS = (
+    "REFURB",
+    "REFURB_A",
+    "REFURB_B",
+    "REFURB_C",
+    "SAMPLE",
+    "MANUFACTURER_RETURN",
+)
+
+
 def _apply_history_followup_filter(query, followup_status: str):
     if followup_status == "INVENTORY_REFLECTED":
         return query.filter(ReturnIntakeRow.inventory_reflected_yn.is_(True))
@@ -684,7 +695,7 @@ def _apply_history_followup_filter(query, followup_status: str):
         return query.filter(ReturnIntakeRow.external_outbound_status == "CONFIRMED")
     if followup_status == "EXTERNAL_OUTBOUND_TARGET":
         return query.filter(
-            ReturnIntakeRow.judgement_status.in_(("REFURB", "SAMPLE", "MANUFACTURER_RETURN")),
+            ReturnIntakeRow.judgement_status.in_(EXTERNAL_OUTBOUND_TARGET_JUDGEMENTS),
             ReturnIntakeRow.external_outbound_status != "CONFIRMED",
         )
     if followup_status == "READY_TO_REJUDGE":

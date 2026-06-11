@@ -112,3 +112,23 @@
 - `DEFECTIVE`(신규 정본 코드): backend enum 처리 + 고객사 창고 라우팅(`return_warehouse_routes`)에 DEFECTIVE 경로가 있어야 frontend에서 선택·처리완료 가능.
 - judge/manual/closing(재고반영) pytest 보강 필요.
 - ⚠️ Claude Code는 backend 미수정. 위 항목은 Codex가 backend 계약 확정 후 처리하고, 그 뒤 frontend에서 DEFECTIVE 노출을 추가한다.
+
+---
+
+## Backend Phase 1 실행 로그 (Claude Code, backend-engineer 체인) — 완료
+
+> 오늘 저녁까지 Codex 대신 Claude Code가 backend-engineer 체인으로 직접 수행. frontend 파일 미수정.
+
+### backend-engineer (완료)
+- **외부반출 후보 generic REFURB 필터 버그 수정**: `return_intake_repository.py` `_apply_history_followup_filter`의 `EXTERNAL_OUTBOUND_TARGET`가 `("REFURB","SAMPLE","MANUFACTURER_RETURN")`만 필터 → 모듈 상수 `EXTERNAL_OUTBOUND_TARGET_JUDGEMENTS`(REFURB_A/B/C 포함 + 레거시 REFURB 호환)로 교체. (메인 후보 쿼리 `list_external_outbound_candidates`는 서비스 `EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES`를 받아 이미 정상.)
+- **DEFECTIVE 지원 추가**: `return_intake_service.py`에 `JUDGEMENT_DEFECTIVE` 추가 → `ALLOWED_JUDGEMENT_STATUSES`(저장/판정 허용) + `LABEL_REQUIRED_JUDGEMENT_STATUSES`(반품관리번호/라벨 대상). `master_service.py` `RETURN_WAREHOUSE_ROUTE_JUDGMENT_CODES`에 `DEFECTIVE` 추가(고객사 창고 라우팅 설정 허용). **기본 창고 하드코딩 없음** — 라우팅 없으면 `_ensure_processing_task_can_complete`가 처리완료 차단.
+- **재고 무결성 유지**: judge 시점 재고 미반영 로직(일마감 `confirm_return_closing`에서만 반영) 변경 없음.
+
+### 판정 enum 정합 결론
+- 신규 저장 기준: `GOOD/REFURB_A/REFURB_B/REFURB_C/MANUFACTURER_RETURN/SAMPLE/HOLD/DISPOSAL/DEFECTIVE`.
+- 레거시 generic `REFURB`: 신규 판정 선택지 아님(frontend 제거 완료), 외부반출 후보/조회에서는 호환 포함.
+- **DEFECTIVE 미결 정책(보고)**: closing 재고반영(`INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES`)과 외부반출 후보(`EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES`) 포함 여부는 정책 미정 → 현재 미포함. 즉 DEFECTIVE는 판정/창고확정/라벨까지 가능하나 일마감 재고반영·외부반출 자동후보에는 들어가지 않음. 정책 확정 후 세트 추가 필요.
+
+### qa-tester (완료)
+- 신규 테스트 3종 추가(`test_return_intake_api.py`): REFURB_A의 EXTERNAL_OUTBOUND_TARGET 후보 포함, DEFECTIVE 라우팅 있을 때 처리완료+반품관리번호, DEFECTIVE 라우팅 없을 때 처리완료 차단.
+- `pytest tests/test_return_intake_api.py` 80 passed, master/route 관련 139 passed. 회귀 없음.

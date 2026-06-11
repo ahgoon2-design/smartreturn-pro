@@ -2716,3 +2716,133 @@ def test_client_user_cannot_access_other_client_batch(client: TestClient, db_ses
 
     assert response.status_code == 403
     assert response.json()["result_code"] == "CLIENT_SCOPE_DENIED"
+
+
+def test_external_outbound_target_followup_includes_refurb_grades(
+    client: TestClient,
+    db_session: Session,
+):
+    # 외부반출 후보(history followup)가 generic REFURB뿐 아니라 REFURB_A/B/C도 포함해야 한다.
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_outbound_target_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_outbound_target_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-OUT-TARGET",
+                    "return_tracking_no": "RTN-OUT-TARGET",
+                    "product_code": "P001",
+                    "barcode": "880001",
+                    "qty": 1,
+                }
+            ]
+        },
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB_A")
+
+    filtered = client.get(
+        f"/api/returns/history?client_id={client_row.id}&followup_status=EXTERNAL_OUTBOUND_TARGET&page_size=50",
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    row_ids = {item["row_id"] for item in filtered.json()["data"]["items"]}
+    assert task_id in row_ids
+
+
+def test_defective_judgement_completes_with_client_warehouse_route(
+    client: TestClient,
+    db_session: Session,
+):
+    # DEFECTIVE 판정이 ALLOWED + 고객사 창고 라우팅으로 처리완료되어야 한다(기본 창고 하드코딩 없이).
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    defective_warehouse = _create_warehouse_setting(
+        db_session,
+        client_id=client_row.id,
+        usage_type="RETURN_ROUTE_DEFECTIVE",
+    )
+    _create_return_warehouse_route(
+        db_session,
+        client_id=client_row.id,
+        warehouse_id=defective_warehouse.id,
+        judgement_code="DEFECTIVE",
+    )
+    _create_user(
+        db_session,
+        login_id="return_defective_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_defective_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-DEFECTIVE",
+                    "return_tracking_no": "RTN-DEFECTIVE",
+                    "product_code": "P001",
+                    "barcode": "880001",
+                    "qty": 1,
+                }
+            ]
+        },
+    )
+    judged = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="DEFECTIVE")
+    assert judged["judgement_status"] == "DEFECTIVE"
+    assert judged["status"] == "COMPLETED"
+    # DEFECTIVE는 라벨 대상으로 반품관리번호가 생성된다.
+    assert judged["return_management_no"]
+
+
+def test_defective_judgement_blocked_without_warehouse_route(
+    client: TestClient,
+    db_session: Session,
+):
+    # DEFECTIVE 창고 라우팅이 없으면 처리완료가 막혀야 한다(기본 창고를 하드코딩하지 않는다).
+    client_row = _create_client(db_session)
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="return_defective_norote_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="return_defective_norote_admin",
+        client_id=client_row.id,
+        rows_payload={
+            "rows": [
+                {
+                    "row_no": 1,
+                    "order_no": "ORDER-DEFECTIVE-NOROUTE",
+                    "return_tracking_no": "RTN-DEFECTIVE-NOROUTE",
+                    "product_code": "P001",
+                    "barcode": "880001",
+                    "qty": 1,
+                }
+            ]
+        },
+    )
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "DEFECTIVE"},
+        headers=headers,
+    )
+    assert response.status_code != 200
