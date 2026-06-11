@@ -149,6 +149,27 @@ INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES = {
     JUDGEMENT_DISPOSAL,
 }
 
+# 일마감 재고반영 완료 메시지용 판정별 재고 라벨(표시 전용, 로직 무관).
+CLOSING_REFLECTED_STOCK_LABELS = {
+    JUDGEMENT_GOOD: "정상재고",
+    JUDGEMENT_REFURB: "리퍼 재고",
+    JUDGEMENT_REFURB_A: "리퍼A 재고",
+    JUDGEMENT_REFURB_B: "리퍼B 재고",
+    JUDGEMENT_REFURB_C: "리퍼C 재고",
+    JUDGEMENT_SAMPLE: "샘플 재고",
+    JUDGEMENT_MANUFACTURER_RETURN: "제조사반품 재고",
+    JUDGEMENT_DISPOSAL: "폐기 재고",
+}
+
+
+def _closing_reflected_message(judgement_status: str | None) -> str:
+    """판정/재고상태에 맞는 일마감 재고반영 완료 문구를 만든다(표시 전용)."""
+    label = CLOSING_REFLECTED_STOCK_LABELS.get(judgement_status or JUDGEMENT_GOOD)
+    if label is None:
+        return "후속 처리 대상으로 반영했습니다."
+    return f"{label}에 반영했습니다."
+
+
 EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES = {
     JUDGEMENT_REFURB,
     JUDGEMENT_REFURB_A,
@@ -1709,7 +1730,7 @@ def confirm_return_closing(
                     row_id=row.id,
                     judgement_status=row.judgement_status,
                     result="REFLECTED",
-                    message="정상재고에 반영했습니다.",
+                    message=_closing_reflected_message(row.judgement_status),
                     inventory_event_id=event.id,
                     warehouse_id=warehouse.id,
                 )
