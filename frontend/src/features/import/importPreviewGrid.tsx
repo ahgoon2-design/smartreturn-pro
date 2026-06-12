@@ -2,6 +2,7 @@ import type { SmartDataGridColumn } from "../../components/grid";
 import type { ImportJobRow, ImportValidationError } from "../../types/import";
 
 export type ImportPreviewRowFilter = "ALL" | "ERROR" | "WARNING";
+export type ImportPreviewMessageFormatter = (message: string, row: ImportJobRow, rowErrors: ImportValidationError[]) => string;
 
 const VALIDATION_STATUS_MAP = {
   VALID: { label: "정상", status: "VALID" },
@@ -10,7 +11,31 @@ const VALIDATION_STATUS_MAP = {
   NOT_VALIDATED: { label: "검증 전", status: "NOT_VALIDATED" },
 };
 
-export function createImportPreviewColumns(errors: ImportValidationError[]): SmartDataGridColumn<ImportJobRow>[] {
+// 기존 상품/바코드 import 화면이 쓰는 기본 데이터 컬럼. fieldColumns 미지정 시 그대로 유지한다.
+const DEFAULT_PREVIEW_FIELD_COLUMNS: Array<{ key: string; title?: string }> = [
+  { key: "product_code" },
+  { key: "product_name" },
+  { key: "barcode" },
+  { key: "primary_barcode" },
+  { key: "additional_barcode" },
+  { key: "carton_barcode" },
+  { key: "barcode_type" },
+  { key: "unit_qty" },
+];
+
+export function createImportPreviewColumns(
+  errors: ImportValidationError[],
+  fieldColumns?: Array<{ key: string; title?: string }>,
+  formatMessage?: ImportPreviewMessageFormatter,
+): SmartDataGridColumn<ImportJobRow>[] {
+  const dataColumns = (fieldColumns?.length ? fieldColumns : DEFAULT_PREVIEW_FIELD_COLUMNS).map<SmartDataGridColumn<ImportJobRow>>(
+    (field) => ({
+      key: field.key,
+      title: field.title || field.key,
+      render: (_value, row) => readImportRowValue(row, field.key),
+      copyable: true,
+    }),
+  );
   return [
     { key: "row_no", title: "행번호", dataIndex: "row_no", width: 72, fixed: "left", sortable: true },
     {
@@ -29,58 +54,11 @@ export function createImportPreviewColumns(errors: ImportValidationError[]): Sma
       errorHighlight: (row) => getImportPreviewRowSeverity(errors, row) === "ERROR",
       warningHighlight: (row) => getImportPreviewRowSeverity(errors, row) === "WARNING",
     },
-    {
-      key: "product_code",
-      title: "product_code",
-      render: (_value, row) => readImportRowValue(row, "product_code"),
-      copyable: true,
-    },
-    {
-      key: "product_name",
-      title: "product_name",
-      render: (_value, row) => readImportRowValue(row, "product_name"),
-      copyable: true,
-    },
-    {
-      key: "barcode",
-      title: "barcode",
-      render: (_value, row) => readImportRowValue(row, "barcode"),
-      copyable: true,
-    },
-    {
-      key: "primary_barcode",
-      title: "primary_barcode",
-      render: (_value, row) => readImportRowValue(row, "primary_barcode"),
-      copyable: true,
-    },
-    {
-      key: "additional_barcode",
-      title: "additional_barcode",
-      render: (_value, row) => readImportRowValue(row, "additional_barcode"),
-      copyable: true,
-    },
-    {
-      key: "carton_barcode",
-      title: "carton_barcode",
-      render: (_value, row) => readImportRowValue(row, "carton_barcode"),
-      copyable: true,
-    },
-    {
-      key: "barcode_type",
-      title: "barcode_type",
-      render: (_value, row) => readImportRowValue(row, "barcode_type"),
-      copyable: true,
-    },
-    {
-      key: "unit_qty",
-      title: "unit_qty",
-      render: (_value, row) => readImportRowValue(row, "unit_qty"),
-      copyable: true,
-    },
+    ...dataColumns,
     {
       key: "validation_message",
       title: "처리 메시지",
-      render: (_value, row) => getImportPreviewRowMessage(errors, row),
+      render: (_value, row) => getImportPreviewRowMessage(errors, row, formatMessage),
       errorHighlight: (row) => getImportPreviewRowSeverity(errors, row) === "ERROR",
       warningHighlight: (row) => getImportPreviewRowSeverity(errors, row) === "WARNING",
     },
@@ -138,12 +116,16 @@ function summarizeImportPreviewRowIssues(errors: ImportValidationError[], row: I
   return `오류 ${errorCount} / 경고 ${warningCount}`;
 }
 
-function getImportPreviewRowMessage(errors: ImportValidationError[], row: ImportJobRow) {
+function getImportPreviewRowMessage(errors: ImportValidationError[], row: ImportJobRow, formatMessage?: ImportPreviewMessageFormatter) {
+  const rowErrors = getRowErrors(errors, row);
   if (row.validation_message) {
-    return row.validation_message;
+    return formatMessage ? formatMessage(row.validation_message, row, rowErrors) : row.validation_message;
   }
-  return getRowErrors(errors, row)
-    .map((item) => item.error_code)
+  return rowErrors
+    .map((item) => {
+      const message = item.error_message || item.error_code;
+      return formatMessage ? formatMessage(message, row, rowErrors) : message;
+    })
     .join(", ");
 }
 

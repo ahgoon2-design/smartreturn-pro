@@ -33,12 +33,35 @@ import type {
   ImportValidationError,
   SourceType,
 } from "../../types/import";
-import { createImportPreviewColumns, filterImportPreviewRows, type ImportPreviewRowFilter } from "./importPreviewGrid";
+import {
+  createImportPreviewColumns,
+  filterImportPreviewRows,
+  type ImportPreviewMessageFormatter,
+  type ImportPreviewRowFilter,
+} from "./importPreviewGrid";
 
 interface SmartImportLauncherProps {
   importType: ImportType;
   buttonLabel?: string;
   onConfirmed?: () => void | Promise<void>;
+  /** 모달 제목. 기본은 상품/바코드 대량 등록. */
+  title?: string;
+  /** 붙여넣기 초기 샘플. import_type별 헤더 예시를 넘긴다. */
+  samplePasteText?: string;
+  /** 확정 성공 안내 문구. 기본은 상품/바코드 마스터 기준. */
+  confirmSuccessMessage?: string;
+  /** 고객 포털처럼 client가 고정된 화면에서 사용. 지정 시 고객사 선택 UI를 숨기고 목록 조회를 하지 않는다. */
+  fixedClientId?: number;
+  /** 양식 다운로드 버튼 노출 여부. backend가 양식을 제공하지 않는 import_type은 숨긴다. */
+  showTemplateDownload?: boolean;
+  /** import job source_name에 저장할 식별자 접두어. */
+  sourceName?: string;
+  /** 오류 문구 변환기. null/undefined를 반환하면 기본 문구를 쓴다. */
+  formatErrorMessage?: (error: unknown) => string | null | undefined;
+  /** true면 미리보기 데이터 컬럼을 import_type의 canonical 필드 기준으로 만든다. 기본은 기존 상품 컬럼 유지. */
+  useCanonicalPreviewColumns?: boolean;
+  /** 검증 row 메시지 변환기. 고객 화면에서 내부 필드명/영문 문구를 감출 때 사용한다. */
+  formatPreviewMessage?: ImportPreviewMessageFormatter;
 }
 
 const SOURCE_OPTIONS: Array<{ value: SourceType; label: string }> = [
@@ -50,12 +73,25 @@ const sampleProductPasteText =
   "상품코드\t상품명\t옵션명\t대표바코드\t추가바코드\t카톤바코드\t카톤입수\t사용여부\t메모\n" +
   "LOCAL-001\t테스트 상품\t기본\t880000000001\t\t1880000000001\t12\t사용\t";
 
-export function SmartImportLauncher({ importType, buttonLabel = "대량 등록", onConfirmed }: SmartImportLauncherProps) {
+export function SmartImportLauncher({
+  importType,
+  buttonLabel = "대량 등록",
+  onConfirmed,
+  title = "상품/바코드 대량 등록",
+  samplePasteText = sampleProductPasteText,
+  confirmSuccessMessage = "상품/바코드 마스터에 확정 반영했습니다.",
+  fixedClientId,
+  showTemplateDownload = true,
+  sourceName = "product-master",
+  formatErrorMessage,
+  useCanonicalPreviewColumns = false,
+  formatPreviewMessage,
+}: SmartImportLauncherProps) {
   const [open, setOpen] = useState(false);
   const [clients, setClients] = useState<ClientSummary[]>([]);
-  const [clientId, setClientId] = useState<number | null>(null);
+  const [clientId, setClientId] = useState<number | null>(fixedClientId ?? null);
   const [sourceType, setSourceType] = useState<SourceType>("PASTE");
-  const [pasteText, setPasteText] = useState(sampleProductPasteText);
+  const [pasteText, setPasteText] = useState(samplePasteText);
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rows, setRows] = useState<ImportJobRow[]>([]);
@@ -72,7 +108,17 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
   const [fileInputKey, setFileInputKey] = useState(0);
 
   const parsedRows = useMemo(() => parsePasteRows(pasteText), [pasteText]);
-  const columns = useMemo(() => createImportPreviewColumns(errors), [errors]);
+  const columns = useMemo(
+    () =>
+      createImportPreviewColumns(
+        errors,
+        useCanonicalPreviewColumns && fieldOptions.length
+          ? fieldOptions.map((field) => ({ key: field.field_name, title: field.label || field.field_name }))
+          : undefined,
+        formatPreviewMessage,
+      ),
+    [errors, fieldOptions, useCanonicalPreviewColumns, formatPreviewMessage],
+  );
   const filteredRows = useMemo(() => filterImportPreviewRows(rows, errors, rowFilter), [errors, rowFilter, rows]);
   const currentJobStatus = job?.status || "DRAFT";
   const skippedImportRows = (job?.skipped_empty_rows || 0) + (job?.skipped_noise_rows || 0);
@@ -90,25 +136,33 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
     job && currentJobStatus === "VALIDATED" && rows.length > 0 && errorRows === 0 && !mappingBlocked && (!mappingReviewRequired || mappingReviewed),
   );
 
+  const resolveErrorMessage = (error: unknown) => formatErrorMessage?.(error) || toUserMessage(error);
+
   useEffect(() => {
     if (!open) {
       return;
     }
-    listClients()
-      .then((items) => {
-        const activeClients = items.filter((client) => client.active_yn);
-        setClients(activeClients);
-        setClientId((current) => current || getClientId(activeClients[0]) || null);
-      })
-      .catch((error) => setErrorMessage(toUserMessage(error)));
+    if (fixedClientId) {
+      // client 고정 화면(고객 포털)은 고객사 목록 권한이 없으므로 목록 조회를 하지 않는다.
+      setClientId(fixedClientId);
+    } else {
+      listClients()
+        .then((items) => {
+          const activeClients = items.filter((client) => client.active_yn);
+          setClients(activeClients);
+          setClientId((current) => current || getClientId(activeClients[0]) || null);
+        })
+        .catch((error) => setErrorMessage(resolveErrorMessage(error)));
+    }
     getImportSourceTypeFields(importType)
       .then((response) => setFieldOptions(response.fields || []))
-      .catch((error) => setErrorMessage(toUserMessage(error)));
-  }, [importType, open]);
+      .catch((error) => setErrorMessage(resolveErrorMessage(error)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importType, open, fixedClientId]);
 
   function resetState() {
     setSourceType("PASTE");
-    setPasteText(sampleProductPasteText);
+    setPasteText(samplePasteText);
     setExcelFile(null);
     setJob(null);
     setRows([]);
@@ -135,7 +189,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      setErrorMessage(toUserMessage(error));
+      setErrorMessage(resolveErrorMessage(error));
     }
   }
 
@@ -152,7 +206,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
         import_type: importType,
         source_type: sourceType,
         requested_client_id: clientId,
-        source_name: sourceType === "EXCEL_FILE" ? excelFile?.name || "product-master-upload" : "product-master-paste",
+        source_name: sourceType === "EXCEL_FILE" ? excelFile?.name || `${sourceName}-upload` : `${sourceName}-paste`,
         file_name: sourceType === "EXCEL_FILE" ? excelFile?.name : undefined,
       });
       const jobId = getJobId(createdJob);
@@ -169,7 +223,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
         const savedRows = await savePasteRows(jobId, {
           rows: parsedRows,
           replace_existing: false,
-          source_name: "product-master-paste",
+          source_name: `${sourceName}-paste`,
         });
         setJob({
           ...createdJob,
@@ -190,7 +244,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       await refreshRowsAndErrors(jobId);
       setNotice("미리보기와 추천 매핑을 생성했습니다. 매핑 결과를 확인한 뒤 검증을 실행하세요.");
     } catch (error) {
-      setErrorMessage(toUserMessage(error));
+      setErrorMessage(resolveErrorMessage(error));
     } finally {
       setLoading(false);
       setLoadingMessage("");
@@ -212,7 +266,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       await refreshRowsAndErrors(jobId);
       setNotice(summary.status === "HAS_ERRORS" ? "검증 결과 오류 행이 있습니다. 확정할 수 없습니다." : "검증이 완료되었습니다.");
     } catch (error) {
-      setErrorMessage(toUserMessage(error));
+      setErrorMessage(resolveErrorMessage(error));
     } finally {
       setLoading(false);
       setLoadingMessage("");
@@ -239,7 +293,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       await refreshRowsAndErrors(jobId);
       setNotice("매핑 확인이 저장되었습니다. 이제 검증을 실행할 수 있습니다.");
     } catch (error) {
-      setErrorMessage(toUserMessage(error));
+      setErrorMessage(resolveErrorMessage(error));
     } finally {
       setLoading(false);
       setLoadingMessage("");
@@ -295,9 +349,9 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       setJob({ ...job, ...summary, id: job.id, job_id: jobId });
       await refreshRowsAndErrors(jobId);
       await onConfirmed?.();
-      setNotice("상품/바코드 마스터에 확정 반영했습니다.");
+      setNotice(confirmSuccessMessage);
     } catch (error) {
-      setErrorMessage(toUserMessage(error));
+      setErrorMessage(resolveErrorMessage(error));
     } finally {
       setLoading(false);
       setLoadingMessage("");
@@ -312,9 +366,11 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
 
   return (
     <>
-      <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
-        양식 다운로드
-      </Button>
+      {showTemplateDownload ? (
+        <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
+          양식 다운로드
+        </Button>
+      ) : null}
       <Button
         type="primary"
         icon={<InboxOutlined />}
@@ -327,7 +383,7 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
       </Button>
 
       <SmartModalShell
-        title="상품/바코드 대량 등록"
+        title={title}
         open={open}
         width={1100}
         onCancel={() => setOpen(false)}
@@ -356,18 +412,20 @@ export function SmartImportLauncher({ importType, buttonLabel = "대량 등록",
             message="자동매핑은 추천입니다"
             description="원본 행 순서를 보존하며, 검증 결과 ERROR가 있으면 확정 반영할 수 없습니다."
           />
-          <section className="smart-toolbar" aria-label="상품 import 설정">
-            <Select
-              className="smart-control"
-              placeholder="고객사 선택"
-              value={clientId ?? undefined}
-              options={clients.map((client) => ({
-                value: getClientId(client),
-                label: `${client.client_code} · ${client.client_name}`,
-              }))}
-              onChange={setClientId}
-              disabled={Boolean(job)}
-            />
+          <section className="smart-toolbar" aria-label="import 설정">
+            {!fixedClientId ? (
+              <Select
+                className="smart-control"
+                placeholder="고객사 선택"
+                value={clientId ?? undefined}
+                options={clients.map((client) => ({
+                  value: getClientId(client),
+                  label: `${client.client_code} · ${client.client_name}`,
+                }))}
+                onChange={setClientId}
+                disabled={Boolean(job)}
+              />
+            ) : null}
             <Select className="smart-control" value={sourceType} options={SOURCE_OPTIONS} onChange={setSourceType} disabled={Boolean(job)} />
             <SmartStatusBadge status={currentJobStatus} />
           </section>

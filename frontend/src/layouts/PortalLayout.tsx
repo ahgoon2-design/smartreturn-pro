@@ -36,7 +36,7 @@ export function PortalLayout() {
       label: "반품",
       children: [
         { key: ROUTE_PATHS.portalReturnStatus, icon: <ScanOutlined />, label: "반품 처리현황" },
-        { key: "portal-return-intake-ready", icon: <RollbackOutlined />, label: "반품 접수 등록 준비중", disabled: true },
+        { key: ROUTE_PATHS.portalReturnIntake, icon: <RollbackOutlined />, label: "반품 접수 등록" },
       ],
     },
     {
