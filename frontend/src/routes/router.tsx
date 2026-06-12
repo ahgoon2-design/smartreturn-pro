@@ -3,6 +3,7 @@ import { MainLayout } from "../layouts/MainLayout";
 import { PortalLayout } from "../layouts/PortalLayout";
 import { LoginPage } from "../pages/auth/LoginPage";
 import { PortalDashboardPage } from "../pages/portal/PortalDashboardPage";
+import { PortalReturnStatusPage } from "../pages/portal/PortalReturnStatusPage";
 import { PasswordChangeRequiredPage } from "../pages/auth/PasswordChangeRequiredPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ChannelAccountManagementScreen } from "../features/channels/ChannelAccountManagementScreen";
@@ -204,6 +205,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to={ROUTE_PATHS.portalDashboard} replace /> },
       { path: "dashboard", element: <PortalDashboardPage /> },
+      { path: "returns", element: <PortalReturnStatusPage /> },
     ],
   },
   {
