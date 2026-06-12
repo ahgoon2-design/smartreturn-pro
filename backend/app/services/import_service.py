@@ -13,10 +13,12 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.core.auth_context import resolve_effective_agency_id, resolve_effective_client_id
-from app.core.exceptions import AuthError, ClientScopeDeniedError
+from app.core.exceptions import AuthError, ClientScopeDeniedError, PermissionDeniedError
 from app.core.permissions import require_permission, require_roles
+from app.models.returns import ReturnIntakeRow
 from app.repositories import master_repository
 from app.repositories import import_repository as repo
+from app.repositories import return_intake_repository
 from app.schemas.auth import AuthContext
 from app.schemas.imports import (
     ImportAutoMapRequest,
@@ -72,6 +74,10 @@ ALLOWED_SOURCE_TYPES = {
     "API",
 }
 
+PORTAL_RETURN_IMPORT_TYPES = {"RETURN_RECEPTION"}
+INTERNAL_IMPORT_MANAGE_ROLES = {"SUPER_ADMIN", "INTERNAL_ADMIN"}
+PORTAL_RETURN_IMPORT_ROLES = {"CLIENT_ADMIN", "CLIENT_USER"}
+
 PASTE_ROW_SOURCE_TYPES = {"PASTE", "MANUAL", "CSV_FILE"}
 EXCEL_FILE_SOURCE_TYPES = {"EXCEL_FILE"}
 VALIDATION_SOURCE_TYPES = {"PASTE", "MANUAL", "EXCEL_FILE", "CSV_FILE"}
@@ -109,6 +115,27 @@ RISKY_MAPPING_FIELDS = {
 EXCEL_UPLOAD_READY_STATUS = "DRAFT"
 EXCEL_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 DEFAULT_IMPORT_BARCODE_TYPE = "EACH"
+TRACKING_FIELD_NAMES = {"tracking_no", "invoice_no", "waybill_no", "return_tracking_no", "original_tracking_no"}
+TRACKING_IMPORT_TYPES = {
+    "RETURN_RECEPTION",
+    "RETURN_EXPECTED",
+    "RETURN_WAYBILL_EXPECTED",
+    "VENDOR_RETURN_DETAIL",
+    "RETURN_INTAKE",
+}
+NON_TRACKING_TEXT_TOKENS = {
+    "재접수요청",
+    "재접수",
+    "반품요청",
+    "확인필요",
+    "미정",
+    "없음",
+    "없슴",
+    "무",
+    "보류",
+    "요청",
+    "문의",
+}
 
 CANONICAL_FIELDS: dict[str, list[dict]] = {
     "PRODUCT_MASTER": [
@@ -379,6 +406,13 @@ HEADER_ALIASES = {
     "delivery_status": ("delivery_status", "최종상태", "배송상태"),
 }
 
+HEADER_ALIASES.update(
+    {
+        "invoice_no": ("invoice_no", "invoice", "송장번호", "운송장번호", "택배번호"),
+        "waybill_no": ("waybill_no", "waybill", "송장번호", "운송장번호", "택배번호"),
+    }
+)
+
 SOURCE_TYPE_HEADER_ALIAS_OVERRIDES = {
     "RETURN_INTAKE": {
         "반품송장": "return_tracking_no",
@@ -642,8 +676,56 @@ def _require_import_view(auth: AuthContext) -> None:
 
 
 def _require_import_manage(auth: AuthContext) -> None:
-    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
+    require_roles(auth, INTERNAL_IMPORT_MANAGE_ROLES)
     require_permission(auth, "IMPORT_MANAGE")
+
+
+def _is_portal_return_import_type(import_type: str | None) -> bool:
+    return bool(import_type and import_type in PORTAL_RETURN_IMPORT_TYPES)
+
+
+def _is_portal_return_import_user(auth: AuthContext) -> bool:
+    return bool(set(auth.roles) & PORTAL_RETURN_IMPORT_ROLES)
+
+
+def _has_permission(auth: AuthContext, permission_code: str) -> bool:
+    return "SUPER_ADMIN" in auth.roles or permission_code in auth.permissions
+
+
+def _can_use_portal_return_import(auth: AuthContext) -> bool:
+    return _is_portal_return_import_user(auth) and _has_permission(auth, "RETURN_CLIENT_SUBMIT")
+
+
+def _require_import_write_for_type(auth: AuthContext, import_type: str) -> None:
+    if set(auth.roles) & INTERNAL_IMPORT_MANAGE_ROLES:
+        require_permission(auth, "IMPORT_MANAGE")
+        return
+    if _is_portal_return_import_type(import_type) and _can_use_portal_return_import(auth):
+        require_permission(auth, "RETURN_CLIENT_SUBMIT")
+        return
+    raise PermissionDeniedError("This account cannot use the requested import type.")
+
+
+def _require_import_read_for_type(auth: AuthContext, import_type: str) -> None:
+    if set(auth.roles) & INTERNAL_IMPORT_MANAGE_ROLES:
+        require_permission(auth, "IMPORT_VIEW")
+        return
+    if _has_permission(auth, "IMPORT_VIEW"):
+        return
+    if _is_portal_return_import_type(import_type) and _can_use_portal_return_import(auth):
+        require_permission(auth, "RETURN_CLIENT_SUBMIT")
+        return
+    raise PermissionDeniedError("This account cannot view the requested import type.")
+
+
+def _require_import_write_for_job(auth: AuthContext, job) -> None:
+    _require_import_write_for_type(auth, job.import_type)
+    _ensure_job_access(auth, job)
+
+
+def _require_import_read_for_job(auth: AuthContext, job) -> None:
+    _require_import_read_for_type(auth, job.import_type)
+    _ensure_job_access(auth, job)
 
 
 def _ensure_import_type(import_type: str) -> str:
@@ -997,7 +1079,16 @@ def _normalize_tracking_no(value) -> str | None:
     text = _normalize_cell_value(value)
     if not _is_meaningful_value(text):
         return None
+    compact_text = re.sub(r"\s+", "", text).lower()
+    if re.search(r"[가-힣]", text):
+        return None
+    if compact_text in NON_TRACKING_TEXT_TOKENS:
+        return None
+    if any(token in compact_text for token in NON_TRACKING_TEXT_TOKENS if len(token) >= 3):
+        return None
     normalized = re.sub(r"[\s.\-]", "", text)
+    if not re.fullmatch(r"[A-Za-z0-9]+", normalized):
+        return None
     return normalized or None
 
 
@@ -1085,6 +1176,8 @@ def _normalize_import_row(data: dict) -> dict:
     normalized = dict(data)
     field_normalizers = {
         "tracking_no": _normalize_tracking_no,
+        "invoice_no": _normalize_tracking_no,
+        "waybill_no": _normalize_tracking_no,
         "return_tracking_no": _normalize_tracking_no,
         "original_tracking_no": _normalize_tracking_no,
         "primary_barcode": _normalize_barcode_import_value,
@@ -1111,6 +1204,9 @@ def _normalize_import_row(data: dict) -> dict:
         original = normalized.get(field_name)
         next_value = normalizer(original)
         if next_value is None:
+            original_text = _normalize_cell_value(original)
+            if original_text:
+                normalized[f"{field_name}_original"] = original_text
             normalized[field_name] = ""
             continue
         if _normalize_cell_value(original) != next_value:
@@ -1580,16 +1676,21 @@ def _ensure_job_access(auth: AuthContext, job) -> None:
 
 
 def list_import_source_types(db: Session, auth: AuthContext) -> dict:
-    _require_import_view(auth)
+    if not _has_permission(auth, "IMPORT_VIEW") and _can_use_portal_return_import(auth):
+        require_permission(auth, "RETURN_CLIENT_SUBMIT")
+        import_types = sorted(PORTAL_RETURN_IMPORT_TYPES)
+    else:
+        _require_import_view(auth)
+        import_types = sorted(ALLOWED_IMPORT_TYPES)
     return ImportSourceTypeResponse(
-        import_types=sorted(ALLOWED_IMPORT_TYPES),
+        import_types=import_types,
         source_types=sorted(ALLOWED_SOURCE_TYPES),
     ).model_dump()
 
 
 def get_import_source_type_fields(db: Session, auth: AuthContext, import_type: str) -> dict:
-    _require_import_view(auth)
     safe_import_type = _ensure_import_type(import_type)
+    _require_import_read_for_type(auth, safe_import_type)
     fields = []
     for field in CANONICAL_FIELDS.get(safe_import_type, []):
         field_name = field["field_name"]
@@ -1827,12 +1928,11 @@ def _save_mapping_decisions(
 
 
 def auto_map_import_job(db: Session, auth: AuthContext, *, job_id: int, request: ImportAutoMapRequest) -> dict:
-    _require_import_manage(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job을 찾을 수 없습니다.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_write_for_job(auth, job)
     rows = repo.list_import_job_rows_for_validation(db, job_id=job.id)
     if not rows:
         raise _business_error("IMPORT_JOB_MAPPING_NO_ROWS", "매핑할 row가 없습니다.")
@@ -1898,12 +1998,11 @@ def auto_map_import_job(db: Session, auth: AuthContext, *, job_id: int, request:
 
 
 def apply_import_job_mapping(db: Session, auth: AuthContext, *, job_id: int, request: ImportMappingApplyRequest) -> dict:
-    _require_import_manage(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job을 찾을 수 없습니다.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_write_for_job(auth, job)
     rows = repo.list_import_job_rows_for_validation(db, job_id=job.id)
     if not rows:
         raise _business_error("IMPORT_JOB_MAPPING_NO_ROWS", "매핑할 row가 없습니다.")
@@ -1999,7 +2098,15 @@ def list_mapping_profiles(
     import_type: str | None = None,
     source_type: str | None = None,
 ) -> dict:
-    _require_import_view(auth)
+    if import_type:
+        safe_import_type = _ensure_import_type(import_type)
+        _require_import_read_for_type(auth, safe_import_type)
+        import_type = safe_import_type
+    elif not _has_permission(auth, "IMPORT_VIEW") and _can_use_portal_return_import(auth):
+        require_permission(auth, "RETURN_CLIENT_SUBMIT")
+        import_type = "RETURN_RECEPTION"
+    else:
+        _require_import_view(auth)
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
     items = repo.list_import_mapping_profiles(
         db,
@@ -2031,8 +2138,8 @@ def create_mapping_profile(db: Session, auth: AuthContext, request: ImportMappin
 
 
 def build_import_template(db: Session, auth: AuthContext, import_type: str) -> tuple[str, bytes]:
-    _require_import_view(auth)
     safe_import_type = _ensure_import_type(import_type)
+    _require_import_read_for_type(auth, safe_import_type)
     if safe_import_type != "PRODUCT_MASTER":
         raise _business_error("IMPORT_TEMPLATE_UNSUPPORTED", "현재는 PRODUCT_MASTER 양식만 제공합니다.")
     headers = [
@@ -2196,6 +2303,56 @@ def _first_text_value(data: dict, *field_names: str) -> str | None:
         if value:
             return value
     return None
+
+
+def _tracking_original_value(data: dict, field_name: str) -> str | None:
+    original_value = data.get(f"{field_name}_original")
+    if not _is_blank(original_value):
+        return str(original_value).strip()
+    raw_value = data.get(field_name)
+    if not _is_blank(raw_value):
+        return str(raw_value).strip()
+    return None
+
+
+def _validate_tracking_values(data: dict, field_names: tuple[str, ...]) -> list[dict]:
+    issues: list[dict] = []
+    for field_name in field_names:
+        if field_name not in TRACKING_FIELD_NAMES:
+            continue
+        original_value = _tracking_original_value(data, field_name)
+        if not original_value:
+            continue
+        normalized_value = _text_value(data, field_name)
+        if not normalized_value:
+            issues.append(
+                _issue(
+                    field_name=field_name,
+                    raw_value=original_value,
+                    error_code="INVALID_TRACKING_NO_VALUE",
+                    error_message="tracking number value is not valid.",
+                )
+            )
+            continue
+        if re.fullmatch(r"\d+", normalized_value) and len(normalized_value) < 8:
+            issues.append(
+                _issue(
+                    field_name=field_name,
+                    raw_value=original_value,
+                    error_code="INVALID_TRACKING_NO_VALUE",
+                    error_message="tracking number value is too short.",
+                )
+            )
+        if len(normalized_value) > 30:
+            issues.append(
+                _issue(
+                    field_name=field_name,
+                    raw_value=original_value,
+                    error_code="INVALID_TRACKING_NO_VALUE",
+                    error_message="tracking number value is too long.",
+                )
+            )
+    return issues
 
 
 def _bool_value_or_default(data: dict, field_name: str, default: bool) -> bool:
@@ -2370,6 +2527,7 @@ def _validate_product_barcode(data: dict) -> list[dict]:
 def _validate_return_reception(data: dict) -> list[dict]:
     issues = []
     issues.extend(_required_one_of(data, ("tracking_no", "invoice_no")))
+    issues.extend(_validate_tracking_values(data, ("tracking_no", "invoice_no")))
     issues.extend(_required_one_of(data, ("product_code", "barcode")))
     return issues
 
@@ -2377,12 +2535,16 @@ def _validate_return_reception(data: dict) -> list[dict]:
 def _validate_return_intake_import(data: dict) -> list[dict]:
     issues = []
     issues.extend(_required_one_of(data, ("return_tracking_no", "tracking_no", "original_tracking_no")))
+    issues.extend(_validate_tracking_values(data, ("return_tracking_no", "tracking_no", "original_tracking_no")))
     issues.extend(_number_min_if_present(data, "qty", min_value=1))
     return issues
 
 
 def _validate_return_expected(data: dict) -> list[dict]:
-    return _required_one_of(data, ("tracking_no", "invoice_no"))
+    issues = []
+    issues.extend(_required_one_of(data, ("tracking_no", "invoice_no")))
+    issues.extend(_validate_tracking_values(data, ("tracking_no", "invoice_no")))
+    return issues
 
 
 def _validate_inbound_expected(data: dict) -> list[dict]:
@@ -2451,13 +2613,13 @@ def _validation_message(issues: list[dict]) -> str | None:
 
 
 def create_import_job(db: Session, auth: AuthContext, request: ImportJobCreateRequest) -> dict:
-    _require_import_manage(auth)
-    if request.requested_client_id is None:
+    import_type = _ensure_import_type(request.import_type)
+    source_type = _ensure_source_type(request.source_type)
+    _require_import_write_for_type(auth, import_type)
+    if request.requested_client_id is None and not auth.is_client_user:
         raise _business_error("IMPORT_JOB_REQUESTED_CLIENT_REQUIRED", "requested_client_id는 필수입니다.")
     requested_client_id = resolve_effective_client_id(auth, request.requested_client_id)
 
-    import_type = _ensure_import_type(request.import_type)
-    source_type = _ensure_source_type(request.source_type)
     _ensure_requested_client(db, requested_client_id)
     agency_id = master_repository.get_client_agency_id(db, requested_client_id)
     if request.requested_warehouse_id is not None:
@@ -2497,12 +2659,11 @@ def save_paste_import_job_rows(
     job_id: int,
     request: ImportPasteRowsRequest,
 ) -> dict:
-    _require_import_manage(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job??李얠쓣 ???놁뒿?덈떎.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_write_for_job(auth, job)
     _ensure_paste_source_type(job.source_type)
 
     normalized_rows = _normalize_paste_rows(request)
@@ -2567,12 +2728,11 @@ def upload_excel_import_job_file(
     mime_type: str | None,
     file_bytes: bytes,
 ) -> dict:
-    _require_import_manage(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job was not found.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_write_for_job(auth, job)
     _ensure_excel_source_type(job.source_type)
     if job.status != EXCEL_UPLOAD_READY_STATUS:
         raise _business_error("IMPORT_JOB_EXCEL_UPLOAD_STATUS_INVALID", "Import job is not ready for Excel upload.")
@@ -2656,7 +2816,6 @@ def validate_import_job(
     job_id: int,
     request: ImportValidationRunRequest,
 ) -> dict:
-    _require_import_manage(auth)
     if request.force:
         raise _business_error("IMPORT_JOB_VALIDATE_FORCE_UNSUPPORTED", "force validation is not supported.")
 
@@ -2664,7 +2823,7 @@ def validate_import_job(
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job was not found.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_write_for_job(auth, job)
     _ensure_validation_source_type(job.source_type)
     if job.status in VALIDATION_COMPLETED_STATUSES:
         raise _business_error("IMPORT_JOB_VALIDATE_ALREADY_DONE", "Import job validation is already completed.")
@@ -2859,6 +3018,117 @@ def _apply_product_barcode_row(db: Session, *, client_id: int, row_item) -> tupl
     return "SKIPPED", product.id, None
 
 
+def _return_reception_intake_raw_data(job, row_item, data: dict) -> dict:
+    return {
+        "source": "IMPORT_RETURN_RECEPTION",
+        "import_job_id": job.id,
+        "import_job_row_id": row_item.id,
+        "import_type": job.import_type,
+        "source_type": job.source_type,
+        "source_row_key": row_item.source_row_key,
+        "raw_json": row_item.raw_json if isinstance(row_item.raw_json, dict) else {},
+        "normalized_json": data,
+    }
+
+
+def _apply_return_reception_rows(
+    db: Session,
+    *,
+    auth: AuthContext,
+    job,
+    rows: list,
+) -> tuple[int, int, int, list[dict]]:
+    batch = return_intake_repository.create_batch(
+        db,
+        agency_id=job.agency_id,
+        client_id=job.requested_client_id,
+        client_unit_id=auth.client_unit_id if auth.is_client_user else None,
+        source_type="IMPORT_RETURN_RECEPTION",
+        source_name=job.source_name or job.file_name or "RETURN_RECEPTION import",
+        status="VALIDATED",
+        created_by=auth.user_id,
+        memo=f"import_job_id={job.id}",
+    )
+
+    intake_rows: list[ReturnIntakeRow] = []
+    failure_errors: list[dict] = []
+    applied_rows = 0
+    failed_rows = 0
+    warning_rows = 0
+
+    for row_item in rows:
+        if row_item.validation_status not in {"VALID", "WARNING"}:
+            row_item.target_action = "FAILED"
+            row_item.target_table = "return_intake_rows"
+            failed_rows += 1
+            failure_errors.append(
+                {
+                    "job_id": job.id,
+                    "row_id": row_item.id,
+                    "row_no": row_item.row_no,
+                    "field_name": None,
+                    "raw_value": None,
+                    "error_code": "IMPORT_ROW_NOT_VALIDATED",
+                    "error_message": "Row is not validated.",
+                    "severity": "ERROR",
+                }
+            )
+            continue
+
+        data = _row_data(row_item)
+        return_tracking_no = _first_text_value(data, "tracking_no", "invoice_no", "return_tracking_no")
+        product_code = _text_value(data, "product_code")
+        barcode = _first_text_value(data, "barcode", "product_barcode", "primary_barcode")
+        qty_text = _text_value(data, "qty")
+        qty = None
+        if qty_text:
+            try:
+                qty = int(float(qty_text))
+            except (TypeError, ValueError):
+                qty = None
+        intake_row = ReturnIntakeRow(
+            agency_id=job.agency_id,
+            batch_id=batch.id,
+            client_id=job.requested_client_id,
+            client_unit_id=auth.client_unit_id if auth.is_client_user else None,
+            row_no=row_item.row_no,
+            order_no=_text_value(data, "order_no"),
+            return_tracking_no=return_tracking_no,
+            original_tracking_no=_text_value(data, "original_tracking_no"),
+            product_code=product_code,
+            barcode=barcode,
+            product_name=_text_value(data, "product_name"),
+            option_name=_text_value(data, "option_name"),
+            qty=qty,
+            return_reason=_text_value(data, "return_reason"),
+            customer_name=_text_value(data, "customer_name"),
+            raw_data=_return_reception_intake_raw_data(job, row_item, data),
+            validation_status=row_item.validation_status,
+            validation_message=row_item.validation_message,
+            status="RECEIVED",
+            team_assign_status="NOT_REQUIRED",
+            inventory_reflected_yn=False,
+        )
+        intake_rows.append(intake_row)
+        if row_item.validation_status == "WARNING":
+            warning_rows += 1
+
+    if intake_rows:
+        return_intake_repository.create_rows(db, intake_rows)
+        for row_item, intake_row in zip([row for row in rows if row.validation_status in {"VALID", "WARNING"}], intake_rows):
+            row_item.target_action = "APPLIED"
+            row_item.target_table = "return_intake_rows"
+            row_item.target_id = intake_row.id
+            applied_rows += 1
+
+    batch.total_rows = len(rows)
+    batch.valid_rows = applied_rows
+    batch.warning_rows = warning_rows
+    batch.error_rows = failed_rows
+    db.flush()
+    return applied_rows, 0, failed_rows, failure_errors
+
+
 def _mapping_safety_block_reasons(job, rows: list | None = None) -> list[str]:
     raw_json = job.raw_json if isinstance(job.raw_json, dict) else {}
     mapping_payload = raw_json.get("mapping") if isinstance(raw_json, dict) else None
@@ -2951,12 +3221,11 @@ def _save_auto_applied_confirmed_decisions(db: Session, auth: AuthContext, *, jo
 
 
 def confirm_import_job(db: Session, auth: AuthContext, *, job_id: int) -> dict:
-    _require_import_manage(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job was not found.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_write_for_job(auth, job)
 
     if job.status in {IMPORT_APPLIED_STATUS, "CONFIRMED", "IMPORTED"}:
         raise _business_error("IMPORT_JOB_CONFIRM_ALREADY_DONE", "Import job is already confirmed.")
@@ -2964,7 +3233,7 @@ def confirm_import_job(db: Session, auth: AuthContext, *, job_id: int) -> dict:
         raise _business_error("IMPORT_JOB_CONFIRM_HAS_ERRORS", "Import job has invalid rows.")
     if job.status != "VALIDATED":
         raise _business_error("IMPORT_JOB_CONFIRM_STATUS_INVALID", "Import job is not ready to confirm.")
-    if job.import_type not in {"PRODUCT_MASTER", "PRODUCT_BARCODE"}:
+    if job.import_type not in {"PRODUCT_MASTER", "PRODUCT_BARCODE", "RETURN_RECEPTION"}:
         raise _business_error("IMPORT_JOB_CONFIRM_UNSUPPORTED_TYPE", "Import type is not supported for confirm.")
     if job.requested_client_id is None:
         raise _business_error("IMPORT_JOB_REQUESTED_CLIENT_REQUIRED", "requested_client_id is required.")
@@ -2987,59 +3256,67 @@ def confirm_import_job(db: Session, auth: AuthContext, *, job_id: int) -> dict:
         failed_rows = 0
         failure_errors: list[dict] = []
 
-        for row_item in rows:
-            if row_item.validation_status not in {"VALID", "WARNING"}:
-                row_item.target_action = "FAILED"
-                failed_rows += 1
-                failure_errors.append(
-                    {
-                        "job_id": job.id,
-                        "row_id": row_item.id,
-                        "row_no": row_item.row_no,
-                        "field_name": None,
-                        "raw_value": None,
-                        "error_code": "IMPORT_ROW_NOT_VALIDATED",
-                        "error_message": "Row is not validated.",
-                        "severity": "ERROR",
-                    }
-                )
-                continue
+        if job.import_type == "RETURN_RECEPTION":
+            applied_rows, skipped_rows, failed_rows, failure_errors = _apply_return_reception_rows(
+                db,
+                auth=auth,
+                job=job,
+                rows=rows,
+            )
+        else:
+            for row_item in rows:
+                if row_item.validation_status not in {"VALID", "WARNING"}:
+                    row_item.target_action = "FAILED"
+                    failed_rows += 1
+                    failure_errors.append(
+                        {
+                            "job_id": job.id,
+                            "row_id": row_item.id,
+                            "row_no": row_item.row_no,
+                            "field_name": None,
+                            "raw_value": None,
+                            "error_code": "IMPORT_ROW_NOT_VALIDATED",
+                            "error_message": "Row is not validated.",
+                            "severity": "ERROR",
+                        }
+                    )
+                    continue
 
-            if job.import_type == "PRODUCT_MASTER":
-                action, target_id, error_code = _apply_product_master_row(
-                    db,
-                    client_id=job.requested_client_id,
-                    row_item=row_item,
-                )
-                row_item.target_table = "products"
-            else:
-                action, target_id, error_code = _apply_product_barcode_row(
-                    db,
-                    client_id=job.requested_client_id,
-                    row_item=row_item,
-                )
-                row_item.target_table = "product_barcodes"
+                if job.import_type == "PRODUCT_MASTER":
+                    action, target_id, error_code = _apply_product_master_row(
+                        db,
+                        client_id=job.requested_client_id,
+                        row_item=row_item,
+                    )
+                    row_item.target_table = "products"
+                else:
+                    action, target_id, error_code = _apply_product_barcode_row(
+                        db,
+                        client_id=job.requested_client_id,
+                        row_item=row_item,
+                    )
+                    row_item.target_table = "product_barcodes"
 
-            row_item.target_action = action
-            row_item.target_id = target_id
-            if action == "APPLIED":
-                applied_rows += 1
-            elif action == "SKIPPED":
-                skipped_rows += 1
-            else:
-                failed_rows += 1
-                failure_errors.append(
-                    {
-                        "job_id": job.id,
-                        "row_id": row_item.id,
-                        "row_no": row_item.row_no,
-                        "field_name": None,
-                        "raw_value": None,
-                        "error_code": error_code or "IMPORT_JOB_CONFIRM_ROW_FAILED",
-                        "error_message": "Row could not be applied.",
-                        "severity": "ERROR",
-                    }
-                )
+                row_item.target_action = action
+                row_item.target_id = target_id
+                if action == "APPLIED":
+                    applied_rows += 1
+                elif action == "SKIPPED":
+                    skipped_rows += 1
+                else:
+                    failed_rows += 1
+                    failure_errors.append(
+                        {
+                            "job_id": job.id,
+                            "row_id": row_item.id,
+                            "row_no": row_item.row_no,
+                            "field_name": None,
+                            "raw_value": None,
+                            "error_code": error_code or "IMPORT_JOB_CONFIRM_ROW_FAILED",
+                            "error_message": "Row could not be applied.",
+                            "severity": "ERROR",
+                        }
+                    )
 
         if failure_errors:
             repo.bulk_create_import_validation_errors(db, errors=failure_errors)
@@ -3093,7 +3370,14 @@ def list_import_jobs(
     page: int = 1,
     page_size: int = 50,
 ) -> dict:
-    _require_import_view(auth)
+    if import_type:
+        import_type = _ensure_import_type(import_type)
+        _require_import_read_for_type(auth, import_type)
+    elif not _has_permission(auth, "IMPORT_VIEW") and _can_use_portal_return_import(auth):
+        require_permission(auth, "RETURN_CLIENT_SUBMIT")
+        import_type = "RETURN_RECEPTION"
+    else:
+        _require_import_view(auth)
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
     effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
     safe_page = _safe_page(page)
@@ -3123,12 +3407,11 @@ def list_import_jobs(
 
 
 def get_import_job_detail(db: Session, auth: AuthContext, job_id: int) -> dict:
-    _require_import_view(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job을 찾을 수 없습니다.", 404)
     job, client_row, warehouse = row
-    _ensure_job_access(auth, job)
+    _require_import_read_for_job(auth, job)
     files = repo.list_import_job_files(db, job_id=job.id)
     return _job_detail(job, client_row, warehouse, files).model_dump()
 
@@ -3142,12 +3425,11 @@ def list_import_job_rows(
     page: int = 1,
     page_size: int = 50,
 ) -> dict:
-    _require_import_view(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job을 찾을 수 없습니다.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_read_for_job(auth, job)
     safe_page = _safe_page(page)
     safe_page_size = _safe_page_size(page_size)
     items = repo.list_import_job_rows(
@@ -3180,12 +3462,11 @@ def list_import_job_errors(
     page: int = 1,
     page_size: int = 50,
 ) -> dict:
-    _require_import_view(auth)
     row = repo.get_import_job(db, job_id)
     if row is None:
         raise _business_error("IMPORT_JOB_NOT_FOUND", "Import job을 찾을 수 없습니다.", 404)
     job, _, _ = row
-    _ensure_job_access(auth, job)
+    _require_import_read_for_job(auth, job)
     safe_page = _safe_page(page)
     safe_page_size = _safe_page_size(page_size)
     items = repo.list_import_validation_errors(

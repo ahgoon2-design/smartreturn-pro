@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_auth_context, get_db
-from app.core.permissions import require_password_change_completed, require_permission, require_roles
+from app.core.permissions import require_password_change_completed
 from app.schemas.auth import AuthContext
 from app.schemas.common import ApiResult, api_success
 from app.schemas.imports import (
@@ -29,8 +29,6 @@ def _require_import_view(auth: AuthContext) -> None:
 
 def _require_import_manage(auth: AuthContext) -> None:
     require_password_change_completed(auth)
-    require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN"})
-    require_permission(auth, "IMPORT_MANAGE")
 
 
 @router.post("", response_model=ApiResult)
