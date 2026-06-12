@@ -102,6 +102,11 @@
 - Codex 완료 보고에는 변경 파일, 테스트/검증 결과, 미실행 항목, 위험요소를 포함한다.
 - 커밋은 사용자가 명시적으로 지시하기 전에는 하지 않는다.
 
+## AI 팀 운영 기준
+- Codex/Claude/Fable/ChatGPT 동시 작업은 `docs/skills/ai-team-operation.md`의 똘망이 팀 큐 구조를 따른다.
+- 똘망이는 별도 작업자가 아니라 작업 큐, 보고 체계, 충돌 방지, 커밋 통제 프레임이다.
+- 같은 작업트리에서 동시 작업할 때는 수정 가능 파일과 금지 파일을 분리하고, 다른 작업자의 변경분을 무단으로 덮어쓰지 않는다.
+
 ## `/docs/skills` 보조 기준
 - 모든 작업은 이 `AGENTS.md`를 먼저 읽고, 작업 유형에 따라 `/docs/skills/*.md`를 추가로 읽는다.
 - `/docs/skills` 문서는 이 파일을 대체하지 않고 작업별 세부 기준을 보완한다.
@@ -109,6 +114,8 @@
 - 모든 작업 공통:
   - `docs/skills/smartreturn-pro-workflow.md`
   - `docs/skills/git-security-check.md`
+- Codex/Claude/Fable/ChatGPT 동시 작업 또는 똘망이 운영 큐 작성:
+  - `docs/skills/ai-team-operation.md`
 - 신규 기능/DB/메뉴/권한/포털/정산/채널연동/대시보드/사업 지표 설계 작업:
   - `docs/skills/smartreturn-platform-business-architecture.md`
 - 문서 작성 또는 closeout:
