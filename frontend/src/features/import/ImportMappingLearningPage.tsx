@@ -1,5 +1,5 @@
 import { ReloadOutlined, SearchOutlined, StopOutlined, UndoOutlined } from "@ant-design/icons";
-import { Alert, Button, Input, Select, Space, Tabs, Tag, Typography } from "antd";
+import { Alert, Button, Input, Select, Space, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import {
@@ -337,9 +337,11 @@ export function ImportMappingLearningPage() {
         render: (_value, row) => {
           if (row.decision_type === "REJECTED") {
             return (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                끌 수 없음
-              </Typography.Text>
+              <Tooltip title="거절 이력은 잘못된 매핑을 차단하는 학습입니다. 끄면 차단되던 매핑이 다시 추천될 수 있어 비활성화할 수 없습니다.">
+                <Typography.Text type="secondary" style={{ fontSize: 12, cursor: "help" }}>
+                  끌 수 없음
+                </Typography.Text>
+              </Tooltip>
             );
           }
           return row.active_yn ? (
@@ -397,8 +399,7 @@ export function ImportMappingLearningPage() {
       <Alert
         type="info"
         showIcon
-        message="비활성화는 다음 업로드부터 적용되며, 이미 확정된 자료는 변경되지 않습니다."
-        description="삭제 기능은 없습니다. 비활성화한 학습은 언제든 재활성화로 되돌릴 수 있습니다."
+        message="비활성화는 다음 업로드부터 적용되며 이미 확정된 자료는 바뀌지 않습니다. 삭제는 없고 언제든 재활성화로 되돌릴 수 있습니다."
       />
 
       <Space className="smart-toolbar" wrap>
@@ -461,7 +462,7 @@ export function ImportMappingLearningPage() {
                 emptyText="조회된 매핑 프로필이 없습니다."
                 enableCopy
                 exportFileName="매핑프로필"
-                maxHeight={430}
+                maxHeight={352}
               />
             ),
           },
@@ -483,7 +484,7 @@ export function ImportMappingLearningPage() {
                   emptyText="조회된 결정 이력이 없습니다."
                   enableCopy
                   exportFileName="매핑결정이력"
-                  maxHeight={400}
+                  maxHeight={300}
                 />
               </Space>
             ),
