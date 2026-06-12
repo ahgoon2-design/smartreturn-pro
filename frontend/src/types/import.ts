@@ -238,10 +238,39 @@ export interface ImportMappingProfile {
   mapping_json: Record<string, string>;
   active_yn: boolean;
   last_used_at?: string | null;
+  deactivated_by?: number | null;
+  deactivated_at?: string | null;
+  deactivate_reason?: string | null;
   created_by: number;
   created_at: string;
   updated_at: string;
 }
+
+export interface ImportMappingDecision {
+  decision_id: number;
+  client_id?: number | null;
+  import_type: string;
+  source_type: string;
+  source_channel?: string | null;
+  original_header: string;
+  normalized_header: string;
+  canonical_field?: string | null;
+  decision_type: string;
+  confidence_before?: number | null;
+  confidence_after?: number | null;
+  profile_id?: number | null;
+  header_signature?: string | null;
+  active_yn: boolean;
+  deactivated_by?: number | null;
+  deactivated_at?: string | null;
+  deactivate_reason?: string | null;
+  confirmed_by?: number | null;
+  confirmed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ImportMappingDecisionsResponse = { items: ImportMappingDecision[] };
 
 export type ImportConfirmResult = ImportConfirmResponse;
 

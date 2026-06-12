@@ -8,6 +8,7 @@ export const ROUTE_PATHS = {
   login: "/login",
   passwordChange: "/auth/password-change",
   importPreview: "/imports/preview",
+  importMappingLearning: "/imports/mapping-learning",
   channelAccounts: "/channels/accounts",
   masterClients: "/master/clients",
   masterProducts: "/master/products",

@@ -8,6 +8,7 @@ import { PortalReturnStatusPage } from "../pages/portal/PortalReturnStatusPage";
 import { PasswordChangeRequiredPage } from "../pages/auth/PasswordChangeRequiredPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ChannelAccountManagementScreen } from "../features/channels/ChannelAccountManagementScreen";
+import { ImportMappingLearningPage } from "../features/import/ImportMappingLearningPage";
 import { ImportPreviewPage } from "../features/import/ImportPreviewPage";
 import { CurrentInventoryPage } from "../features/inventory/CurrentInventoryPage";
 import { InventoryEventsPage } from "../features/inventory/InventoryEventsPage";
@@ -54,6 +55,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute requiredPermissions={["IMPORT_MANAGE"]}>
             <ImportPreviewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "imports/mapping-learning",
+        element: (
+          <ProtectedRoute requiredPermissions={["IMPORT_MANAGE"]}>
+            <ImportMappingLearningPage />
           </ProtectedRoute>
         ),
       },

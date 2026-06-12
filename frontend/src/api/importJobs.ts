@@ -1,6 +1,9 @@
 import { apiRequest, getStoredAccessToken, resolveApiBaseUrl } from "./client";
 import type {
   ImportConfirmResponse,
+  ImportMappingDecision,
+  ImportMappingDecisionsResponse,
+  ImportMappingProfile,
   ImportMappingProfilesResponse,
   ImportMappingResponse,
   ImportJob,
@@ -83,7 +86,14 @@ export function applyImportJobMapping(
   });
 }
 
-export function listImportMappingProfiles(filters: { clientId?: number; importType?: string; sourceType?: string } = {}) {
+interface MappingLearningListFilters {
+  clientId?: number;
+  importType?: string;
+  sourceType?: string;
+  includeInactive?: boolean;
+}
+
+function buildMappingLearningQuery(filters: MappingLearningListFilters) {
   const params = new URLSearchParams();
   if (filters.clientId) {
     params.set("client_id", String(filters.clientId));
@@ -94,8 +104,45 @@ export function listImportMappingProfiles(filters: { clientId?: number; importTy
   if (filters.sourceType) {
     params.set("source_type", filters.sourceType);
   }
+  if (filters.includeInactive) {
+    params.set("include_inactive", "true");
+  }
   const query = params.toString();
-  return apiRequest<ImportMappingProfilesResponse>(`/api/import-jobs/mapping-profiles${query ? `?${query}` : ""}`);
+  return query ? `?${query}` : "";
+}
+
+export function listImportMappingProfiles(filters: MappingLearningListFilters = {}) {
+  return apiRequest<ImportMappingProfilesResponse>(`/api/import-jobs/mapping-profiles${buildMappingLearningQuery(filters)}`);
+}
+
+export function listImportMappingDecisions(filters: MappingLearningListFilters = {}) {
+  return apiRequest<ImportMappingDecisionsResponse>(`/api/import-jobs/mapping-decisions${buildMappingLearningQuery(filters)}`);
+}
+
+export function deactivateImportMappingProfile(profileId: number, reason: string) {
+  return apiRequest<ImportMappingProfile>(`/api/import-jobs/mapping-profiles/${profileId}/deactivate`, {
+    method: "PATCH",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function activateImportMappingProfile(profileId: number) {
+  return apiRequest<ImportMappingProfile>(`/api/import-jobs/mapping-profiles/${profileId}/activate`, {
+    method: "PATCH",
+  });
+}
+
+export function deactivateImportMappingDecision(decisionId: number, reason: string) {
+  return apiRequest<ImportMappingDecision>(`/api/import-jobs/mapping-decisions/${decisionId}/deactivate`, {
+    method: "PATCH",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function activateImportMappingDecision(decisionId: number) {
+  return apiRequest<ImportMappingDecision>(`/api/import-jobs/mapping-decisions/${decisionId}/activate`, {
+    method: "PATCH",
+  });
 }
 
 export async function downloadImportTemplate(importType: string) {

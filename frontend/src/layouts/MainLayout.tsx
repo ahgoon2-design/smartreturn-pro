@@ -158,6 +158,12 @@ export function MainLayout() {
           disabled: !canSeePlatformMenus || !hasPermission("RETURN_VIEW"),
         },
         { key: ROUTE_PATHS.importPreview, icon: <CloudUploadOutlined />, label: "Smart Import", disabled: !hasPermission("IMPORT_MANAGE") },
+        {
+          key: ROUTE_PATHS.importMappingLearning,
+          icon: <HistoryOutlined />,
+          label: "매핑 학습 관리",
+          disabled: !hasPermission("IMPORT_MANAGE"),
+        },
       ],
     },
   ];
