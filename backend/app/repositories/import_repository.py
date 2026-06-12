@@ -513,6 +513,27 @@ def list_import_mapping_profiles(
     return query.order_by(ImportMappingProfile.last_used_at.desc().nullslast(), ImportMappingProfile.id.desc()).all()
 
 
+def get_import_mapping_profile_by_id(db: Session, profile_id: int) -> ImportMappingProfile | None:
+    return db.query(ImportMappingProfile).filter(ImportMappingProfile.id == profile_id).one_or_none()
+
+
+def set_import_mapping_profile_active(
+    db: Session,
+    *,
+    profile: ImportMappingProfile,
+    active: bool,
+    reason: str | None,
+    actor_id: int,
+) -> ImportMappingProfile:
+    profile.active_yn = active
+    if not active:
+        profile.deactivated_by = actor_id
+        profile.deactivated_at = datetime.now(timezone.utc)
+        profile.deactivate_reason = reason
+    db.flush()
+    return profile
+
+
 def find_import_mapping_profile(
     db: Session,
     *,
@@ -584,27 +605,53 @@ def list_import_mapping_decisions(
     db: Session,
     *,
     client_id: int | None = None,
-    import_type: str,
-    source_type: str,
+    import_type: str | None = None,
+    source_type: str | None = None,
     normalized_headers: list[str] | None = None,
+    active_only: bool = True,
+    all_clients: bool = False,
 ) -> list[ImportMappingDecision]:
-    query = db.query(ImportMappingDecision).filter(
-        ImportMappingDecision.import_type == import_type,
-        ImportMappingDecision.source_type == source_type,
-    )
+    query = db.query(ImportMappingDecision)
+    if import_type:
+        query = query.filter(ImportMappingDecision.import_type == import_type)
+    if source_type:
+        query = query.filter(ImportMappingDecision.source_type == source_type)
     if client_id is not None:
         query = query.filter(
             (ImportMappingDecision.client_id == client_id) | (ImportMappingDecision.client_id.is_(None))
         )
-    else:
+    elif client_id is None and not all_clients:
         query = query.filter(ImportMappingDecision.client_id.is_(None))
     if normalized_headers:
         query = query.filter(ImportMappingDecision.normalized_header.in_(normalized_headers))
+    if active_only:
+        query = query.filter(ImportMappingDecision.active_yn.is_(True))
     return query.order_by(
         ImportMappingDecision.client_id.desc().nullslast(),
         ImportMappingDecision.confirmed_at.desc().nullslast(),
         ImportMappingDecision.id.desc(),
     ).all()
+
+
+def get_import_mapping_decision_by_id(db: Session, decision_id: int) -> ImportMappingDecision | None:
+    return db.query(ImportMappingDecision).filter(ImportMappingDecision.id == decision_id).one_or_none()
+
+
+def set_import_mapping_decision_active(
+    db: Session,
+    *,
+    decision: ImportMappingDecision,
+    active: bool,
+    reason: str | None,
+    actor_id: int,
+) -> ImportMappingDecision:
+    decision.active_yn = active
+    if not active:
+        decision.deactivated_by = actor_id
+        decision.deactivated_at = datetime.now(timezone.utc)
+        decision.deactivate_reason = reason
+    db.flush()
+    return decision
 
 
 def create_import_mapping_decisions(
@@ -631,6 +678,7 @@ def create_import_mapping_decisions(
             existing = ImportMappingDecision(**decision)
             db.add(existing)
         else:
+            existing.active_yn = True
             existing.original_header = decision.get("original_header") or existing.original_header
             existing.source_channel = decision.get("source_channel")
             existing.confidence_before = decision.get("confidence_before")

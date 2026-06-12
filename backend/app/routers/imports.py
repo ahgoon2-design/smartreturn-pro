@@ -14,6 +14,7 @@ from app.schemas.imports import (
     ImportJobCreateRequest,
     ImportMappingApplyRequest,
     ImportMappingProfileCreateRequest,
+    MappingLearningDeactivateRequest,
     ImportPasteRowsRequest,
     ImportValidationRunRequest,
 )
@@ -118,6 +119,7 @@ def list_import_mapping_profiles_api(
     client_id: int | None = None,
     import_type: str | None = None,
     source_type: str | None = None,
+    include_inactive: bool = False,
     db: Session = Depends(get_db),
     auth: AuthContext = Depends(get_current_auth_context),
 ) -> ApiResult:
@@ -131,6 +133,7 @@ def list_import_mapping_profiles_api(
             client_id=client_id,
             import_type=import_type,
             source_type=source_type,
+            include_inactive=include_inactive,
         ),
     )
 
@@ -146,6 +149,88 @@ def create_import_mapping_profile_api(
         result_code="IMPORT_MAPPING_PROFILE_SAVED",
         message="Import mapping profile을 저장했습니다.",
         data=import_service.create_mapping_profile(db, auth, request),
+    )
+
+
+@router.get("/mapping-decisions", response_model=ApiResult)
+def list_import_mapping_decisions_api(
+    client_id: int | None = None,
+    import_type: str | None = None,
+    source_type: str | None = None,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_MAPPING_DECISIONS_FOUND",
+        message="Import mapping decision list found.",
+        data=import_service.list_mapping_decisions(
+            db,
+            auth,
+            client_id=client_id,
+            import_type=import_type,
+            source_type=source_type,
+            include_inactive=include_inactive,
+        ),
+    )
+
+
+@router.patch("/mapping-profiles/{profile_id}/deactivate", response_model=ApiResult)
+def deactivate_import_mapping_profile_api(
+    profile_id: int,
+    request: MappingLearningDeactivateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_MAPPING_PROFILE_DEACTIVATED",
+        message="Import mapping profile deactivated.",
+        data=import_service.deactivate_mapping_profile(db, auth, profile_id=profile_id, request=request),
+    )
+
+
+@router.patch("/mapping-profiles/{profile_id}/activate", response_model=ApiResult)
+def activate_import_mapping_profile_api(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_MAPPING_PROFILE_ACTIVATED",
+        message="Import mapping profile activated.",
+        data=import_service.activate_mapping_profile(db, auth, profile_id=profile_id),
+    )
+
+
+@router.patch("/mapping-decisions/{decision_id}/deactivate", response_model=ApiResult)
+def deactivate_import_mapping_decision_api(
+    decision_id: int,
+    request: MappingLearningDeactivateRequest,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_MAPPING_DECISION_DEACTIVATED",
+        message="Import mapping decision deactivated.",
+        data=import_service.deactivate_mapping_decision(db, auth, decision_id=decision_id, request=request),
+    )
+
+
+@router.patch("/mapping-decisions/{decision_id}/activate", response_model=ApiResult)
+def activate_import_mapping_decision_api(
+    decision_id: int,
+    db: Session = Depends(get_db),
+    auth: AuthContext = Depends(get_current_auth_context),
+) -> ApiResult:
+    _require_import_manage(auth)
+    return api_success(
+        result_code="IMPORT_MAPPING_DECISION_ACTIVATED",
+        message="Import mapping decision activated.",
+        data=import_service.activate_mapping_decision(db, auth, decision_id=decision_id),
     )
 
 

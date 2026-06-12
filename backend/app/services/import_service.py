@@ -25,6 +25,8 @@ from app.schemas.imports import (
     ImportCanonicalFieldResponse,
     ImportConfirmResponse,
     ImportMappingApplyRequest,
+    ImportMappingDecisionResponse,
+    ImportMappingDecisionsResponse,
     ImportMappingProfileCreateRequest,
     ImportMappingProfileResponse,
     ImportMappingProfilesResponse,
@@ -45,6 +47,7 @@ from app.schemas.imports import (
     ImportValidationRunResponse,
     ImportValidationErrorResponse,
     ImportSourceTypeResponse,
+    MappingLearningDeactivateRequest,
 )
 
 
@@ -676,6 +679,11 @@ def _require_import_view(auth: AuthContext) -> None:
 
 
 def _require_import_manage(auth: AuthContext) -> None:
+    require_roles(auth, INTERNAL_IMPORT_MANAGE_ROLES)
+    require_permission(auth, "IMPORT_MANAGE")
+
+
+def _require_mapping_learning_admin(auth: AuthContext) -> None:
     require_roles(auth, INTERNAL_IMPORT_MANAGE_ROLES)
     require_permission(auth, "IMPORT_MANAGE")
 
@@ -1661,9 +1669,38 @@ def _profile_response(profile) -> ImportMappingProfileResponse:
         mapping_json=profile.mapping_json,
         active_yn=profile.active_yn,
         last_used_at=profile.last_used_at,
+        deactivated_by=profile.deactivated_by,
+        deactivated_at=profile.deactivated_at,
+        deactivate_reason=profile.deactivate_reason,
         created_by=profile.created_by,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
+    )
+
+
+def _decision_response(decision) -> ImportMappingDecisionResponse:
+    return ImportMappingDecisionResponse(
+        decision_id=decision.id,
+        client_id=decision.client_id,
+        import_type=decision.import_type,
+        source_type=decision.source_type,
+        source_channel=decision.source_channel,
+        original_header=decision.original_header,
+        normalized_header=decision.normalized_header,
+        canonical_field=decision.canonical_field,
+        decision_type=decision.decision_type,
+        confidence_before=decision.confidence_before,
+        confidence_after=decision.confidence_after,
+        profile_id=decision.profile_id,
+        header_signature=decision.header_signature,
+        active_yn=decision.active_yn,
+        deactivated_by=decision.deactivated_by,
+        deactivated_at=decision.deactivated_at,
+        deactivate_reason=decision.deactivate_reason,
+        confirmed_by=decision.confirmed_by,
+        confirmed_at=decision.confirmed_at,
+        created_at=decision.created_at,
+        updated_at=decision.updated_at,
     )
 
 
@@ -2097,6 +2134,7 @@ def list_mapping_profiles(
     client_id: int | None = None,
     import_type: str | None = None,
     source_type: str | None = None,
+    include_inactive: bool = False,
 ) -> dict:
     if import_type:
         safe_import_type = _ensure_import_type(import_type)
@@ -2113,7 +2151,7 @@ def list_mapping_profiles(
         client_id=effective_client_id,
         import_type=import_type,
         source_type=source_type,
-        active_only=True,
+        active_only=not include_inactive,
     )
     return ImportMappingProfilesResponse(items=[_profile_response(item) for item in items]).model_dump()
 
@@ -2135,6 +2173,111 @@ def create_mapping_profile(db: Session, auth: AuthContext, request: ImportMappin
     )
     db.commit()
     return _profile_response(profile).model_dump()
+
+
+def list_mapping_decisions(
+    db: Session,
+    auth: AuthContext,
+    *,
+    client_id: int | None = None,
+    import_type: str | None = None,
+    source_type: str | None = None,
+    include_inactive: bool = False,
+) -> dict:
+    _require_mapping_learning_admin(auth)
+    safe_import_type = _ensure_import_type(import_type) if import_type else None
+    safe_source_type = _ensure_source_type(source_type) if source_type else None
+    effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
+    items = repo.list_import_mapping_decisions(
+        db,
+        client_id=effective_client_id,
+        import_type=safe_import_type,
+        source_type=safe_source_type,
+        active_only=not include_inactive,
+        all_clients=effective_client_id is None,
+    )
+    return ImportMappingDecisionsResponse(items=[_decision_response(item) for item in items]).model_dump()
+
+
+def deactivate_mapping_profile(
+    db: Session,
+    auth: AuthContext,
+    *,
+    profile_id: int,
+    request: MappingLearningDeactivateRequest,
+) -> dict:
+    _require_mapping_learning_admin(auth)
+    profile = repo.get_import_mapping_profile_by_id(db, profile_id)
+    if profile is None:
+        raise _business_error("IMPORT_MAPPING_PROFILE_NOT_FOUND", "Mapping profile was not found.", 404)
+    repo.set_import_mapping_profile_active(
+        db,
+        profile=profile,
+        active=False,
+        reason=request.reason,
+        actor_id=auth.user_id,
+    )
+    db.commit()
+    return _profile_response(profile).model_dump()
+
+
+def activate_mapping_profile(db: Session, auth: AuthContext, *, profile_id: int) -> dict:
+    _require_mapping_learning_admin(auth)
+    profile = repo.get_import_mapping_profile_by_id(db, profile_id)
+    if profile is None:
+        raise _business_error("IMPORT_MAPPING_PROFILE_NOT_FOUND", "Mapping profile was not found.", 404)
+    repo.set_import_mapping_profile_active(
+        db,
+        profile=profile,
+        active=True,
+        reason=None,
+        actor_id=auth.user_id,
+    )
+    db.commit()
+    return _profile_response(profile).model_dump()
+
+
+def deactivate_mapping_decision(
+    db: Session,
+    auth: AuthContext,
+    *,
+    decision_id: int,
+    request: MappingLearningDeactivateRequest,
+) -> dict:
+    _require_mapping_learning_admin(auth)
+    decision = repo.get_import_mapping_decision_by_id(db, decision_id)
+    if decision is None:
+        raise _business_error("IMPORT_MAPPING_DECISION_NOT_FOUND", "Mapping decision was not found.", 404)
+    if decision.decision_type in MAPPING_DECISION_NEGATIVE_TYPES:
+        raise _business_error(
+            "IMPORT_MAPPING_REJECTED_DECISION_CANNOT_BE_DEACTIVATED",
+            "REJECTED mapping decision cannot be deactivated.",
+        )
+    repo.set_import_mapping_decision_active(
+        db,
+        decision=decision,
+        active=False,
+        reason=request.reason,
+        actor_id=auth.user_id,
+    )
+    db.commit()
+    return _decision_response(decision).model_dump()
+
+
+def activate_mapping_decision(db: Session, auth: AuthContext, *, decision_id: int) -> dict:
+    _require_mapping_learning_admin(auth)
+    decision = repo.get_import_mapping_decision_by_id(db, decision_id)
+    if decision is None:
+        raise _business_error("IMPORT_MAPPING_DECISION_NOT_FOUND", "Mapping decision was not found.", 404)
+    repo.set_import_mapping_decision_active(
+        db,
+        decision=decision,
+        active=True,
+        reason=None,
+        actor_id=auth.user_id,
+    )
+    db.commit()
+    return _decision_response(decision).model_dump()
 
 
 def build_import_template(db: Session, auth: AuthContext, import_type: str) -> tuple[str, bytes]:

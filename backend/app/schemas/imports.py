@@ -214,6 +214,9 @@ class ImportMappingProfileResponse(BaseModel):
     mapping_json: dict[str, str]
     active_yn: bool
     last_used_at: datetime | None = None
+    deactivated_by: int | None = None
+    deactivated_at: datetime | None = None
+    deactivate_reason: str | None = None
     created_by: int
     created_at: datetime
     updated_at: datetime
@@ -221,6 +224,46 @@ class ImportMappingProfileResponse(BaseModel):
 
 class ImportMappingProfilesResponse(BaseModel):
     items: list[ImportMappingProfileResponse]
+
+
+class ImportMappingDecisionResponse(BaseModel):
+    decision_id: int
+    client_id: int | None = None
+    import_type: str
+    source_type: str
+    source_channel: str | None = None
+    original_header: str
+    normalized_header: str
+    canonical_field: str | None = None
+    decision_type: str
+    confidence_before: float | None = None
+    confidence_after: float | None = None
+    profile_id: int | None = None
+    header_signature: str | None = None
+    active_yn: bool
+    deactivated_by: int | None = None
+    deactivated_at: datetime | None = None
+    deactivate_reason: str | None = None
+    confirmed_by: int | None = None
+    confirmed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ImportMappingDecisionsResponse(BaseModel):
+    items: list[ImportMappingDecisionResponse]
+
+
+class MappingLearningDeactivateRequest(BaseModel):
+    reason: str = Field(min_length=5)
+
+    @field_validator("reason")
+    @classmethod
+    def _required_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("reason must be at least 5 characters")
+        return value
 
 
 class ImportValidationRunResponse(BaseModel):

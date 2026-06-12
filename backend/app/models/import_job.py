@@ -146,6 +146,9 @@ class ImportMappingProfile(Base):
     mapping_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivate_reason: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -163,6 +166,7 @@ class ImportMappingDecision(Base):
         Index("ix_import_mapping_decisions_header", "normalized_header"),
         Index("ix_import_mapping_decisions_field", "canonical_field"),
         Index("ix_import_mapping_decisions_type", "decision_type"),
+        Index("ix_import_mapping_decisions_active", "active_yn"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -181,6 +185,10 @@ class ImportMappingDecision(Base):
     file_signature: Mapped[str | None] = mapped_column(String(255))
     sample_value_hash: Mapped[str | None] = mapped_column(String(128))
     source_context_json: Mapped[dict | None] = mapped_column(JSONB)
+    active_yn: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    deactivated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivate_reason: Mapped[str | None] = mapped_column(Text)
     confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
