@@ -256,6 +256,31 @@ export function ReturnProcessingWorkspacePage() {
     Boolean(selectedJudgement) &&
     Boolean(selectedWarehouseRoute?.warehouse_id) &&
     !judging;
+  const showHoldMemoWarning = selectedJudgement === "HOLD" && !judgementMemo.trim();
+
+  useEffect(() => {
+    function handleProcessingShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey || isShortcutInputTarget(event.target)) {
+        return;
+      }
+      if (/^[1-9]$/.test(event.key)) {
+        const option = judgementOptions[Number(event.key) - 1];
+        if (!option || !selectedTask || isSelectedTaskCompleted || judging) {
+          return;
+        }
+        event.preventDefault();
+        selectJudgementOption(option);
+        return;
+      }
+      if (event.key === "Enter" && canSaveJudgement) {
+        event.preventDefault();
+        void handleJudgementSave();
+      }
+    }
+
+    window.addEventListener("keydown", handleProcessingShortcut);
+    return () => window.removeEventListener("keydown", handleProcessingShortcut);
+  }, [canSaveJudgement, isSelectedTaskCompleted, judgementOptions, judging, selectedTask, selectedWarehouseRoute, returnWarehouseRoutes.length, routesErrorMessage, routesLoading]);
 
   async function loadTasks(nextTrackingNo = trackingNo, preferredTaskId?: number) {
     setLoading(true);
@@ -638,6 +663,22 @@ export function ReturnProcessingWorkspacePage() {
     setSelectedProcessingMethod("GRID_SELECT");
   }
 
+  function selectJudgementOption(option: { value: ReturnJudgementStatus; label: string }) {
+    const nextWarehouseRoute = findWarehouseRoute(returnWarehouseRoutes, selectedTask, option.value);
+    setSelectedJudgement(option.value);
+    setJudgementFeedback({
+      type: nextWarehouseRoute ? "info" : "warning",
+      message: `${option.label} 판정을 선택했습니다.`,
+      description: buildSelectedJudgementDescription(
+        option.value,
+        nextWarehouseRoute,
+        returnWarehouseRoutes.length,
+        routesErrorMessage,
+        routesLoading,
+      ),
+    });
+  }
+
   async function handleJudgementSave() {
     if (!selectedTask) {
       setJudgementFeedback({
@@ -674,7 +715,7 @@ export function ReturnProcessingWorkspacePage() {
       setJudgementFeedback({
         type: "warning",
         message: "창고가 확정되어야 처리완료할 수 있습니다.",
-        description: "고객사 판정/창고 설정을 확인하거나 창고가 자동 배정되는 판정을 선택하세요.",
+        description: buildWarehouseMissingGuidance(selectedJudgement, returnWarehouseRoutes.length),
       });
       return;
     }
@@ -1087,12 +1128,12 @@ export function ReturnProcessingWorkspacePage() {
                 </Descriptions.Item>
                 <Descriptions.Item label="출력일시">{toDisplayText(selectedTask.label_printed_at)}</Descriptions.Item>
               </Descriptions>
-              <section className="return-processing-label-panel" aria-label="Local Agent 라벨 출력">
-                <Space align="center" wrap>
+              <details className="return-processing-label-panel" aria-label="Local Agent 라벨 출력">
+                <summary className="return-processing-collapse-summary">
                   <PrinterOutlined />
                   <Typography.Text strong>Local Agent 라벨 출력</Typography.Text>
                   <SmartStatusBadge status="WARNING" label="Local Agent 미연결" />
-                </Space>
+                </summary>
                 <Alert
                   className="return-processing-placeholder"
                   type="warning"
@@ -1127,7 +1168,7 @@ export function ReturnProcessingWorkspacePage() {
                     </span>
                   </Tooltip>
                 </Space>
-              </section>
+              </details>
               <section className="return-processing-judgement-panel" aria-label="판정/창고/처리완료">
                 <Space align="center" wrap>
                   <Typography.Text strong>판정/창고</Typography.Text>
@@ -1143,7 +1184,7 @@ export function ReturnProcessingWorkspacePage() {
                   )}
                 </Space>
                 <Space wrap className="return-processing-judgement-buttons">
-                  {judgementOptions.map((option) => (
+                  {judgementOptions.map((option, index) => (
                     <Button
                       key={option.value}
                       type={selectedJudgement === option.value ? "primary" : "default"}
@@ -1164,17 +1205,26 @@ export function ReturnProcessingWorkspacePage() {
                         });
                       }}
                     >
+                      {index < 9 ? `${index + 1}. ` : ""}
                       {option.label}
                     </Button>
                   ))}
                 </Space>
                 <Input.TextArea
-                  rows={3}
+                  rows={2}
                   value={judgementMemo}
                   disabled={isSelectedTaskCompleted || judging}
                   placeholder="판정 메모를 입력하세요"
                   onChange={(event) => setJudgementMemo(event.target.value)}
                 />
+                {showHoldMemoWarning ? (
+                  <Alert
+                    className="return-processing-placeholder"
+                    type="warning"
+                    showIcon
+                    message="보류 판정은 사유를 남기면 나중에 확인하기 쉽습니다."
+                  />
+                ) : null}
                 <Alert
                   className="return-processing-placeholder"
                   type={judgementFeedback?.type || "info"}
@@ -1188,16 +1238,37 @@ export function ReturnProcessingWorkspacePage() {
                 <Button type="primary" onClick={handleJudgementSave} disabled={!canSaveJudgement} loading={judging}>
                   처리완료
                 </Button>
+                {judgementFeedback?.type === "success" ? (
+                  <Button type="link" size="small" onClick={() => navigate(ROUTE_PATHS.returnClosing)}>
+                    일마감 화면으로 이동
+                  </Button>
+                ) : null}
                 {selectedJudgement && !selectedWarehouseRoute?.warehouse_id ? (
-                  <Typography.Text type="warning">창고가 확정되어야 처리완료할 수 있습니다.</Typography.Text>
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text type="warning">
+                      {buildWarehouseMissingGuidance(selectedJudgement, returnWarehouseRoutes.length)}
+                    </Typography.Text>
+                    {selectedTask?.client_id ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        style={{ paddingLeft: 0 }}
+                        onClick={() =>
+                          window.open(`${ROUTE_PATHS.masterClients}/${selectedTask.client_id}`, "_blank", "noopener")
+                        }
+                      >
+                        고객사 판정/창고 설정 열기
+                      </Button>
+                    ) : null}
+                  </Space>
                 ) : null}
               </section>
-              <section className="return-processing-attachments-panel" aria-label="사진/증빙">
-                <Space align="center" wrap>
+              <details className="return-processing-attachments-panel" aria-label="사진/증빙">
+                <summary className="return-processing-collapse-summary">
                   <PaperClipOutlined />
                   <Typography.Text strong>사진/증빙</Typography.Text>
                   <SmartStatusBadge status="WAITING" label="선택 사항" />
-                </Space>
+                </summary>
                 <Typography.Text type="secondary">
                   필요한 경우 사진을 첨부하세요. 사진이 없어도 처리완료는 가능합니다.
                 </Typography.Text>
@@ -1265,13 +1336,12 @@ export function ReturnProcessingWorkspacePage() {
                     </List.Item>
                   )}
                 />
-              </section>
+              </details>
               <Alert
-                className="return-processing-placeholder"
+                className="return-processing-placeholder return-processing-inventory-notice"
                 type="info"
                 showIcon
-                message="재고반영 시점"
-                description="반품입고 완료 처리했습니다. 현재고는 아직 변경되지 않았습니다. 재고는 일마감/반출 확정 후 반영됩니다."
+                message="재고는 아직 변경되지 않습니다. 일마감 화면에서 확정 후 재고에 반영됩니다."
               />
             </>
           ) : null}
@@ -1418,6 +1488,14 @@ function getLabelActionDisabledReason(task: ReturnProcessingTask) {
   return "Local Agent 연동 후 사용할 수 있습니다.";
 }
 
+function isShortcutInputTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
+}
+
 function isAllowedAttachmentFile(file: File) {
   const extension = file.name.split(".").pop()?.toLowerCase();
   return (
@@ -1465,10 +1543,21 @@ function buildSelectedJudgementDescription(
   if (route) {
     return `${buildLabelPolicyDescription(judgementStatus)} 배정 창고: ${route.warehouse_name || route.warehouse_code || "창고 확인됨"}.`;
   }
-  if (routeCount > 0) {
-    return "이 판정은 선택 고객사/팀의 활성 판정-창고 라우팅에 없습니다. 창고가 확정되어야 처리완료할 수 있습니다.";
+  // 판정 직후 피드백은 짧게만 알리고, 원인/해결 상세는 처리완료 가드 영역에서 한 번만 안내한다.
+  return `'${toJudgementLabel(judgementStatus)}' 판정에 사용할 창고가 아직 설정되지 않았습니다. 처리완료 버튼 아래 안내를 확인하세요.`;
+}
+
+/**
+ * 창고 미확정 원인별 상세 안내(처리완료 가드 전용). backend는 판정 코드 →
+ * 고객사 판정-창고 라우팅으로만 창고를 결정하므로(판정 저장 API에 창고 직접 지정 필드 없음)
+ * 화면에서 임의 창고를 고를 수 없다. 원인 → 해결 → 결과 순으로 안내한다.
+ */
+function buildWarehouseMissingGuidance(judgementStatus: ReturnJudgementStatus, routeCount: number) {
+  const judgementLabel = toJudgementLabel(judgementStatus);
+  if (routeCount === 0) {
+    return "이 고객사는 판정-창고 라우팅이 등록되어 있지 않습니다. 고객사 관리에서 창고와 판정별 기본 창고를 먼저 등록하세요.";
   }
-  return "고객사 판정 설정이 없어 기본 판정을 표시합니다. 운영 전 고객사별 판정/창고 설정을 확인하세요. 창고가 확정되어야 처리완료할 수 있습니다.";
+  return `'${judgementLabel}' 판정에 사용할 창고가 설정되어 있지 않습니다. 고객사 관리 > 판정/창고 라우팅에서 '${judgementLabel}' 창고를 지정하면 처리완료할 수 있습니다.`;
 }
 
 function getJudgementHelpMessage(
