@@ -189,6 +189,8 @@ export interface ImportMappingSuggestionItem {
   reason?: string | null;
   provider?: string | null;
   providers?: string[];
+  source_profile_id?: number | null;
+  source_decision_id?: number | null;
   is_required?: boolean;
   is_risky_field?: boolean;
   previous_profile_matched?: boolean;

@@ -555,6 +555,8 @@ class MappingProviderResult:
     evidence: dict
     risk_flags: tuple[str, ...] = ()
     blocked_reason: str | None = None
+    source_profile_id: int | None = None
+    source_decision_id: int | None = None
 
 
 class AliasSuggestionProvider:
@@ -579,10 +581,11 @@ class AliasSuggestionProvider:
 class ProfileSuggestionProvider:
     provider_name = "PROFILE"
 
-    def __init__(self, profile_mapping: dict | None, *, exact_match: bool, similarity: float) -> None:
+    def __init__(self, profile_mapping: dict | None, *, exact_match: bool, similarity: float, profile_id: int | None = None) -> None:
         self.profile_mapping = profile_mapping or {}
         self.exact_match = exact_match
         self.similarity = similarity
+        self.profile_id = profile_id
 
     def suggest(self, _import_type: str, header: str) -> list[MappingProviderResult]:
         field_key = self.profile_mapping.get(header)
@@ -602,6 +605,7 @@ class ProfileSuggestionProvider:
                 provider_name=self.provider_name,
                 reason=reason,
                 evidence={"header_signature_exact": self.exact_match, "similarity": round(self.similarity, 2)},
+                source_profile_id=self.profile_id,
             )
         ]
 
@@ -637,6 +641,7 @@ class DecisionHistorySuggestionProvider:
                     reason="이 고객사/자료유형에서 이전에 사용자가 이 헤더 매핑을 제외한 이력이 있습니다.",
                     evidence={"decision_type": decision.decision_type, "history_count": count},
                     risk_flags=("REJECTED_HISTORY",),
+                    source_decision_id=decision.id,
                     blocked_reason="과거 REJECTED 이력이 있어 자동적용할 수 없습니다.",
                 )
             ]
@@ -651,6 +656,7 @@ class DecisionHistorySuggestionProvider:
                 provider_name=self.provider_name,
                 reason=f"이 고객사/자료유형에서 이전에 '{header}'를 {decision.canonical_field}로 확정한 이력이 있습니다.",
                 evidence={"decision_type": decision.decision_type, "history_count": count},
+                source_decision_id=decision.id,
             )
         ]
 
@@ -945,10 +951,11 @@ def _build_mapping_suggestions(
     decisions: list | None = None,
     profile_exact_match: bool = False,
     profile_similarity: float = 0.0,
+    profile_id: int | None = None,
 ) -> tuple[dict[str, str], list[dict]]:
     field_names = _canonical_field_names(import_type)
     providers = [
-        ProfileSuggestionProvider(profile_mapping, exact_match=profile_exact_match, similarity=profile_similarity),
+        ProfileSuggestionProvider(profile_mapping, exact_match=profile_exact_match, similarity=profile_similarity, profile_id=profile_id),
         DecisionHistorySuggestionProvider(decisions),
         AliasSuggestionProvider(),
         FutureAiSuggestionProvider(),
@@ -1014,6 +1021,8 @@ def _build_mapping_suggestions(
                 "reason": reason,
                 "provider": provider_name,
                 "providers": sorted(set(providers_used)) or [provider_name],
+                "source_profile_id": selected.source_profile_id if selected else None,
+                "source_decision_id": selected.source_decision_id if selected else None,
                 "is_required": _field_is_required(import_type, target_field),
                 "is_risky_field": _is_risky_mapping_field(target_field),
                 "previous_profile_matched": previous_profile_matched,
@@ -1990,6 +1999,7 @@ def auto_map_import_job(db: Session, auth: AuthContext, *, job_id: int, request:
         decisions=decisions,
         profile_exact_match=profile_exact_match,
         profile_similarity=profile_similarity,
+        profile_id=profile.id if profile else None,
     )
     response = _mapping_response_from_job(db, job=job, rows=rows, mapping=mapping, suggestions=suggestions)
 

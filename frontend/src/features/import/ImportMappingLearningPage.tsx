@@ -1,6 +1,7 @@
 import { ReloadOutlined, SearchOutlined, StopOutlined, UndoOutlined } from "@ant-design/icons";
 import { Alert, Button, Input, Select, Space, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import {
   activateImportMappingDecision,
@@ -13,6 +14,7 @@ import {
 } from "../../api/importJobs";
 import { listClients } from "../../api/master";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
+import { SmartHelpButton } from "../../components/help/SmartHelpButton";
 import { SmartModalShell } from "../../components/common/SmartModalShell";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
@@ -50,18 +52,29 @@ interface DeactivateTarget {
  * 물리 삭제와 일괄 비활성화는 정책상 제공하지 않으며, REJECTED decision은 backend와 동일하게 끌 수 없다.
  */
 export function ImportMappingLearningPage() {
-  const [activeTab, setActiveTab] = useState<"profiles" | "decisions">("profiles");
+  // 업로드/자동매핑 화면에서 "학습 관리로 이동" 링크로 진입할 때 검색 조건을 미리 채운다.
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") === "decisions" ? "decisions" : "profiles";
+  const initialImportType = searchParams.get("import_type") || "ALL";
+  const initialKeyword = searchParams.get("keyword") || "";
+  const initialProfileId = Number(searchParams.get("profile_id")) || null;
+  const initialDecisionId = Number(searchParams.get("decision_id")) || null;
+
+  const [activeTab, setActiveTab] = useState<"profiles" | "decisions">(initialTab);
+  // 업로드 화면 "학습 보기"로 들어온 경우 해당 학습 레코드만 표시한다(전체 보기로 해제 가능).
+  const [focusProfileId, setFocusProfileId] = useState<number | null>(initialProfileId);
+  const [focusDecisionId, setFocusDecisionId] = useState<number | null>(initialDecisionId);
   const [profiles, setProfiles] = useState<ImportMappingProfile[]>([]);
   const [decisions, setDecisions] = useState<ImportMappingDecision[]>([]);
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [importTypes, setImportTypes] = useState<string[]>([]);
   const [sourceTypes, setSourceTypes] = useState<string[]>([]);
 
-  const [filterImportType, setFilterImportType] = useState<string>("ALL");
+  const [filterImportType, setFilterImportType] = useState<string>(initialImportType);
   const [filterSourceType, setFilterSourceType] = useState<string>("ALL");
   const [filterClientId, setFilterClientId] = useState<number | undefined>();
   const [filterActive, setFilterActive] = useState<string>("ALL");
-  const [filterKeyword, setFilterKeyword] = useState("");
+  const [filterKeyword, setFilterKeyword] = useState(initialKeyword);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
 
@@ -149,27 +162,31 @@ export function ImportMappingLearningPage() {
   const filteredProfiles = useMemo(
     () =>
       profiles.filter((profile) =>
-        matchesCommonFilters({
+        focusProfileId
+          ? profile.profile_id === focusProfileId
+          : matchesCommonFilters({
           active_yn: profile.active_yn,
           created_at: profile.created_at,
           searchText: [profile.profile_name, profile.header_signature, Object.entries(profile.mapping_json || {}).flat().join(" ")].join(" "),
         }),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [profiles, filterActive, filterKeyword, filterDateFrom, filterDateTo],
+    [profiles, filterActive, filterKeyword, filterDateFrom, filterDateTo, focusProfileId],
   );
 
   const filteredDecisions = useMemo(
     () =>
       decisions.filter((decision) =>
-        matchesCommonFilters({
-          active_yn: decision.active_yn,
-          created_at: decision.created_at,
-          searchText: [decision.original_header, decision.normalized_header, decision.canonical_field || ""].join(" "),
-        }),
+        focusDecisionId
+          ? decision.decision_id === focusDecisionId
+          : matchesCommonFilters({
+              active_yn: decision.active_yn,
+              created_at: decision.created_at,
+              searchText: [decision.original_header, decision.normalized_header, decision.canonical_field || ""].join(" "),
+            }),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [decisions, filterActive, filterKeyword, filterDateFrom, filterDateTo],
+    [decisions, filterActive, filterKeyword, filterDateFrom, filterDateTo, focusDecisionId],
   );
 
   function clientNameOf(clientId: number | null | undefined) {
@@ -390,9 +407,12 @@ export function ImportMappingLearningPage() {
         title="매핑 학습 관리"
         description="잘못 학습된 자동매핑을 비활성화하거나 다시 활성화합니다."
         extra={
-          <Button icon={<ReloadOutlined />} onClick={() => void loadData()} loading={loading}>
-            새로고침
-          </Button>
+          <Space>
+            <SmartHelpButton screenKey="imports.mapping-learning" />
+            <Button icon={<ReloadOutlined />} onClick={() => void loadData()} loading={loading}>
+              새로고침
+            </Button>
+          </Space>
         }
       />
 
@@ -443,6 +463,24 @@ export function ImportMappingLearningPage() {
         </Button>
       </Space>
 
+      {focusProfileId || focusDecisionId ? (
+        <Alert
+          type="info"
+          showIcon
+          message="업로드 화면에서 선택한 학습만 표시하고 있습니다."
+          action={
+            <Button
+              size="small"
+              onClick={() => {
+                setFocusProfileId(null);
+                setFocusDecisionId(null);
+              }}
+            >
+              전체 보기
+            </Button>
+          }
+        />
+      ) : null}
       {errorMessage ? <SmartErrorNotice message={errorMessage} /> : null}
       {notice ? <Alert type="success" showIcon message={notice} /> : null}
 

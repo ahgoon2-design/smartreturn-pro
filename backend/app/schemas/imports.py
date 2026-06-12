@@ -129,6 +129,8 @@ class ImportMappingSuggestionItem(BaseModel):
     reason: str | None = None
     provider: str | None = None
     providers: list[str] = Field(default_factory=list)
+    source_profile_id: int | None = None
+    source_decision_id: int | None = None
     is_required: bool = False
     is_risky_field: bool = False
     previous_profile_matched: bool = False

@@ -16,6 +16,8 @@ import {
 } from "../../api/importJobs";
 import { ApiClientError } from "../../api/client";
 import { listClients } from "../../api/master";
+import { useAuth } from "../../context/AuthContext";
+import { ROUTE_PATHS } from "../../routes/routePaths";
 import { SmartDataSection } from "../../components/common/SmartDataSection";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartModalShell } from "../../components/common/SmartModalShell";
@@ -87,6 +89,10 @@ export function SmartImportLauncher({
   useCanonicalPreviewColumns = false,
   formatPreviewMessage,
 }: SmartImportLauncherProps) {
+  const { hasPermission, isClientUser } = useAuth();
+  // 학습 관리 링크는 내부 운영자(IMPORT_MANAGE)에게만 보인다. 고객 포털에는 노출하지 않는다.
+  const canManageMappingLearning = !isClientUser && hasPermission("IMPORT_MANAGE");
+
   const [open, setOpen] = useState(false);
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [clientId, setClientId] = useState<number | null>(fixedClientId ?? null);
@@ -385,7 +391,8 @@ export function SmartImportLauncher({
       <SmartModalShell
         title={title}
         open={open}
-        width={1100}
+        width="min(1100px, calc(100vw - 48px))"
+        className="smart-import-launcher-modal"
         onCancel={() => setOpen(false)}
         footer={[
           <Button key="close" onClick={() => setOpen(false)}>
@@ -405,7 +412,7 @@ export function SmartImportLauncher({
           </Button>,
         ]}
       >
-        <Space direction="vertical" size={12} className="smart-full-width">
+        <Space direction="vertical" size={12} className="smart-full-width smart-import-modal-body">
           <Alert
             type="info"
             showIcon
@@ -490,8 +497,17 @@ export function SmartImportLauncher({
           </SmartDataSection>
 
           {mapping ? (
-            <SmartDataSection title="매핑 안전 판정">
-              <Space direction="vertical" size={6}>
+            <SmartDataSection
+              title="매핑 안전 판정"
+              extra={
+                canManageMappingLearning ? (
+                  <Button size="small" onClick={() => openMappingLearning(importType)}>
+                    매핑 학습 관리
+                  </Button>
+                ) : null
+              }
+            >
+              <Space direction="vertical" size={6} className="smart-full-width smart-import-mapping-shell">
                 <Alert
                   type={mappingBlocked ? "error" : mappingReviewRequired && !mappingReviewed ? "warning" : "success"}
                   showIcon
@@ -507,16 +523,20 @@ export function SmartImportLauncher({
                 {mapping.blocked_reasons?.length ? (
                   <Typography.Text type="danger">차단 사유: {mapping.blocked_reasons.join(", ")}</Typography.Text>
                 ) : null}
-                <Space direction="vertical" size={6} className="smart-full-width">
+                <Space direction="vertical" size={6} className="smart-full-width smart-import-mapping-list">
                   {mapping.suggestions.slice(0, 12).map((item) => (
-                    <Space key={`${item.source_header || item.target_field}-${item.target_field || "none"}`} wrap className="smart-full-width">
+                    <Space
+                      key={`${item.source_header || item.target_field}-${item.target_field || "none"}`}
+                      wrap
+                      className="smart-full-width smart-import-mapping-row"
+                    >
                       <SmartStatusBadge status={formatDecisionLevel(item.decision_level)} />
                       <Typography.Text strong>{item.source_header || "(필수필드)"}</Typography.Text>
                       <Select
                         allowClear
                         showSearch
                         size="small"
-                        style={{ minWidth: 220 }}
+                        className="smart-import-mapping-select"
                         placeholder="매핑 선택"
                         value={item.source_header ? mapping.applied_mapping[item.source_header] || undefined : item.target_field || undefined}
                         disabled={!item.source_header}
@@ -530,6 +550,25 @@ export function SmartImportLauncher({
                       <Typography.Text type={item.decision_level === "BLOCKED" ? "danger" : "secondary"}>
                         {Math.round((item.confidence || 0) * 100)}% · {item.provider || "RULE"} · {item.reason || item.status}
                       </Typography.Text>
+                      {canManageMappingLearning &&
+                      item.source_header &&
+                      (item.provider === "PROFILE" || item.provider === "DECISION_HISTORY") ? (
+                        <Button
+                          type="link"
+                          size="small"
+                          onClick={() =>
+                            openMappingLearning(
+                              importType,
+                              item.source_header,
+                              item.provider,
+                              item.source_profile_id,
+                              item.source_decision_id,
+                            )
+                          }
+                        >
+                          학습 보기
+                        </Button>
+                      ) : null}
                     </Space>
                   ))}
                 </Space>
@@ -539,7 +578,7 @@ export function SmartImportLauncher({
 
           {mapping ? (
             <SmartDataSection title="매핑 추천 결과">
-              <Space direction="vertical" size={6}>
+              <Space direction="vertical" size={6} className="smart-full-width smart-import-mapping-summary">
                 <Typography.Text>
                   적용 매핑:{" "}
                   {Object.entries(mapping.applied_mapping)
@@ -572,7 +611,8 @@ export function SmartImportLauncher({
               </Space>
             }
           >
-            <SmartDataGrid<ImportJobRow>
+            <div className="smart-import-modal-grid-wrap">
+              <SmartDataGrid<ImportJobRow>
               rowKey={(row) => getRowId(row)}
               columns={columns}
               rows={filteredRows}
@@ -583,13 +623,43 @@ export function SmartImportLauncher({
               enableOriginalOrderReset
               enableCopy
               pagination={false}
-              maxHeight={320}
-            />
+                maxHeight={320}
+              />
+            </div>
           </SmartDataSection>
         </Space>
       </SmartModalShell>
     </>
   );
+}
+
+/**
+ * 매핑 학습 관리 화면을 새 탭으로 연다(업로드 모달 작업 상태 보존).
+ * provider가 PROFILE이면 프로필 탭, DECISION_HISTORY면 결정 이력 탭으로 진입하고
+ * 헤더명을 검색 조건으로 미리 채운다. 비활성화 자체는 관리 화면의 사유 입력/경고를 그대로 거친다.
+ */
+function openMappingLearning(
+  importType: string,
+  sourceHeader?: string,
+  provider?: string | null,
+  sourceProfileId?: number | null,
+  sourceDecisionId?: number | null,
+) {
+  const params = new URLSearchParams();
+  params.set("import_type", importType);
+  if (sourceHeader) {
+    params.set("keyword", sourceHeader);
+  }
+  if (sourceProfileId !== undefined && sourceProfileId !== null) {
+    params.set("profile_id", String(sourceProfileId));
+  }
+  if (sourceDecisionId !== undefined && sourceDecisionId !== null) {
+    params.set("decision_id", String(sourceDecisionId));
+  }
+  if (provider === "DECISION_HISTORY") {
+    params.set("tab", "decisions");
+  }
+  window.open(`${ROUTE_PATHS.importMappingLearning}?${params.toString()}`, "_blank", "noopener");
 }
 
 function parsePasteRows(text: string): ImportPasteRowItem[] {

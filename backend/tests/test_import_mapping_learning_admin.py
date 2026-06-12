@@ -196,7 +196,10 @@ def test_inactive_profile_is_excluded_and_reactivation_restores_provider():
 
         first_job = _create_product_master_job(db, client_row=client_row, created_by=admin)
         first_data = _auto_map(client, headers, first_job.id)
-        assert next(item for item in first_data["suggestions"] if item["source_header"] == "legacy sku")["provider"] == "PROFILE"
+        first_suggestion = next(item for item in first_data["suggestions"] if item["source_header"] == "legacy sku")
+        assert first_suggestion["provider"] == "PROFILE"
+        assert first_suggestion["source_profile_id"] == profile.id
+        assert first_suggestion["source_decision_id"] is None
 
         deactivate = client.patch(
             f"/api/import-jobs/mapping-profiles/{profile.id}/deactivate",
@@ -209,7 +212,9 @@ def test_inactive_profile_is_excluded_and_reactivation_restores_provider():
 
         second_job = _create_product_master_job(db, client_row=client_row, created_by=admin)
         second_data = _auto_map(client, headers, second_job.id)
-        assert next(item for item in second_data["suggestions"] if item["source_header"] == "legacy sku")["provider"] != "PROFILE"
+        second_suggestion = next(item for item in second_data["suggestions"] if item["source_header"] == "legacy sku")
+        assert second_suggestion["provider"] != "PROFILE"
+        assert second_suggestion["source_profile_id"] is None
 
         active_list = client.get("/api/import-jobs/mapping-profiles", headers=headers)
         assert all(item["profile_id"] != profile.id for item in active_list.json()["data"]["items"])
@@ -220,7 +225,9 @@ def test_inactive_profile_is_excluded_and_reactivation_restores_provider():
         assert activate.status_code == 200
         third_job = _create_product_master_job(db, client_row=client_row, created_by=admin)
         third_data = _auto_map(client, headers, third_job.id)
-        assert next(item for item in third_data["suggestions"] if item["source_header"] == "legacy sku")["provider"] == "PROFILE"
+        third_suggestion = next(item for item in third_data["suggestions"] if item["source_header"] == "legacy sku")
+        assert third_suggestion["provider"] == "PROFILE"
+        assert third_suggestion["source_profile_id"] == profile.id
 
 
 def test_inactive_decision_is_excluded_and_reactivation_restores_provider_without_row_mutation():
@@ -246,7 +253,10 @@ def test_inactive_decision_is_excluded_and_reactivation_restores_provider_withou
 
         first_job = _create_product_master_job(db, client_row=client_row, created_by=admin)
         first_data = _auto_map(client, headers, first_job.id)
-        assert next(item for item in first_data["suggestions"] if item["source_header"] == "legacy sku")["provider"] == "DECISION_HISTORY"
+        first_suggestion = next(item for item in first_data["suggestions"] if item["source_header"] == "legacy sku")
+        assert first_suggestion["provider"] == "DECISION_HISTORY"
+        assert first_suggestion["source_decision_id"] == decision.id
+        assert first_suggestion["source_profile_id"] is None
         row_before = db.query(ImportJobRow).filter(ImportJobRow.job_id == first_job.id).one()
         original_row_no = row_before.row_no
         original_raw = dict(row_before.raw_json)
@@ -267,7 +277,9 @@ def test_inactive_decision_is_excluded_and_reactivation_restores_provider_withou
 
         second_job = _create_product_master_job(db, client_row=client_row, created_by=admin)
         second_data = _auto_map(client, headers, second_job.id)
-        assert next(item for item in second_data["suggestions"] if item["source_header"] == "legacy sku")["provider"] != "DECISION_HISTORY"
+        second_suggestion = next(item for item in second_data["suggestions"] if item["source_header"] == "legacy sku")
+        assert second_suggestion["provider"] != "DECISION_HISTORY"
+        assert second_suggestion["source_decision_id"] is None
 
         active_list = client.get("/api/import-jobs/mapping-decisions", headers=headers)
         assert all(item["decision_id"] != decision.id for item in active_list.json()["data"]["items"])
@@ -278,7 +290,9 @@ def test_inactive_decision_is_excluded_and_reactivation_restores_provider_withou
         assert activate.status_code == 200
         third_job = _create_product_master_job(db, client_row=client_row, created_by=admin)
         third_data = _auto_map(client, headers, third_job.id)
-        assert next(item for item in third_data["suggestions"] if item["source_header"] == "legacy sku")["provider"] == "DECISION_HISTORY"
+        third_suggestion = next(item for item in third_data["suggestions"] if item["source_header"] == "legacy sku")
+        assert third_suggestion["provider"] == "DECISION_HISTORY"
+        assert third_suggestion["source_decision_id"] == decision.id
 
 
 def test_mapping_learning_admin_policy_blocks_customer_agency_and_rejected_decision():

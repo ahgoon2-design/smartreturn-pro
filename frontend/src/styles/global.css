@@ -519,6 +519,93 @@ body {
   border-top: 1px solid var(--smart-border);
 }
 
+.smart-import-launcher-modal {
+  max-width: calc(100vw - 48px);
+}
+
+.smart-import-launcher-modal .ant-modal-content {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.smart-import-launcher-modal .ant-modal-body {
+  max-height: calc(100vh - 190px);
+  overflow: auto;
+  min-width: 0;
+}
+
+.smart-import-modal-body,
+.smart-import-modal-body > .ant-space-item,
+.smart-import-modal-body .smart-work-panel,
+.smart-import-modal-body .ant-card-body {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.smart-import-modal-body .ant-alert-message,
+.smart-import-modal-body .ant-alert-description,
+.smart-import-mapping-summary .ant-typography {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.smart-import-mapping-shell {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.smart-import-mapping-list {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.smart-import-mapping-row {
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  row-gap: 4px;
+}
+
+.smart-import-mapping-row > .ant-space-item {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.smart-import-mapping-row > .ant-space-item:nth-child(2) {
+  flex: 0 1 180px;
+}
+
+.smart-import-mapping-row > .ant-space-item:nth-child(4) {
+  flex: 1 1 260px;
+}
+
+.smart-import-mapping-row > .ant-space-item:nth-child(2) .ant-typography,
+.smart-import-mapping-row > .ant-space-item:nth-child(4) .ant-typography {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-import-mapping-select {
+  width: clamp(180px, 24vw, 240px);
+  max-width: 100%;
+}
+
+.smart-import-modal-grid-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.smart-import-modal-grid-wrap .smart-data-grid {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .smart-scan-panel {
   border-radius: 14px;
   box-shadow: var(--smart-panel-shadow-soft);
