@@ -9,6 +9,7 @@ import { confirmReturnClosing, listReturnClosingCandidates } from "../../api/ret
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
+import { SmartHelpButton } from "../../components/help/SmartHelpButton";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
@@ -207,6 +208,7 @@ export function ReturnClosingPage() {
         description="처리완료 row의 판정별 수량을 확인한 뒤 일마감을 확정합니다. 일마감 전에는 현재고가 바뀌지 않고, 확정 후 고객사/팀/창고/상품/판정 기준으로 재고가 반영됩니다."
         extra={
           <Space>
+            <SmartHelpButton screenKey="returns.closing" />
             <Button icon={<ReloadOutlined />} onClick={() => void loadCandidates()} loading={loading}>
               새로고침
             </Button>

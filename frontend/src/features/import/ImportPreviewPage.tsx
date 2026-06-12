@@ -16,6 +16,7 @@ import { SmartActionBar } from "../../components/common/SmartActionBar";
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
+import { SmartHelpButton } from "../../components/help/SmartHelpButton";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartSummaryCard } from "../../components/common/SmartSummaryCard";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
@@ -277,7 +278,12 @@ export function ImportPreviewPage() {
       <SmartPageHeader
         title="Import Preview"
         description="paste rows 저장, validation 실행, rows/errors 조회 흐름을 확인하는 React skeleton 화면입니다."
-        extra={<SmartStatusBadge status={currentJobStatus} />}
+        extra={
+          <Space>
+            <SmartStatusBadge status={currentJobStatus} />
+            <SmartHelpButton screenKey="imports.smart-import" />
+          </Space>
+        }
       />
 
       <section className="smart-toolbar">

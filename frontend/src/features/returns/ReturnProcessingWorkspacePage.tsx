@@ -16,6 +16,7 @@ import {
 import { SmartErrorNotice } from "../../components/common/SmartErrorNotice";
 import { SmartPage } from "../../components/common/SmartPage";
 import { SmartPageHeader } from "../../components/common/SmartPageHeader";
+import { SmartHelpButton } from "../../components/help/SmartHelpButton";
 import { SmartScanPanel } from "../../components/common/SmartScanPanel";
 import { SmartStatusBadge } from "../../components/common/SmartStatusBadge";
 import { SmartDataGrid } from "../../components/grid/SmartDataGrid";
@@ -796,6 +797,7 @@ export function ReturnProcessingWorkspacePage() {
         description="운송장 스캔 또는 그리드 선택으로 상품을 확인하고 판정합니다. 처리완료는 현장 판정 완료이며, 재고는 일마감 또는 반출/폐기 확정 후 반영됩니다."
         extra={
           <Space>
+            <SmartHelpButton screenKey="returns.processing" />
             <Button icon={<ClearOutlined />} onClick={handleReset}>
               초기화
             </Button>
