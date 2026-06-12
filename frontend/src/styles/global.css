@@ -67,6 +67,110 @@ body {
   width: 100%;
 }
 
+/* 로그인 화면 전용: 좌측 소개(히어로) + 우측 폼 2단 구성. 좁은 화면은 1단 폴백. */
+.smart-auth-login-panel {
+  display: grid;
+  width: min(960px, 100%);
+  grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.smart-auth-login-hero {
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  padding: 28px;
+  border: 1px solid var(--smart-border);
+  border-radius: 16px;
+  background: var(--smart-card-bg);
+  box-shadow: var(--smart-panel-shadow);
+}
+
+.smart-auth-login-title {
+  margin: 0 !important;
+  letter-spacing: -0.03em;
+}
+
+.smart-auth-login-desc {
+  margin: 0 !important;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.smart-auth-login-metrics {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.smart-auth-login-metric {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--smart-border);
+  border-radius: 12px;
+  background: var(--smart-card-soft-bg);
+}
+
+.smart-auth-login-metric-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--smart-blue-soft);
+  color: var(--smart-blue-main);
+  font-size: 15px;
+}
+
+.smart-auth-login-metric-label {
+  display: block;
+  font-size: 11px;
+}
+
+.smart-auth-login-metric-value {
+  display: block;
+  font-size: 13px;
+}
+
+.smart-auth-login-card {
+  width: auto;
+}
+
+.smart-auth-login-form-title {
+  margin-top: 0 !important;
+  margin-bottom: 14px !important;
+}
+
+.smart-auth-login-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.smart-auth-login-submit {
+  min-width: 132px;
+}
+
+.smart-auth-login-status {
+  margin-top: 14px;
+}
+
+@media (max-width: 920px) {
+  .smart-auth-login-panel {
+    grid-template-columns: 1fr;
+    width: min(440px, 100%);
+  }
+
+  .smart-auth-login-hero {
+    padding: 20px;
+  }
+}
+
 .smart-route-loading {
   display: flex;
   min-height: 240px;
