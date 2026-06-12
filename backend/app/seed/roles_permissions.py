@@ -131,6 +131,12 @@ PERMISSION_SEED_DATA = [
         "active_yn": True,
     },
     {
+        "permission_code": "RETURN_CLIENT_SUBMIT",
+        "permission_name": "고객포털 반품 접수",
+        "description": "고객포털에서 자기 고객사의 반품 접수/예정자료를 등록하거나 업로드하는 권한이다.",
+        "active_yn": True,
+    },
+    {
         "permission_code": "RETURN_PROCESS",
         "permission_name": "반품처리",
         "description": "실제 도착 반품 스캔과 작업 시작 후보 권한이다.",
@@ -288,6 +294,7 @@ CLIENT_ADMIN_PERMISSIONS = [
     "MASTER_VIEW",
     "IMPORT_VIEW",
     "RETURN_VIEW",
+    "RETURN_CLIENT_SUBMIT",
     "RETURN_TRACE",
     "INBOUND_VIEW",
     "OUTBOUND_VIEW",
@@ -313,6 +320,7 @@ AGENCY_ADMIN_PERMISSIONS = [
 
 CLIENT_USER_PERMISSIONS = [
     "RETURN_VIEW",
+    "RETURN_CLIENT_SUBMIT",
     "RETURN_TRACE",
     "OUTBOUND_VIEW",
     "INVENTORY_VIEW",

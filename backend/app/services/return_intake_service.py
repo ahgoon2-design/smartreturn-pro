@@ -206,6 +206,8 @@ MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 RETURN_PROCESSING_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "return-processing"
 
 ALLOWED_SOURCE_TYPES = {"PASTE", "MANUAL"}
+RETURN_INTERNAL_OPERATION_ROLES = {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER", "AGENCY_ADMIN"}
+RETURN_CLIENT_SUBMIT_ROLES = {"CLIENT_ADMIN", "CLIENT_USER"}
 
 
 def _business_error(result_code: str, message: str, status_code: int = 400) -> AuthError:
@@ -221,6 +223,51 @@ def _require_return_prepare(auth: AuthContext) -> None:
         raise PermissionDeniedError("읽기 전용 사용자는 반품 접수 자료를 변경할 수 없습니다.")
     require_roles(auth, {"SUPER_ADMIN", "INTERNAL_ADMIN", "INTERNAL_WORKER", "AGENCY_ADMIN", "CLIENT_ADMIN", "CLIENT_USER"})
     require_permission(auth, "RETURN_PREPARE")
+
+
+def _require_writable_return_user(auth: AuthContext, message: str) -> None:
+    if not can_write(auth):
+        raise PermissionDeniedError(message)
+
+
+def _require_return_intake_submit(auth: AuthContext) -> None:
+    _require_writable_return_user(auth, "읽기 전용 사용자는 반품 접수 자료를 변경할 수 없습니다.")
+    if set(auth.roles).intersection(RETURN_INTERNAL_OPERATION_ROLES):
+        require_roles(auth, RETURN_INTERNAL_OPERATION_ROLES)
+        require_permission(auth, "RETURN_PREPARE")
+        return
+    require_roles(auth, RETURN_CLIENT_SUBMIT_ROLES)
+    require_permission(auth, "RETURN_CLIENT_SUBMIT")
+
+
+def _require_return_internal_prepare(auth: AuthContext) -> None:
+    _require_writable_return_user(auth, "읽기 전용 사용자는 반품 내부 준비 작업을 수행할 수 없습니다.")
+    require_roles(auth, RETURN_INTERNAL_OPERATION_ROLES)
+    require_permission(auth, "RETURN_PREPARE")
+
+
+def _require_return_process(auth: AuthContext) -> None:
+    _require_writable_return_user(auth, "읽기 전용 사용자는 반품 처리 작업을 수행할 수 없습니다.")
+    require_roles(auth, RETURN_INTERNAL_OPERATION_ROLES)
+    require_permission(auth, "RETURN_PROCESS")
+
+
+def _require_return_judge(auth: AuthContext) -> None:
+    _require_writable_return_user(auth, "읽기 전용 사용자는 반품 판정을 확정할 수 없습니다.")
+    require_roles(auth, RETURN_INTERNAL_OPERATION_ROLES)
+    require_permission(auth, "RETURN_JUDGE")
+
+
+def _require_return_close(auth: AuthContext) -> None:
+    _require_writable_return_user(auth, "읽기 전용 사용자는 반품 마감을 확정할 수 없습니다.")
+    require_roles(auth, RETURN_INTERNAL_OPERATION_ROLES)
+    require_permission(auth, "RETURN_CLOSE")
+
+
+def _require_return_outbound(auth: AuthContext) -> None:
+    _require_writable_return_user(auth, "읽기 전용 사용자는 반품 반출/폐기를 확정할 수 없습니다.")
+    require_roles(auth, RETURN_INTERNAL_OPERATION_ROLES)
+    require_permission(auth, "RETURN_OUTBOUND")
 
 
 def _safe_text(value: Any) -> str | None:
@@ -759,7 +806,7 @@ def _attachment_response(attachment: ReturnProcessingAttachment) -> dict:
 
 
 def create_return_intake_batch(db: Session, auth: AuthContext, request: ReturnIntakeBatchCreateRequest) -> dict:
-    _require_return_prepare(auth)
+    _require_return_intake_submit(auth)
     client_id = resolve_effective_client_id(auth, request.client_id)
     if client_id is None:
         raise ClientScopeDeniedError("반품 접수 batch에는 client_id가 필요합니다.")
@@ -830,7 +877,7 @@ def paste_return_intake_rows(
     batch_id: int,
     request: ReturnIntakePasteRowsRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_intake_submit(auth)
     batch, _client = _get_batch_for_auth(db, auth, batch_id)
     existing_count = repo.count_rows(db, batch.id)
     if existing_count > 0 and not request.replace_existing:
@@ -971,7 +1018,7 @@ def assign_return_intake_row_unit(
     row_id: int,
     request: ReturnAssignUnitRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_internal_prepare(auth)
     row_with_client = repo.get_processing_task_with_client(db, row_id)
     if row_with_client is None:
         raise _business_error("RETURN_INTAKE_ROW_NOT_FOUND", "반품 접수 row를 찾을 수 없습니다.", 404)
@@ -999,7 +1046,7 @@ def assign_return_intake_row_unit(
 
 
 def validate_return_intake_batch(db: Session, auth: AuthContext, batch_id: int) -> dict:
-    _require_return_prepare(auth)
+    _require_return_intake_submit(auth)
     batch, _client = _get_batch_for_auth(db, auth, batch_id)
     rows, total_count = repo.list_rows(db, batch_id=batch.id, page=1, page_size=5000)
     if total_count == 0:
@@ -1051,7 +1098,7 @@ def validate_return_intake_batch(db: Session, auth: AuthContext, batch_id: int) 
 
 
 def prepare_return_intake_batch_for_processing(db: Session, auth: AuthContext, batch_id: int) -> dict:
-    _require_return_prepare(auth)
+    _require_return_internal_prepare(auth)
     batch, _client = _get_batch_for_auth(db, auth, batch_id)
     if batch.status not in {
         BATCH_STATUS_VALIDATED,
@@ -1155,7 +1202,7 @@ def create_return_processing_manual_row(
     auth: AuthContext,
     request: ReturnProcessingManualRowCreateRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_process(auth)
     effective_client_id = resolve_effective_client_id(auth, request.client_id)
     processing_method = _ensure_processing_method(request.processing_method)
     product = _resolve_manual_row_product(
@@ -1288,7 +1335,7 @@ def judge_return_processing_task(
     task_id: int,
     request: ReturnProcessingJudgeRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_judge(auth)
     task_row = repo.get_processing_task_with_client(db, task_id)
     if task_row is None:
         raise _business_error(
@@ -1364,7 +1411,7 @@ def upload_return_processing_attachment(
     attachment_type: str | None = None,
     note: str | None = None,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_process(auth)
     row, _client = _get_processing_task_for_attachment(db, auth, task_id)
     _ensure_attachment_task_allowed(row)
     safe_filename = _ensure_attachment_filename(filename)
@@ -1427,7 +1474,7 @@ def disable_return_processing_attachment(
     task_id: int,
     attachment_id: int,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_process(auth)
     row, _client = _get_processing_task_for_attachment(db, auth, task_id)
     attachment = repo.get_processing_attachment(db, task_id=row.id, attachment_id=attachment_id)
     if attachment is None:
@@ -1544,7 +1591,7 @@ def confirm_return_closing(
     auth: AuthContext,
     request: ReturnClosingConfirmRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_close(auth)
     effective_client_id = resolve_effective_client_id(auth, request.client_id, allow_all_clients=True)
     requested_row_ids = list(dict.fromkeys(request.row_ids))
     rows_with_clients = repo.list_closing_rows_by_ids(db, row_ids=requested_row_ids, client_id=effective_client_id)
@@ -1805,7 +1852,7 @@ def confirm_return_external_outbound(
     auth: AuthContext,
     request: ReturnExternalOutboundConfirmRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_outbound(auth)
     effective_client_id = resolve_effective_client_id(auth, request.client_id, allow_all_clients=True)
     requested_row_ids = list(dict.fromkeys(request.row_ids))
     scanned_numbers: set[str] = set()
@@ -2090,7 +2137,7 @@ def update_return_hold_task(
     task_id: int,
     request: ReturnHoldUpdateRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_judge(auth)
     task_row = repo.get_processing_task_with_client(db, task_id)
     if task_row is None:
         raise _business_error("RETURN_HOLD_TASK_NOT_FOUND", "반품 보류 대상을 찾을 수 없습니다.", 404)
@@ -2134,7 +2181,7 @@ def rejudge_return_hold_task(
     task_id: int,
     request: ReturnHoldRejudgeRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_judge(auth)
     task_row = repo.get_processing_task_with_client(db, task_id)
     if task_row is None:
         raise _business_error("RETURN_HOLD_TASK_NOT_FOUND", "반품 보류 대상을 찾을 수 없습니다.", 404)
@@ -2241,7 +2288,7 @@ def confirm_return_disposal_task(
     task_id: int,
     request: ReturnDisposalConfirmRequest,
 ) -> dict:
-    _require_return_prepare(auth)
+    _require_return_outbound(auth)
     task_row = repo.get_processing_task_with_client(db, task_id)
     if task_row is None:
         raise _business_error("RETURN_DISPOSAL_TASK_NOT_FOUND", "반품 폐기 대상을 찾을 수 없습니다.", 404)

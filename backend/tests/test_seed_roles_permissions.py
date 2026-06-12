@@ -25,6 +25,7 @@ WRITE_PERMISSIONS = {
     "PRODUCT_MANAGE",
     "COMMON_CODE_MANAGE",
     "IMPORT_MANAGE",
+    "RETURN_CLIENT_SUBMIT",
     "RETURN_PREPARE",
     "RETURN_PROCESS",
     "RETURN_JUDGE",
@@ -46,6 +47,14 @@ INTERNAL_WORKER_FORBIDDEN = {
     "INVENTORY_ADJUST",
     "SETTLEMENT_MANAGE",
     "COMMON_CODE_MANAGE",
+}
+
+CLIENT_INTERNAL_OPERATION_FORBIDDEN = {
+    "RETURN_PREPARE",
+    "RETURN_PROCESS",
+    "RETURN_JUDGE",
+    "RETURN_CLOSE",
+    "RETURN_OUTBOUND",
 }
 
 
@@ -83,3 +92,13 @@ def test_internal_worker_does_not_receive_admin_permissions() -> None:
     mappings = get_role_permission_seed_data()
 
     assert set(mappings["INTERNAL_WORKER"]).isdisjoint(INTERNAL_WORKER_FORBIDDEN)
+
+
+def test_client_roles_receive_portal_submit_without_internal_return_permissions() -> None:
+    mappings = get_role_permission_seed_data()
+
+    for role_code in ("CLIENT_ADMIN", "CLIENT_USER"):
+        role_permissions = set(mappings[role_code])
+        assert "RETURN_VIEW" in role_permissions
+        assert "RETURN_CLIENT_SUBMIT" in role_permissions
+        assert role_permissions.isdisjoint(CLIENT_INTERNAL_OPERATION_FORBIDDEN)

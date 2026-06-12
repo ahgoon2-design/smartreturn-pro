@@ -167,7 +167,18 @@ def _login(client: TestClient, login_id: str) -> dict[str, str]:
 
 
 def _return_permissions() -> list[str]:
-    return ["RETURN_VIEW", "RETURN_PREPARE"]
+    return [
+        "RETURN_VIEW",
+        "RETURN_PREPARE",
+        "RETURN_PROCESS",
+        "RETURN_JUDGE",
+        "RETURN_CLOSE",
+        "RETURN_OUTBOUND",
+    ]
+
+
+def _client_return_permissions() -> list[str]:
+    return ["RETURN_VIEW", "RETURN_CLIENT_SUBMIT", "RETURN_TRACE"]
 
 
 def _create_product(db: Session, client_id: int, code: str = "P001", barcode: str = "880001") -> Product:
@@ -433,6 +444,65 @@ def test_internal_admin_can_create_list_and_get_batch(client: TestClient, db_ses
     assert detail_response.status_code == 200
     assert detail_response.json()["data"]["status"] == "DRAFT"
     _assert_no_sensitive_values(create_response.json())
+
+
+def test_client_user_can_submit_own_return_intake_but_not_other_client(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_PORTAL_A")
+    other_client = _create_client(db_session, "CLIENT_PORTAL_B")
+    _create_user(
+        db_session,
+        login_id="client_portal_submit_user",
+        role_code="CLIENT_USER",
+        permissions=_client_return_permissions(),
+        client_id=client_row.id,
+    )
+    headers = _login(client, "client_portal_submit_user")
+
+    create_response = client.post(
+        "/api/returns/intake/batches",
+        json={"client_id": client_row.id, "source_type": "PASTE", "source_name": "portal paste"},
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    batch_id = create_response.json()["data"]["batch_id"]
+    assert create_response.json()["data"]["client_id"] == client_row.id
+
+    paste_response = client.post(
+        f"/api/returns/intake/batches/{batch_id}/rows/paste",
+        json=_rows_payload(),
+        headers=headers,
+    )
+    validate_response = client.post(f"/api/returns/intake/batches/{batch_id}/validate", headers=headers)
+    cross_client_response = client.post(
+        "/api/returns/intake/batches",
+        json={"client_id": other_client.id, "source_type": "PASTE"},
+        headers=headers,
+    )
+
+    assert paste_response.status_code == 200
+    assert validate_response.status_code == 200
+    assert cross_client_response.status_code == 403
+    assert cross_client_response.json()["result_code"] == "CLIENT_SCOPE_DENIED"
+
+
+def test_client_admin_without_portal_submit_permission_is_blocked(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_PORTAL_NO_PERMISSION")
+    _create_user(
+        db_session,
+        login_id="client_portal_no_permission_admin",
+        role_code="CLIENT_ADMIN",
+        permissions=["RETURN_VIEW", "RETURN_TRACE"],
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        "/api/returns/intake/batches",
+        json={"client_id": client_row.id, "source_type": "PASTE"},
+        headers=_login(client, "client_portal_no_permission_admin"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["result_code"] == "PERMISSION_DENIED"
 
 
 def test_paste_rows_preserves_original_row_order(client: TestClient, db_session: Session):
@@ -778,6 +848,139 @@ def test_processing_tasks_support_tracking_search(client: TestClient, db_session
     items = response.json()["data"]["items"]
     assert len(items) == 1
     assert items[0]["return_tracking_no"] == "RTN-002"
+
+
+def test_client_user_cannot_confirm_internal_return_processing(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_BLOCK_PROCESSING")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="processing_owner_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    _create_user(
+        db_session,
+        login_id="processing_blocked_client_user",
+        role_code="CLIENT_USER",
+        permissions=_client_return_permissions(),
+        client_id=client_row.id,
+    )
+    _headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="processing_owner_admin",
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "GOOD"},
+        headers=_login(client, "processing_blocked_client_user"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["result_code"] == "PERMISSION_DENIED"
+
+
+def test_client_admin_cannot_confirm_return_closing(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_BLOCK_CLOSING")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="closing_owner_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    _create_user(
+        db_session,
+        login_id="closing_blocked_client_admin",
+        role_code="CLIENT_ADMIN",
+        permissions=_client_return_permissions(),
+        client_id=client_row.id,
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="closing_owner_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
+
+    response = client.post(
+        "/api/returns/closing/confirm",
+        json={"row_ids": [task_id]},
+        headers=_login(client, "closing_blocked_client_admin"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["result_code"] == "PERMISSION_DENIED"
+
+
+def test_client_user_cannot_confirm_external_outbound(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_BLOCK_OUTBOUND")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="outbound_owner_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    _create_user(
+        db_session,
+        login_id="outbound_blocked_client_user",
+        role_code="CLIENT_USER",
+        permissions=_client_return_permissions(),
+        client_id=client_row.id,
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="outbound_owner_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="MANUFACTURER_RETURN")
+
+    response = client.post(
+        "/api/returns/external-outbound/confirm",
+        json={"row_ids": [task_id]},
+        headers=_login(client, "outbound_blocked_client_user"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["result_code"] == "PERMISSION_DENIED"
+
+
+def test_internal_worker_can_confirm_processing_with_operation_permission(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "WORKER_PROCESSING")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="worker_prepare_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    _create_user(
+        db_session,
+        login_id="worker_processing_user",
+        role_code="INTERNAL_WORKER",
+        permissions=["RETURN_VIEW", "RETURN_PROCESS", "RETURN_JUDGE"],
+    )
+    _headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="worker_prepare_admin",
+        client_id=client_row.id,
+    )
+
+    response = client.post(
+        f"/api/returns/processing/tasks/{task_id}/judge",
+        json={"judgement_status": "GOOD"},
+        headers=_login(client, "worker_processing_user"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "COMPLETED"
 
 
 def test_manual_processing_row_creates_and_increments_no_detail_return(client: TestClient, db_session: Session):
