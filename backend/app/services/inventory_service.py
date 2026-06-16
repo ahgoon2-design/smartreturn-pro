@@ -32,6 +32,49 @@ def list_current_inventory(
     require_permission(auth, "INVENTORY_VIEW")
     effective_client_id = resolve_effective_client_id(auth, client_id, allow_all_clients=True)
     effective_agency_id = resolve_effective_agency_id(auth, auth.agency_id, allow_all_agencies=True)
+
+    # 창고 미선택 = client_id+product_id+stock_status 합산 조회.
+    # 창고 선택 = 기존 창고별 조회 동작 보존. (둘 다 조회 전용이며 재고 계산/반영 로직은 변경하지 않는다.)
+    if warehouse_id is None:
+        aggregated_rows, total_count = inventory_repository.list_current_inventory_aggregated(
+            db,
+            agency_id=effective_agency_id,
+            client_id=effective_client_id,
+            product_code=_clean(product_code),
+            barcode=_clean(barcode),
+            keyword=_clean(keyword),
+            stock_status=_clean(stock_status),
+            page=page,
+            page_size=page_size,
+        )
+        response = CurrentInventoryListResponse(
+            items=[
+                CurrentInventoryItemResponse(
+                    inventory_id=None,
+                    client_id=row.client_id,
+                    client_code=row.client_code,
+                    client_name=row.client_name,
+                    warehouse_id=None,
+                    warehouse_code=None,
+                    warehouse_name=None,
+                    warehouse_count=row.warehouse_count,
+                    product_id=row.product_id,
+                    product_code=row.product_code,
+                    product_name=row.product_name,
+                    barcode=row.barcode,
+                    stock_status=row.stock_status,
+                    qty=row.qty,
+                    updated_at=None,
+                )
+                for row in aggregated_rows
+            ],
+            total_count=total_count,
+            page=page,
+            page_size=page_size,
+            aggregated=True,
+        )
+        return response.model_dump()
+
     rows, total_count = inventory_repository.list_current_inventory(
         db,
         agency_id=effective_agency_id,
@@ -54,6 +97,7 @@ def list_current_inventory(
                 warehouse_id=current.warehouse_id,
                 warehouse_code=warehouse.warehouse_code,
                 warehouse_name=warehouse.warehouse_name,
+                warehouse_count=1,
                 product_id=current.product_id,
                 product_code=product.product_code,
                 product_name=product.product_name,
@@ -67,6 +111,7 @@ def list_current_inventory(
         total_count=total_count,
         page=page,
         page_size=page_size,
+        aggregated=False,
     )
     return response.model_dump()
 

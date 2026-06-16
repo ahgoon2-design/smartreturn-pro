@@ -111,10 +111,18 @@ const STATUS_LABELS: Record<string, string> = {
   DUPLICATED: "중복",
 };
 
-export function SmartStatusBadge({ status, label }: { status?: string | null; label?: string }) {
+export function SmartStatusBadge({
+  status,
+  label,
+  tone: toneOverride,
+}: {
+  status?: string | null;
+  label?: string;
+  tone?: SmartStatusTone;
+}) {
   const value = status || "DRAFT";
   const normalizedValue = String(value).toUpperCase();
-  const tone = STATUS_TONES[normalizedValue] || STATUS_TONES[value] || "neutral";
+  const tone = toneOverride || STATUS_TONES[normalizedValue] || STATUS_TONES[value] || "neutral";
   return (
     <Tag className={`smart-status-badge smart-status-badge--${tone}`}>
       {label || STATUS_LABELS[value] || STATUS_LABELS[normalizedValue] || value}

@@ -150,6 +150,100 @@ def list_current_inventory(
     return rows, total_count
 
 
+def list_current_inventory_aggregated(
+    db: Session,
+    *,
+    agency_id: int | None = None,
+    client_id: int | None = None,
+    product_code: str | None = None,
+    barcode: str | None = None,
+    keyword: str | None = None,
+    stock_status: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
+) -> tuple[list, int]:
+    """창고 미지정 조회용 합산 결과.
+
+    같은 client_id+product_id+stock_status를 창고를 가로질러 SUM(qty_on_hand)로 합산한다.
+    순수 조회용 집계이며 current_inventory를 변경하지 않는다(재고 계산/반영 로직과 무관).
+    창고 정보는 단일값이 없으므로 합산한 창고 수(warehouse_count)만 함께 돌려준다.
+    """
+    query = (
+        db.query(
+            CurrentInventory.client_id.label("client_id"),
+            Client.client_code.label("client_code"),
+            Client.client_name.label("client_name"),
+            CurrentInventory.product_id.label("product_id"),
+            Product.product_code.label("product_code"),
+            Product.product_name.label("product_name"),
+            Product.barcode.label("barcode"),
+            CurrentInventory.stock_status.label("stock_status"),
+            func.coalesce(func.sum(CurrentInventory.qty_on_hand), 0).label("qty"),
+            func.count(func.distinct(CurrentInventory.warehouse_id)).label("warehouse_count"),
+        )
+        .join(Client, Client.id == CurrentInventory.client_id)
+        .join(Product, Product.id == CurrentInventory.product_id)
+    )
+
+    if client_id is not None:
+        query = query.filter(CurrentInventory.client_id == client_id)
+    if agency_id is not None:
+        query = query.filter(CurrentInventory.agency_id == agency_id)
+    if product_code:
+        query = query.filter(Product.product_code.ilike(f"%{product_code}%"))
+    if barcode:
+        barcode_like = f"%{barcode}%"
+        query = query.filter(
+            or_(
+                Product.barcode.ilike(barcode_like),
+                Product.id.in_(
+                    db.query(ProductBarcode.product_id).filter(
+                        ProductBarcode.barcode.ilike(barcode_like),
+                    )
+                ),
+            )
+        )
+    if keyword:
+        # 창고 미지정 합산 모드에는 창고 조인이 없으므로 keyword는 고객사/상품/바코드만 검색한다.
+        keyword_like = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                Client.client_name.ilike(keyword_like),
+                Client.client_code.ilike(keyword_like),
+                Product.product_code.ilike(keyword_like),
+                Product.product_name.ilike(keyword_like),
+                Product.barcode.ilike(keyword_like),
+                Product.id.in_(
+                    db.query(ProductBarcode.product_id).filter(
+                        ProductBarcode.barcode.ilike(keyword_like),
+                    )
+                ),
+            )
+        )
+    if stock_status:
+        query = query.filter(CurrentInventory.stock_status == stock_status)
+
+    query = query.group_by(
+        CurrentInventory.client_id,
+        Client.client_code,
+        Client.client_name,
+        CurrentInventory.product_id,
+        Product.product_code,
+        Product.product_name,
+        Product.barcode,
+        CurrentInventory.stock_status,
+    )
+
+    total_count = db.query(func.count()).select_from(query.subquery()).scalar() or 0
+    rows = (
+        query.order_by(Client.client_name, Product.product_code, CurrentInventory.stock_status)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return rows, total_count
+
+
 def list_inventory_events(
     db: Session,
     *,

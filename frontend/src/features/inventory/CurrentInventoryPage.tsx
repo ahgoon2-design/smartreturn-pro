@@ -15,11 +15,15 @@ import type { SmartDataGridColumn } from "../../components/grid/SmartDataGrid.ty
 import type { CurrentInventoryItem } from "../../types/inventory";
 import type { ClientSummary, WarehouseSummary } from "../../types/master";
 import { getSearchNumber, getSearchString, mergeSearchParams } from "../../utils/routeState";
+import {
+  STOCK_STATUS_FILTER_OPTIONS,
+  stockStatusGroupLabel,
+  stockStatusGroupTone,
+  stockStatusLabel,
+  stockStatusOrder,
+} from "./stockStatus";
 
-const STOCK_STATUS_OPTIONS = [
-  { value: "ALL", label: "전체 재고상태" },
-  { value: "GOOD", label: "정상재고" },
-];
+const STOCK_STATUS_OPTIONS = STOCK_STATUS_FILTER_OPTIONS;
 
 export function CurrentInventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,6 +37,8 @@ export function CurrentInventoryPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [optionMessage, setOptionMessage] = useState("");
+  // 현재 표시 중인 결과가 어떤 창고 기준인지(undefined = 창고 전체 합산). 안내문 표시용.
+  const [loadedWarehouseId, setLoadedWarehouseId] = useState<number | undefined>(() => getSearchNumber(searchParams, "warehouse_id"));
 
   useEffect(() => {
     void initialize();
@@ -50,14 +56,39 @@ export function CurrentInventoryPage() {
     );
   }, [selectedClientId, selectedWarehouseId, keyword, stockStatus]);
 
-  const summary = useMemo(
-    () => ({
-      total: rows.length,
-      goodQty: rows
-        .filter((row) => row.stock_status === "GOOD")
-        .reduce((total, row) => total + Number(row.qty || 0), 0),
-    }),
+  // 업무 순서 정렬(판매가능 먼저, 처분대기 뒤). 같은 상품이라도 등급 행은 분리 유지.
+  const displayRows = useMemo(
+    () =>
+      [...rows].sort((left, right) => {
+        const clientCompare = String(left.client_name || "").localeCompare(String(right.client_name || ""), "ko");
+        if (clientCompare !== 0) {
+          return clientCompare;
+        }
+        const productCompare = String(left.product_code || "").localeCompare(String(right.product_code || ""), "ko");
+        if (productCompare !== 0) {
+          return productCompare;
+        }
+        return stockStatusOrder(left.stock_status) - stockStatusOrder(right.stock_status);
+      }),
     [rows],
+  );
+
+  const summary = useMemo(() => {
+    const sumByGroup = (tone: "success" | "warning") =>
+      rows
+        .filter((row) => stockStatusGroupTone(row.stock_status) === tone)
+        .reduce((total, row) => total + Number(row.qty || 0), 0);
+    return {
+      total: rows.length,
+      sellableQty: sumByGroup("success"),
+      disposalPendingQty: sumByGroup("warning"),
+    };
+  }, [rows]);
+
+  const aggregatedView = loadedWarehouseId === undefined;
+  const loadedWarehouseName = useMemo(
+    () => warehouses.find((warehouse) => warehouse.warehouse_id === loadedWarehouseId),
+    [warehouses, loadedWarehouseId],
   );
 
   const columns = useMemo<SmartDataGridColumn<CurrentInventoryItem>[]>(
@@ -76,14 +107,18 @@ export function CurrentInventoryPage() {
         dataIndex: "warehouse_code",
         width: 130,
         copyable: true,
-        render: (value) => toDisplayText(value),
+        render: (value, record) => (record.warehouse_id == null ? "전체 합산" : toDisplayText(value)),
+        exportValue: (record) => (record.warehouse_id == null ? "전체 합산" : record.warehouse_code ?? ""),
       },
       {
         key: "warehouse_name",
         title: "창고",
         dataIndex: "warehouse_name",
         width: 180,
-        render: (value) => toDisplayText(value),
+        render: (value, record) =>
+          record.warehouse_id == null ? `전체 ${Number(record.warehouse_count || 0)}개 창고` : toDisplayText(value),
+        exportValue: (record) =>
+          record.warehouse_id == null ? `전체 ${Number(record.warehouse_count || 0)}개 창고` : record.warehouse_name ?? "",
       },
       {
         key: "product_code",
@@ -110,11 +145,28 @@ export function CurrentInventoryPage() {
         render: (value) => toDisplayText(value),
       },
       {
+        key: "stock_group",
+        title: "구분",
+        dataIndex: "stock_status",
+        width: 100,
+        render: (value) => (
+          <SmartStatusBadge
+            status={String(value || "")}
+            label={stockStatusGroupLabel(value)}
+            tone={stockStatusGroupTone(value)}
+          />
+        ),
+        exportValue: (record) => stockStatusGroupLabel(record.stock_status),
+      },
+      {
         key: "stock_status",
         title: "재고상태",
         dataIndex: "stock_status",
-        width: 120,
-        render: (value) => <SmartStatusBadge status={String(value || "")} label={toStockStatusLabel(value)} />,
+        width: 130,
+        render: (value) => (
+          <SmartStatusBadge status={String(value || "")} label={stockStatusLabel(value)} tone={stockStatusGroupTone(value)} />
+        ),
+        exportValue: (record) => stockStatusLabel(record.stock_status),
       },
       {
         key: "qty",
@@ -180,6 +232,7 @@ export function CurrentInventoryPage() {
         pageSize: 300,
       });
       setRows(page.items || []);
+      setLoadedWarehouseId(nextWarehouseId);
     } catch (error) {
       setErrorMessage(toUserMessage(error, "재고현황을 불러오지 못했습니다."));
     } finally {
@@ -199,7 +252,7 @@ export function CurrentInventoryPage() {
     <SmartPage>
       <SmartPageHeader
         title="재고현황"
-        description="GOOD 반품 일마감으로 반영된 현재고를 고객사, 창고, 상품 기준으로 조회합니다."
+        description="현재고를 고객사·창고·상품·재고등급(stock_status) 기준으로 조회합니다. 창고를 선택하지 않으면 창고 전체를 합산해서 보여줍니다."
         extra={
           <Button icon={<ReloadOutlined />} onClick={() => void loadInventory()} loading={loading}>
             새로고침
@@ -255,25 +308,42 @@ export function CurrentInventoryPage() {
       {optionMessage ? <Alert type="info" showIcon message={optionMessage} /> : null}
       {errorMessage ? <SmartErrorNotice message={errorMessage} /> : null}
 
+      <Alert
+        type="info"
+        showIcon
+        message={
+          aggregatedView
+            ? "창고 전체 합산 보기 — 같은 상품·같은 등급은 모든 창고 수량을 합산해 한 줄로 표시합니다."
+            : `특정 창고 보기 — ${
+                loadedWarehouseName
+                  ? `${loadedWarehouseName.warehouse_code} · ${loadedWarehouseName.warehouse_name}`
+                  : "선택한 창고"
+              }의 재고만 표시합니다.`
+        }
+      />
+
       <div className="smart-summary-grid">
         <SmartSummaryCard label="조회 재고" value={`${summary.total}건`} />
-        <SmartSummaryCard label="정상재고 수량" value={`${summary.goodQty.toLocaleString()}개`} tone="success" />
-        <SmartSummaryCard label="표시 기준" value="current_inventory" tone="neutral" />
+        <SmartSummaryCard label="판매가능 수량" value={`${summary.sellableQty.toLocaleString()}개`} tone="success" />
+        <SmartSummaryCard label="처분대기 수량" value={`${summary.disposalPendingQty.toLocaleString()}개`} tone="warning" />
       </div>
 
       <Typography.Text type="secondary">
-        GOOD/양품 판정 row는 반품 일마감 확정 후 정상재고로 반영됩니다. 재고 이벤트 상세 이력은 후속 화면에서 다룹니다.
+        판매가능(양품·리퍼·샘플)과 처분대기(제조사반품·폐기)는 같은 상품이라도 등급별로 분리되어 표시됩니다. 재고 이벤트 상세 이력은 후속 화면에서 다룹니다.
       </Typography.Text>
 
       <SmartDataGrid<CurrentInventoryItem>
-        rows={rows}
+        rows={displayRows}
         columns={columns}
-        rowKey="inventory_id"
+        rowKey={(record) =>
+          record.inventory_id ?? `agg-${record.client_id}-${record.product_id}-${record.stock_status}`
+        }
         loading={loading}
         emptyText="조회된 재고가 없습니다."
         preserveOriginalOrder
         maxHeight={430}
         enableCopy
+        exportFileName="재고현황"
       />
     </SmartPage>
   );
@@ -281,13 +351,6 @@ export function CurrentInventoryPage() {
 
 function getClientId(client: ClientSummary) {
   return client.client_id ?? client.id ?? 0;
-}
-
-function toStockStatusLabel(value: unknown) {
-  if (value === "GOOD") {
-    return "정상재고";
-  }
-  return toDisplayText(value);
 }
 
 function toDisplayText(value: unknown) {

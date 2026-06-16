@@ -1,13 +1,15 @@
 import type { PageResponse } from "./api";
 
 export interface CurrentInventoryItem {
-  inventory_id: number;
+  // 창고 미선택(합산) 조회에서는 inventory_id/warehouse_id/updated_at이 null이고 warehouse_count로 합산 창고 수를 준다.
+  inventory_id?: number | null;
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
-  warehouse_id: number;
+  warehouse_id?: number | null;
   warehouse_code?: string | null;
   warehouse_name?: string | null;
+  warehouse_count?: number | null;
   product_id: number;
   product_code?: string | null;
   product_name?: string | null;
