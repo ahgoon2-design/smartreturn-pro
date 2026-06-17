@@ -1,0 +1,18 @@
+# 합의 루프 실행 산출물은 커밋하지 않는다(.gitkeep만 추적).
+consensus-runs/*
+!consensus-runs/.gitkeep
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+.tmp-tests/
+tmp*/
+tmp_probe_write.txt
+
+# PyInstaller 빌드 산출물
+build/
+dist/
+*.spec
+
+# GUI 설정(키 미포함이나 로컬 환경값이라 커밋 안 함)
+settings.json
