@@ -1,7 +1,7 @@
 # Codex 코드/권한/보안 검수 템플릿
 
 실행대상: Codex (backend/코드 검수 레인)
-선행: Fable 제작 + 똘망이 브라우저 검증 완료
+선행: Claude 제작 + 똘망이 브라우저 검증 완료
 
 > `<PROJECT_ROOT>/AGENTS.md`, `CODEX.md`를 먼저 읽는다. 브랜치 `smartreturn-pro` 기준. main 병합/동기화 제안 금지, push 금지. 검수 결과만 보고(임의 수정 금지, 수정 필요 시 항목별 보고).
 

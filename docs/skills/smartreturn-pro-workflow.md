@@ -8,11 +8,11 @@ SmartReturn Pro 작업을 시작하고 마감할 때 반복해서 적용할 기�
 
 작업 시작 전 아래를 먼저 확인한다.
 
-1. `pwd`
-2. `git remote -v`
-3. `git branch --show-current`
-4. `git status --short`
-5. `AGENTS.md`
+1. `git rev-parse --show-toplevel` (현재 저장소 루트 확인)
+2. `git branch --show-current` (브랜치 확인)
+3. `git remote -v` (원격 저장소 참고 확인)
+4. `git status --short` (변경 파일 확인)
+5. `<PROJECT_ROOT>/AGENTS.md` 읽기
 
 필요하면 작업 유형에 맞는 `/docs/skills/*.md`와 관련 `docs` 문서를 추가로 읽는다.
 
@@ -20,9 +20,9 @@ SmartReturn Pro 작업을 시작하고 마감할 때 반복해서 적용할 기�
 
 아래 조건이면 작업을 시작하지 말고 보고한다.
 
-- 현재 경로가 `C:\smartreturn-pro`가 아니다.
-- `origin`이 `https://github.com/ahgoon2-design/smartreturn-pro.git`가 아니다.
-- branch가 `main`이 아니다.
+- `git rev-parse --show-toplevel` 결과가 현재 작업 중인 SmartReturn Pro 저장소 루트가 아니거나, 구버전 SmartReturn 저장소로 보인다. (이번 환경 예시 경로: `C:\smartreturn-pro`)
+- `git remote -v`로 확인한 원격 저장소가 SmartReturn Pro 원격이 아닌 것으로 의심된다. (원격 URL은 강제 기준이 아니라 확인 참고용이다.)
+- branch가 `smartreturn-pro`가 아니다.
 - 기존 SmartReturn 저장소로 보인다.
 - `git status --short`가 깨끗해야 하는 작업인데 변경사항이 있다.
 - `backend/local.secret.json`, `.env`, `config.json`, 실제 secret/local 파일이 staged 또는 tracked 상태다.

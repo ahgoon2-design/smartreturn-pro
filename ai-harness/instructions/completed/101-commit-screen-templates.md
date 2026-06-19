@@ -1,7 +1,7 @@
 # 101 - 화면 제작/검증/검수 템플릿 커밋(기준점)
 
 ## 목표
-Fable/똘망이/Codex 템플릿 3종을 기준점으로 커밋. 이미 커밋되어 있으면 중복/빈 커밋 없이 상태만 보고.
+Claude/똘망이/Codex 템플릿 3종을 기준점으로 커밋. 이미 커밋되어 있으면 중복/빈 커밋 없이 상태만 보고.
 
 ## 담당 작업
 - git staging/commit (문서만)
@@ -11,7 +11,7 @@ Fable/똘망이/Codex 템플릿 3종을 기준점으로 커밋. 이미 커밋되
 
 ## 실행 범위
 - 대상 3개만 staging:
-  - `ai-harness/instructions/templates/fable-screen-build-template.md`
+  - `ai-harness/instructions/templates/claude-screen-build-template.md`
   - `ai-harness/instructions/templates/ddolmangi-screen-verify-template.md`
   - `ai-harness/instructions/templates/codex-review-template.md`
 - 커밋 메시지: `docs(harness): add screen build verify review templates`

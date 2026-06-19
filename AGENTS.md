@@ -103,7 +103,7 @@
 - 커밋은 사용자가 명시적으로 지시하기 전에는 하지 않는다.
 
 ## 슬라이스 스펙 우선 원칙 (똘망이 게이트)
-- 역할 분담: 기획·스펙·UX·정책 검토는 Claude/Fable(채팅 작업방), 구현·구축은 Claude Code, 검증·테스트·커밋은 Codex가 맡는다.
+- 역할 분담: 기획·스펙·UX·정책 검토는 Claude(채팅 작업방), 구현·구축은 Claude Code, 검증·테스트·커밋은 Codex가 맡는다.
 - 신규 화면/기능은 구현 전에 docs/specs/ 아래 해당 슬라이스 스펙 문서가 존재하고 사용자 승인을 받아야 한다. 스펙 없는 구현은 시작하지 않는다.
 - 스펙은 docs/specs/_slice-spec-template.md 형식을 따른다.
 - 파일명과 번호는 구현자가 자동 부여하며 사용자가 직접 정하지 않는다. 규칙:
@@ -111,15 +111,17 @@
   - 빌드 보고서: docs/reports/SPEC-NNN-build.md
   - 검증 보고서: docs/reports/SPEC-NNN-verify.md
   - 한 슬라이스의 스펙/빌드보고서/검증보고서는 같은 NNN 번호를 공유한다.
-- 작업은 5게이트 순서로 진행한다: ① 스펙 작성(Claude/Fable) → ② 스펙 승인(사용자) → ③ 구현 + 빌드 보고서(Claude Code) → ④ 검증 + 검증 보고서(Codex) → ⑤ 화면 인수·커밋 승인(사용자). 커밋은 사용자 승인 후 Codex가 실행한다.
+- 작업은 5게이트 순서로 진행한다: ① 스펙 작성(Claude) → ② 스펙 승인(사용자) → ③ 구현 + 빌드 보고서(Claude Code) → ④ 검증 + 검증 보고서(Codex) → ⑤ 화면 인수·커밋 승인(사용자). 커밋은 사용자 승인 후 Codex가 실행한다.
 - 모든 보고서에는 스펙 완료기준 항목별 충족/미충족을 포함한다.
 - 사용자 스펙 승인 전 구현, 사용자 인수 전 커밋은 금지한다.
 - 스펙과 구현이 어긋나면 우선 스펙을 기준으로 판단하고, 변경이 필요하면 스펙을 먼저 갱신한 뒤 구현한다.
 - 게이트 ① 스펙 작성은 .claude/agents/spec-writer.md 서브에이전트가 수행한다. Claude Code는 새 화면/기능/수정 전 이 서브에이전트로 스펙을 만들고, 사용자 승인(②) 전에는 구현하지 않는다.
 
 ## AI 팀 운영 기준
-- Codex/Claude/Fable/ChatGPT 동시 작업은 `docs/skills/ai-team-operation.md`의 똘망이 팀 큐 구조를 따른다.
+- Codex/Claude/ChatGPT 동시 작업은 `docs/skills/ai-team-operation.md`의 똘망이 팀 큐 구조를 따른다.
 - 똘망이는 별도 작업자가 아니라 작업 큐, 보고 체계, 충돌 방지, 커밋 통제 프레임이다.
+- 똘망이는 개발용 오케스트레이터이고, 똘순이는 사업용 오케스트레이터다. 사업계획, 영업, 가격, 운영정책, 법무·재무 리스크, 고객 공개 문서는 똘순이가 초안/검수/보고로 정리하고, 화면/DB/API/권한/테스트/배포 구현은 똘망이로 넘긴다.
+- 똘순이에서 똘망이로 넘길 때는 사업 목적, 고객 공개 여부, 운영정책, 금지 조건, 필요한 화면/API/데이터 변경 후보, 검수 상태, 남은 보류를 명시한다.
 - 같은 작업트리에서 동시 작업할 때는 수정 가능 파일과 금지 파일을 분리하고, 다른 작업자의 변경분을 무단으로 덮어쓰지 않는다.
 
 ## `/docs/skills` 보조 기준
@@ -129,7 +131,7 @@
 - 모든 작업 공통:
   - `docs/skills/smartreturn-pro-workflow.md`
   - `docs/skills/git-security-check.md`
-- Codex/Claude/Fable/ChatGPT 동시 작업 또는 똘망이 운영 큐 작성:
+- Codex/Claude/ChatGPT 동시 작업 또는 똘망이 운영 큐 작성:
   - `docs/skills/ai-team-operation.md`
 - 신규 기능/DB/메뉴/권한/포털/정산/채널연동/대시보드/사업 지표 설계 작업:
   - `docs/skills/smartreturn-platform-business-architecture.md`
@@ -234,7 +236,7 @@ Smart AI Dev Harness는 ChatGPT, Claude Code, Codex를 함께 사용하여 프�
 
 ## 8. 루프 중단조건 / 반복결함 방지
 
-- build 보고서(`docs/reports/SPEC-NNN-build.md`)가 없으면 검증을 시작하지 않는다.
+- 구현 게이트④ 검증은 build 보고서(`docs/reports/SPEC-NNN-build.md`)가 없으면 시작하지 않는다. 단, 문서 감사, 하네스 점검, 커밋 선별, 보안 점검처럼 구현 산출물 검증이 아닌 작업은 build 보고서 없이 진행할 수 있으며 그 범위를 명확히 보고한다.
 - 작업 시작 시 `git status`를 확인한다. dirty면 무엇이 섞였는지 먼저 분리·보고한 뒤 진행한다(clean 전제 금지).
 - 검증/검수 작업 중엔 코드를 고치지 않는다. 빨간 게 나오면 구현자(클코)로 되돌려 수정→재검증, 깨끗할 때까지 반복한다.
 - 빨간 테스트는 base-comparison으로 '의도된 차단 / 기존 실패 / 신규 회귀'를 구분한다. 억지로 green 만들지 않는다.
