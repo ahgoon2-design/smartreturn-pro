@@ -35,6 +35,8 @@ const PASTE_SAMPLE = [
 ].join("\n");
 
 export function ReturnIntakeHubPage() {
+  const [modal, modalContextHolder] = Modal.useModal();
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | undefined>(() => getSearchNumber(searchParams, "client_id"));
@@ -307,7 +309,7 @@ export function ReturnIntakeHubPage() {
         source_name: sourceName || "반품 접수 붙여넣기",
       });
       await pasteReturnIntakeRows(batch.batch_id, { rows: parsedRows, client_unit_id: selectedClientUnitId });
-      message.success("반품 접수 row를 저장했습니다.");
+      messageApi.success("반품 접수 row를 저장했습니다.");
       await loadBatches();
       setSelectedBatchId(batch.batch_id);
       await loadRows(batch.batch_id);
@@ -327,7 +329,7 @@ export function ReturnIntakeHubPage() {
     setErrorMessage("");
     try {
       await validateReturnIntakeBatch(selectedBatchId);
-      message.success("반품 접수 자료를 검증했습니다.");
+      messageApi.success("반품 접수 자료를 검증했습니다.");
       await loadBatches();
       await loadRows(selectedBatchId);
     } catch (error) {
@@ -342,7 +344,7 @@ export function ReturnIntakeHubPage() {
       setErrorMessage("처리대상을 생성할 batch를 선택해 주세요.");
       return;
     }
-    Modal.confirm({
+    modal.confirm({
       title: "처리대상을 생성할까요?",
       content: "정상/경고 row를 반품처리 대기 대상으로 전환합니다. 오류 row는 제외됩니다.",
       okText: "처리대상 생성",
@@ -355,7 +357,7 @@ export function ReturnIntakeHubPage() {
           const result = await prepareReturnIntakeBatchForProcessing(selectedBatchId);
           const summary = `준비된 행: ${result.prepared_rows}건 / 이미 준비됨: ${result.skipped_rows}건 / 제외된 오류 행: ${result.invalid_rows}건`;
           setPrepareSummary(summary);
-          message.success(result.message || "처리대상 생성 완료");
+          messageApi.success(result.message || "처리대상 생성 완료");
           await loadBatches();
           await loadRows(selectedBatchId);
           await loadProcessingTasks();
@@ -370,6 +372,8 @@ export function ReturnIntakeHubPage() {
 
   return (
     <SmartPage>
+      {modalContextHolder}
+      {messageContextHolder}
       <SmartPageHeader
         title="반품 자료"
         description="업체 반품 세부정보와 CJ 반품 운송장 자료를 저장·검증하고 현장 반품처리 대상을 만듭니다. 업체 세부정보는 참고자료이고, return_tracking_no는 현장 스캔 기준입니다."

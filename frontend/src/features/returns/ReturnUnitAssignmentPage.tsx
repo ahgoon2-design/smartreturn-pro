@@ -14,6 +14,7 @@ import type { ClientSummary, ClientUnit } from "../../types/master";
 import type { ReturnUnitAssignmentPendingRow } from "../../types/returns";
 
 export function ReturnUnitAssignmentPage() {
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
   const [keyword, setKeyword] = useState("");
@@ -107,18 +108,18 @@ export function ReturnUnitAssignmentPage() {
 
   async function handleAssign() {
     if (!selectedRow || !selectedUnitId) {
-      message.warning("배정할 반품 row와 운영단위/팀을 선택하세요.");
+      messageApi.warning("배정할 반품 row와 운영단위/팀을 선택하세요.");
       return;
     }
     setAssigning(true);
     try {
       await assignReturnIntakeRowUnit(selectedRow.row_id, { client_unit_id: selectedUnitId });
-      message.success("운영단위/팀을 배정했습니다.");
+      messageApi.success("운영단위/팀을 배정했습니다.");
       setSelectedRow(null);
       setSelectedUnitId(undefined);
       await loadRows();
     } catch (error) {
-      message.error(toUserMessage(error, "운영단위/팀을 배정하지 못했습니다."));
+      messageApi.error(toUserMessage(error, "운영단위/팀을 배정하지 못했습니다."));
     } finally {
       setAssigning(false);
     }
@@ -126,6 +127,7 @@ export function ReturnUnitAssignmentPage() {
 
   return (
     <SmartPage>
+      {messageContextHolder}
       <SmartPageHeader title="반품 팀배정대기" description="운영단위/팀이 필요한 고객사의 미배정 반품 row를 조회하고 배정합니다." />
       <SmartErrorNotice message={errorMessage} />
 

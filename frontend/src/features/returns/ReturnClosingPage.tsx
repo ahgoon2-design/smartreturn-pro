@@ -33,6 +33,9 @@ const JUDGEMENT_OPTIONS = [
 ];
 
 export function ReturnClosingPage() {
+  // antd v5 정적 Modal.confirm/message는 React 19에서 렌더되지 않아 훅(context) 기반으로 호출한다.
+  const [modal, modalContextHolder] = Modal.useModal();
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | undefined>(() => getSearchNumber(searchParams, "client_id"));
@@ -168,10 +171,10 @@ export function ReturnClosingPage() {
 
   function handleConfirm() {
     if (selectedRowKeys.length === 0) {
-      message.warning("마감 확정할 row를 선택하세요.");
+      messageApi.warning("마감 확정할 row를 선택하세요.");
       return;
     }
-    Modal.confirm({
+    modal.confirm({
       title: "마감 확정",
       content:
         "선택한 처리완료 row를 확정된 고객사/팀/창고/상품/판정 기준으로 재고반영합니다. 기본은 GOOD/양품만 반영하며, 라우팅 설정된 판정 포함 옵션을 켠 경우 해당 판정도 지정 창고로 반영합니다. 이미 반영된 row는 중복 반영되지 않습니다.",
@@ -191,7 +194,7 @@ export function ReturnClosingPage() {
         confirm_good_only: !includeRoutedJudgements,
       });
       setConfirmSummary(result);
-      message.success("반품 일마감을 처리했습니다.");
+      messageApi.success("반품 일마감을 처리했습니다.");
       setSelectedRowKeys([]);
       await loadCandidates();
     } catch (error) {
@@ -203,6 +206,8 @@ export function ReturnClosingPage() {
 
   return (
     <SmartPage>
+      {modalContextHolder}
+      {messageContextHolder}
       <SmartPageHeader
         title="반품 일마감"
         description="처리완료 row의 판정별 수량을 확인한 뒤 일마감을 확정합니다. 일마감 전에는 현재고가 바뀌지 않고, 확정 후 고객사/팀/창고/상품/판정 기준으로 재고가 반영됩니다."

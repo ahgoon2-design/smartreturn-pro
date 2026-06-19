@@ -895,3 +895,56 @@ body {
   border-radius: 10px;
   background: var(--smart-card-bg);
 }
+
+.return-processing-scan-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.return-processing-ai-section {
+  order: 2;
+  display: grid;
+  gap: 6px;
+}
+
+.return-processing-ai-placeholder {
+  padding-top: 4px;
+}
+
+.return-processing-recent-log {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--smart-card-bg);
+  border: 1px solid var(--smart-border);
+  margin-top: 6px;
+}
+
+.return-processing-recent-log-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+}
+
+.return-processing-recent-log-item--success {
+  border-left-color: var(--smart-green-main);
+  background: var(--smart-green-glow);
+}
+
+.return-processing-recent-log-item--warning {
+  border-left-color: var(--smart-orange-main);
+  background: var(--smart-orange-soft);
+}
+
+.return-processing-recent-log-item--error {
+  border-left-color: var(--smart-red-main);
+  background: var(--smart-red-soft);
+}

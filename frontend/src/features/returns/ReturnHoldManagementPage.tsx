@@ -32,6 +32,7 @@ const REJUDGE_STATUS_OPTIONS: Array<{ value: ReturnJudgementStatus; label: strin
 ];
 
 export function ReturnHoldManagementPage() {
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
   const [holdStatusFilter, setHoldStatusFilter] = useState<ReturnHoldStatus | "ALL">("ALL");
@@ -181,7 +182,7 @@ export function ReturnHoldManagementPage() {
 
   async function handleSave() {
     if (!selectedRow) {
-      message.warning("저장할 보류 대상을 선택하세요.");
+      messageApi.warning("저장할 보류 대상을 선택하세요.");
       return;
     }
     setSaving(true);
@@ -194,7 +195,7 @@ export function ReturnHoldManagementPage() {
         hold_response_memo: formHoldResponseMemo,
       });
       setSaveMessage(updated.message || "반품 보류 정보를 저장했습니다.");
-      message.success("반품 보류 정보를 저장했습니다.");
+      messageApi.success("반품 보류 정보를 저장했습니다.");
       if (updated.hold_status === "RESOLVED") {
         setRows((current) => current.filter((row) => row.row_id !== updated.row_id));
         setSelectedRow(null);
@@ -215,11 +216,11 @@ export function ReturnHoldManagementPage() {
 
   async function handleRejudge() {
     if (!selectedRow) {
-      message.warning("재판정할 보류 대상을 선택하세요.");
+      messageApi.warning("재판정할 보류 대상을 선택하세요.");
       return;
     }
     if (!canRejudge) {
-      message.warning("재판정 준비 상태의 보류 대상만 재판정할 수 있습니다.");
+      messageApi.warning("재판정 준비 상태의 보류 대상만 재판정할 수 있습니다.");
       return;
     }
     setRejudging(true);
@@ -233,7 +234,7 @@ export function ReturnHoldManagementPage() {
       });
       const nextMessage = result.message || buildRejudgeFlowMessage(result.judgement_status);
       setSaveMessage(nextMessage);
-      message.success(nextMessage);
+      messageApi.success(nextMessage);
       await loadCandidates();
       setSelectedRow(null);
       setSelectedRowKeys([]);
@@ -247,6 +248,7 @@ export function ReturnHoldManagementPage() {
 
   return (
     <SmartPage>
+      {messageContextHolder}
       <SmartPageHeader
         title="반품 보류관리"
         description="HOLD 판정된 반품의 고객사 확인 메모와 재판정 준비 상태를 관리합니다."

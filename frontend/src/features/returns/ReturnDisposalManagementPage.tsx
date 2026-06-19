@@ -20,6 +20,8 @@ const DISPOSAL_STATUS_OPTIONS: Array<{ value: ReturnDisposalStatus | "ALL"; labe
 ];
 
 export function ReturnDisposalManagementPage() {
+  const [modal, modalContextHolder] = Modal.useModal();
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
   const [disposalStatusFilter, setDisposalStatusFilter] = useState<ReturnDisposalStatus | "ALL">("ALL");
@@ -154,10 +156,10 @@ export function ReturnDisposalManagementPage() {
 
   function handleConfirm() {
     if (!selectedRow) {
-      message.warning("폐기 확정할 대상을 선택하세요.");
+      messageApi.warning("폐기 확정할 대상을 선택하세요.");
       return;
     }
-    Modal.confirm({
+    modal.confirm({
       title: "폐기 확정",
       content: "선택한 DISPOSAL row를 폐기 확정합니다. 정상재고/current_inventory는 변경되지 않습니다.",
       okText: "폐기 확정",
@@ -180,7 +182,7 @@ export function ReturnDisposalManagementPage() {
         disposal_memo: disposalMemo,
       });
       setConfirmMessage(result.message || "폐기 확정 완료");
-      message.success("폐기 확정 완료");
+      messageApi.success("폐기 확정 완료");
       setRows((current) => current.filter((row) => row.row_id !== result.row_id));
       setSelectedRow(null);
       setSelectedRowKeys([]);
@@ -194,6 +196,8 @@ export function ReturnDisposalManagementPage() {
 
   return (
     <SmartPage>
+      {modalContextHolder}
+      {messageContextHolder}
       <SmartPageHeader
         title="반품 폐기관리"
         description="DISPOSAL 판정된 반품을 폐기 확정합니다. 폐기 확정은 정상재고를 변경하지 않습니다."

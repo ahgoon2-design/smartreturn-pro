@@ -1,5 +1,5 @@
-import { ClearOutlined, DeleteOutlined, PaperClipOutlined, PlusOutlined, PrinterOutlined, ScanOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
-import { Alert, Button, Descriptions, Input, InputNumber, List, Select, Space, Tag, Tooltip, Typography } from "antd";
+import { ClearOutlined, DeleteOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, PrinterOutlined, RobotOutlined, ScanOutlined, SearchOutlined, ThunderboltOutlined, UndoOutlined, UploadOutlined } from "@ant-design/icons";
+import { Alert, Button, Descriptions, Input, InputNumber, List, Select, Space, Switch, Tag, Tooltip, Typography } from "antd";
 import type { InputRef } from "antd";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +43,15 @@ type ProductCheckFeedback = {
   description?: string;
 };
 
+type RecentLogEntry = {
+  task_id: number;
+  tracking_no: string;
+  product_name: string;
+  judgement_label: string;
+  resultType: "success" | "warning" | "error";
+  timeLabel: string;
+};
+
 const INITIAL_SCAN_FEEDBACK: ScanFeedback = {
   type: "info",
   message: "운송장번호를 스캔하거나 Enter로 대기 대상을 조회하세요.",
@@ -77,6 +86,23 @@ const LABEL_REQUIRED_JUDGEMENTS = new Set<ReturnJudgementStatus>([
   "DEFECTIVE",
   "HOLD",
 ]);
+
+// 빠른 처리 모드에서 자동완료 금지 판정 (자동완료 없이 화면 확인 필요)
+const PROBLEM_JUDGEMENTS = new Set<ReturnJudgementStatus>([
+  "HOLD",
+  "MANUFACTURER_RETURN",
+  "DISPOSAL",
+  "DEFECTIVE",
+]);
+
+// 판정 바코드 → 판정 코드 매핑 (작업대 부착 바코드 시트용)
+const JUDGMENT_BARCODE_MAP: Partial<Record<string, ReturnJudgementStatus>> = {
+  JUDGE_GOOD: "GOOD",
+  JUDGE_HOLD: "HOLD",
+  JUDGE_DEFECTIVE: "DEFECTIVE",
+  JUDGE_DISPOSAL: "DISPOSAL",
+  JUDGE_MANUFACTURER_RETURN: "MANUFACTURER_RETURN",
+};
 
 export function ReturnProcessingWorkspacePage() {
   const navigate = useNavigate();
@@ -118,6 +144,9 @@ export function ReturnProcessingWorkspacePage() {
   const [manualProductLoading, setManualProductLoading] = useState(false);
   const [manualRowSaving, setManualRowSaving] = useState(false);
   const [manualFeedback, setManualFeedback] = useState<ScanFeedback | null>(null);
+  const [fastModeEnabled, setFastModeEnabled] = useState(false);
+  const [lastCompletedTask, setLastCompletedTask] = useState<ReturnProcessingTask | null>(null);
+  const [recentLog, setRecentLog] = useState<RecentLogEntry[]>([]);
 
   useEffect(() => {
     focusScanInput(scanInputRef);
@@ -248,6 +277,8 @@ export function ReturnProcessingWorkspacePage() {
     : selectedJudgement
       ? "창고 확인 필요"
       : "판정 선택 후 자동 배정";
+  const holdMemoRequired = selectedJudgement === "HOLD" && !judgementMemo.trim();
+  const showManufacturerReturnWarning = selectedJudgement === "MANUFACTURER_RETURN" && !selectedTask?.return_management_no;
   const canSaveJudgement =
     Boolean(selectedTask) &&
     !isSelectedTaskCompleted &&
@@ -255,8 +286,9 @@ export function ReturnProcessingWorkspacePage() {
     productCheckFeedback.status === "MATCHED" &&
     Boolean(selectedJudgement) &&
     Boolean(selectedWarehouseRoute?.warehouse_id) &&
+    !holdMemoRequired &&
     !judging;
-  const showHoldMemoWarning = selectedJudgement === "HOLD" && !judgementMemo.trim();
+  const showHoldMemoWarning = holdMemoRequired;
 
   useEffect(() => {
     function handleProcessingShortcut(event: KeyboardEvent) {
@@ -508,6 +540,11 @@ export function ReturnProcessingWorkspacePage() {
   }
 
   function handleScanEnter() {
+    const trimmed = trackingNo.trim();
+    if (trimmed && handleJudgeBarcode(trimmed)) {
+      setTrackingNo("");
+      return;
+    }
     void loadTasks(trackingNo);
   }
 
@@ -518,6 +555,125 @@ export function ReturnProcessingWorkspacePage() {
     persistProcessingRouteState("", undefined);
     setScanFeedback(INITIAL_SCAN_FEEDBACK);
     void loadTasks("");
+  }
+
+  // 판정 바코드 명령 처리. 운송장 입력창에서 JUDGE_*/CANCEL_LAST 등 감지.
+  function handleJudgeBarcode(command: string): boolean {
+    const upperCommand = command.trim().toUpperCase();
+
+    if (upperCommand === "CANCEL_LAST") {
+      setScanFeedback({
+        type: "warning",
+        message: "마지막 처리 취소",
+        description: "취소 API는 아직 준비되지 않았습니다. 지원팀에 문의하거나 보류 재판정 화면을 이용하세요.",
+      });
+      return true;
+    }
+
+    if (upperCommand === "REPRINT_LABEL") {
+      setScanFeedback({
+        type: "warning",
+        message: "라벨 재출력",
+        description: "Local Agent 연동 후 지원됩니다. 현재는 라벨번호 생성과 출력 필요 상태만 표시합니다.",
+      });
+      return true;
+    }
+
+    if (upperCommand === "MANUAL_CHECK") {
+      handleGridSelectConfirm();
+      return true;
+    }
+
+    const judgementStatus = JUDGMENT_BARCODE_MAP[upperCommand];
+    if (judgementStatus) {
+      const option = JUDGEMENT_OPTIONS.find((o) => o.value === judgementStatus);
+      if (option && selectedTask && !isSelectedTaskCompleted) {
+        selectJudgementOption(option);
+        if (
+          fastModeEnabled &&
+          !PROBLEM_JUDGEMENTS.has(judgementStatus) &&
+          productCheckFeedback.status === "MATCHED" &&
+          selectedTask.validation_status !== "WARNING"
+        ) {
+          const route = findWarehouseRoute(returnWarehouseRoutes, selectedTask, judgementStatus);
+          if (route?.warehouse_id) {
+            void triggerFastAutoComplete(judgementStatus, route);
+          }
+        }
+      } else if (!selectedTask) {
+        setScanFeedback({
+          type: "info",
+          message: `판정 바코드: ${option?.label ?? upperCommand}`,
+          description: "처리 대상을 먼저 선택(운송장 스캔)하세요.",
+        });
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  async function triggerFastAutoComplete(judgementStatus: ReturnJudgementStatus, warehouseRoute: ReturnWarehouseRoute) {
+    if (!selectedTask) {
+      return;
+    }
+    setJudging(true);
+    setJudgementFeedback({ type: "info", message: "빠른 처리 모드: 자동 처리완료 중..." });
+    try {
+      const response = await judgeReturnProcessingTask(selectedTask.task_id, {
+        judgement_status: judgementStatus,
+        judgement_memo: `[처리방식: 스캔 처리][빠른 처리 모드]`,
+        print_label: isLabelRequiredJudgement(judgementStatus),
+        processing_method: "SCAN",
+      });
+      const updatedTask: ReturnProcessingTask = { ...selectedTask, ...response };
+      setTasks((previous) => previous.map((item) => (item.task_id === updatedTask.task_id ? updatedTask : item)));
+      setSelectedTask(updatedTask);
+      setSelectedJudgement(toJudgementStatus(updatedTask.judgement_status));
+      setJudgementMemo(updatedTask.judgement_memo || "");
+      setSelectedProcessingMethod(null);
+      setLastCompletedTask(updatedTask);
+      addToRecentLog(updatedTask, "success");
+      setScanFeedback({
+        type: "success",
+        message: `[빠른 처리] ${toJudgementLabel(judgementStatus)} 처리완료`,
+        description: "다음 운송장을 스캔하세요.",
+      });
+      setJudgementFeedback({
+        type: "success",
+        message: `[빠른 처리] ${toJudgementLabel(judgementStatus)} 처리완료`,
+        description: buildJudgementSavedDescription(updatedTask),
+      });
+      setTrackingNo("");
+      focusScanInput(scanInputRef, { select: true });
+    } catch (error) {
+      addToRecentLog(selectedTask, "error");
+      setJudgementFeedback({
+        type: "error",
+        message: toUserMessage(error, "빠른 처리 자동 완료에 실패했습니다."),
+        description: "수동으로 판정 후 처리완료하세요.",
+      });
+    } finally {
+      setJudging(false);
+    }
+  }
+
+  function addToRecentLog(task: ReturnProcessingTask, resultType: "success" | "warning" | "error") {
+    const now = new Date();
+    const timeLabel = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
+    setRecentLog((previous) =>
+      [
+        {
+          task_id: task.task_id,
+          tracking_no: task.return_tracking_no || "-",
+          product_name: task.product_name || task.product_code || "-",
+          judgement_label: task.judgement_status ? toJudgementLabel(task.judgement_status) : "-",
+          resultType,
+          timeLabel,
+        },
+        ...previous,
+      ].slice(0, 10),
+    );
   }
 
   function selectProcessingTask(task: ReturnProcessingTask | null, options: { focusProduct?: boolean } = {}) {
@@ -594,6 +750,21 @@ export function ReturnProcessingWorkspacePage() {
       });
       setSelectedProcessingMethod("SCAN");
       setProductScanValue("");
+
+      if (fastModeEnabled && selectedTask && selectedTask.validation_status !== "WARNING" && !isSelectedTaskCompleted) {
+        const goodRoute = findWarehouseRoute(returnWarehouseRoutes, selectedTask, "GOOD");
+        if (goodRoute?.warehouse_id) {
+          selectJudgementOption({ value: "GOOD", label: "양품" });
+          void triggerFastAutoComplete("GOOD", goodRoute);
+          return;
+        }
+        setScanFeedback({
+          type: "warning",
+          message: "빠른 처리 불가",
+          description: "GOOD 창고 라우팅이 없거나 확인 필요 항목입니다. 직접 판정 후 처리완료하세요.",
+        });
+      }
+
       focusScanInput(productScanInputRef);
       return;
     }
@@ -735,6 +906,8 @@ export function ReturnProcessingWorkspacePage() {
       setSelectedJudgement(toJudgementStatus(updatedTask.judgement_status));
       setJudgementMemo(updatedTask.judgement_memo || "");
       setSelectedProcessingMethod(null);
+      setLastCompletedTask(updatedTask);
+      addToRecentLog(updatedTask, "success");
       setJudgementFeedback({
         type: "success",
         message: "처리완료했습니다.",
@@ -859,10 +1032,46 @@ export function ReturnProcessingWorkspacePage() {
             prefix={<ScanOutlined />}
             allowClear
             value={trackingNo}
-            placeholder="스캔 또는 입력 후 Enter"
+            placeholder="스캔 또는 입력 후 Enter (JUDGE_GOOD 등 판정 바코드 지원)"
             onChange={(event) => setTrackingNo(event.target.value)}
             onPressEnter={handleScanEnter}
           />
+          <div className="return-processing-scan-controls">
+            <Space align="center" size={6}>
+              <ThunderboltOutlined />
+              <Typography.Text>빠른 처리</Typography.Text>
+              <Switch
+                size="small"
+                checked={fastModeEnabled}
+                onChange={(checked) => {
+                  setFastModeEnabled(checked);
+                  setScanFeedback({
+                    type: checked ? "success" : "info",
+                    message: checked ? "빠른 처리 모드 ON" : "빠른 처리 모드 OFF",
+                    description: checked
+                      ? "GOOD 판정·창고 확정 시 상품 스캔 후 자동 처리완료됩니다. 보류·제조사반품·폐기·불량은 자동완료 대상이 아닙니다."
+                      : "수동으로 판정 후 처리완료하세요.",
+                  });
+                }}
+                checkedChildren="ON"
+                unCheckedChildren="OFF"
+              />
+              {fastModeEnabled ? <SmartStatusBadge status="SUCCESS" label="자동완료 ON" /> : null}
+            </Space>
+            <Tooltip
+              title={
+                lastCompletedTask
+                  ? `마지막 처리: ${lastCompletedTask.return_tracking_no} · ${toJudgementLabel(lastCompletedTask.judgement_status ?? "")}`
+                  : "최근 처리완료 항목이 없습니다."
+              }
+            >
+              <span>
+                <Button size="small" icon={<UndoOutlined />} disabled>
+                  마지막 처리 취소
+                </Button>
+              </span>
+            </Tooltip>
+          </div>
         </div>
         <div className="return-processing-scan-status">
           <Typography.Text strong>{summaryText}</Typography.Text>
@@ -1021,6 +1230,27 @@ export function ReturnProcessingWorkspacePage() {
                 .join(" ")
             }
           />
+          {recentLog.length > 0 ? (
+            <section className="return-processing-recent-log" aria-label="최근 처리 이력">
+              <Space align="center">
+                <HistoryOutlined />
+                <Typography.Text strong>최근 처리 {recentLog.length}건</Typography.Text>
+              </Space>
+              {recentLog.map((log) => (
+                <div
+                  key={`${log.task_id}-${log.timeLabel}`}
+                  className={`return-processing-recent-log-item return-processing-recent-log-item--${log.resultType}`}
+                >
+                  <Typography.Text ellipsis style={{ flex: 1, minWidth: 0 }}>
+                    {log.tracking_no} · {log.product_name}
+                  </Typography.Text>
+                  <Typography.Text type="secondary" style={{ whiteSpace: "nowrap" }}>
+                    {log.judgement_label} {log.timeLabel}
+                  </Typography.Text>
+                </div>
+              ))}
+            </section>
+          ) : null}
         </section>
 
         <aside className="return-processing-detail-panel" aria-label={selectedTask ? "선택 상품 처리" : "상품 추가 안내"}>
@@ -1169,6 +1399,23 @@ export function ReturnProcessingWorkspacePage() {
                   </Tooltip>
                 </Space>
               </details>
+              {productCheckFeedback.status === "MATCHED" ? (
+                <details className="return-processing-ai-section">
+                  <summary className="return-processing-collapse-summary">
+                    <RobotOutlined />
+                    <Typography.Text strong>AI 판정 추천</Typography.Text>
+                    <SmartStatusBadge status="WAITING" label="준비중" />
+                  </summary>
+                  <Alert
+                    className="return-processing-ai-placeholder"
+                    type="info"
+                    showIcon
+                    message="AI 판정 도우미 준비중"
+                    description="고객사 판정 기준 분석, 추천 판정, 보류 메모 초안, 반복 파손/보류 경고가 여기에 표시됩니다."
+                  />
+                </details>
+              ) : null}
+
               <section className="return-processing-judgement-panel" aria-label="판정/창고/처리완료">
                 <Space align="center" wrap>
                   <Typography.Text strong>판정/창고</Typography.Text>
@@ -1222,7 +1469,17 @@ export function ReturnProcessingWorkspacePage() {
                     className="return-processing-placeholder"
                     type="warning"
                     showIcon
-                    message="보류 판정은 사유를 남기면 나중에 확인하기 쉽습니다."
+                    message="보류 사유/메모를 입력해야 처리완료할 수 있습니다."
+                    description="보류 판정은 사유 없이 처리완료되지 않습니다. 간단한 사유라도 메모에 입력하세요."
+                  />
+                ) : null}
+                {showManufacturerReturnWarning ? (
+                  <Alert
+                    className="return-processing-placeholder"
+                    type="warning"
+                    showIcon
+                    message="제조사반품: 반품관리번호 또는 확인 내용을 메모에 입력하세요."
+                    description="반품관리번호 없는 제조사반품은 일마감 시 추가 확인이 필요합니다."
                   />
                 ) : null}
                 <Alert

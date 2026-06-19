@@ -30,6 +30,7 @@ const OUTBOUND_JUDGEMENT_OPTIONS = [
 ];
 
 export function ReturnExternalOutboundPage() {
+  const [messageApi, messageContextHolder] = message.useMessage();
   const scanInputRef = useRef<InputRef>(null);
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | undefined>();
@@ -198,7 +199,7 @@ export function ReturnExternalOutboundPage() {
 
   async function handleConfirm() {
     if (scannedRowIds.length === 0) {
-      message.warning("반출 확정할 후보를 먼저 스캔하세요.");
+      messageApi.warning("반출 확정할 후보를 먼저 스캔하세요.");
       return;
     }
     setConfirming(true);
@@ -244,6 +245,7 @@ export function ReturnExternalOutboundPage() {
 
   return (
     <SmartPage>
+      {messageContextHolder}
       <SmartPageHeader
         title="반품 외부반출"
         description="제조사반품, 리퍼, 샘플 대상만 반품관리번호 또는 라벨번호 기준으로 1:1 검수합니다. 현재고는 변경하지 않습니다."
