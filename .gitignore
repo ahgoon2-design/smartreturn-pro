@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+*.secret
+local.secret
 config.json
 secrets/
 *.pem
@@ -50,14 +52,26 @@ pnpm-debug.log*
 .claude/skills/
 지시문/
 
+# 로컬 설정 (프로젝트별 로컬 설정은 커밋하지 않음)
+settings.json
+**/settings.json
+
 # 로그/출력/임시
 logs/
 outputs/
 tmp/
+tmp*/
 temp/
 *.log
 *.tmp
 *.bak
+
+# 임시 테스트 산출물
+.tmp-tests/
+tmp_probe_write.txt
+
+# 캐시
+cache/
 
 # 배포/압축/실행파일
 dist/
@@ -72,3 +86,12 @@ local_agent/logs/
 local_agent/outputs/
 local_agent/dist/
 local_agent/build/
+
+# consensus-loop 실행 산출물 (하위 .gitignore와 이중 방어)
+ai-harness/consensus-loop/consensus-runs/*
+!ai-harness/consensus-loop/consensus-runs/.gitkeep
+
+# 루트 검증 스크린샷 산출물 (브라우저 검증용 임시 이미지, 저장소 루트에만 적용)
+/*.png
+/*.jpg
+/*.jpeg
