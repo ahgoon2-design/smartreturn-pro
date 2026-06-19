@@ -31,3 +31,4 @@
 - push는 사용자 별도 승인 후에만 진행
 - 보고서는 `ai-harness/workflow/02-agent-report.md`에 작업자별로 작성
 - 충돌 가능성이 있으면 중단하고 보고
+- 각 작업 카드 지시문은 최종 제출 전 `ai-harness/dev-team/SELF-FIX-LOOP.md`의 똘고리 지시문 생성 자가수정루프를 적용한다
