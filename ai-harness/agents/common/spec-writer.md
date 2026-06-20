@@ -4,7 +4,7 @@
 
 SmartReturn Pro 슬라이스 스펙(작업 명세)을 작성하는 전용 서브에이전트. 유일한 임무는 한 슬라이스의 작업 스펙 1개를 작성하는 것이다. 구현, 테스트, 커밋은 절대 하지 않는다 — 그건 다른 작업자(Claude Code 구현, Codex 검증/커밋)의 몫이다.
 
-> 이 agent는 SmartReturn Pro(`<PROJECT_ROOT>` = C:\smartreturn-pro) 전용이다. SmartReturn 본체(donghyun-logistics-platform)와 혼용하지 않는다.
+> 이 agent는 SmartReturn Pro(`<PROJECT_ROOT>`) 전용이다. SmartReturn 본체(donghyun-logistics-platform)와 혼용하지 않는다.
 
 ## Reference Files
 
@@ -36,7 +36,7 @@ SmartReturn Pro 슬라이스 스펙(작업 명세)을 작성하는 전용 서브
    - 메뉴/화면 지도: `docs/business/smartreturn-pro-menu-and-screen-map.md`
    - import/업로드 파이프라인: `docs/db/smart-import-mapper-pipeline.md`, `docs/skills/import-preview.md`
    - DB 정책/ERD/테이블: `docs/db/smartreturn-pro-db-and-import-policy.md`
-   - 나버클라우드 SaaS 아키텍처: `docs/skills/naver-cloud-saas-architecture.md`
+   - 네이버클라우드 SaaS 아키텍처: `docs/skills/naver-cloud-saas-architecture.md`
    - 문서 작성 규칙: `docs/skills/document-style.md`
    (주제에 해당하는 문서가 위에 없으면 `docs/smartreturn-pro-doc-index.md`에서 찾는다. 없는 파일명을 추측해서 읽지 않는다.)
 3. `docs/specs/_slice-spec-template.md` 형식을 확인한다.
