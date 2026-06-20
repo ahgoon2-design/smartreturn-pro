@@ -95,3 +95,8 @@ ai-harness/consensus-loop/consensus-runs/*
 /*.png
 /*.jpg
 /*.jpeg
+
+# 파일 기반 루프 작업 폴더 (로컬 기록, 커밋 안 함; README와 _template만 추적)
+ai-harness/loop/SPEC-*/
+ai-harness/loop/LOOP-*/
+ai-harness/loop/_done/
