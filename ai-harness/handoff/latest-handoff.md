@@ -13,3 +13,8 @@
 - 폐기(DISPOSAL)/제조사반품(MANUFACTURER_RETURN)의 일마감 재고반영(INVENTORY_REFLECTABLE) 포함 여부 — 코드 기준 재확인 후 decision-log 확정.
 ## 원칙
 - 스펙 승인 전 구현 금지 / git add . 금지 / 커밋은 Codex가 사용자 승인 후
+## 반품처리 화면/권한 구조 주의사항
+- 반품처리 코어·API 먼저, 역할별 화면은 공통 컴포넌트를 감싸는 wrapper 구조. 복붙 화면 금지.
+- 권한·데이터 차단은 백엔드 API 강제. 프론트는 조회 필터·버튼 노출 수준의 UX만.
+- `owner_agency_id`(고객 소유권) ≠ `processing_agency_id`(처리 담당). 처리 의뢰 ≠ 고객 이관.
+- 반품 기본 흐름: 접수/수집 → 입고 → 검수 → 판정 → 처리완료 → 일마감 → 재고반영 → 정산.
