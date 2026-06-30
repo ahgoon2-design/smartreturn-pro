@@ -100,3 +100,6 @@ ai-harness/consensus-loop/consensus-runs/*
 ai-harness/loop/SPEC-*/
 ai-harness/loop/LOOP-*/
 ai-harness/loop/_done/
+
+# 외부 출처 약관·개인정보 원문 수집본 (로컬 참고용, 저장소 추적 제외)
+docs/reference/
