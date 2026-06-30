@@ -1,20 +1,28 @@
-# Latest Handoff — SmartReturn Pro
-> 갱신일: 2026-06-15
-## 현재 프로젝트
-- <PROJECT_ROOT> (SmartReturn Pro, PostgreSQL), 브랜치 smartreturn-pro. 구버전과 별도.
-## 완료
-- Smart AI Dev Harness 구축(ee8913c3) + 게이트/spec-writer
-- /returns/processing: FE(ReturnProcessingWorkspacePage.tsx)·BE(routers/returns.py + return_intake_service.py) 상당 부분 구현됨
-- Phase 1 완료: SmartDataGrid 엑셀 다운로드 / 판정 enum 정본화(GOOD·REFURB_A·B·C·SAMPLE·MANUFACTURER_RETURN·HOLD·DISPOSAL·DEFECTIVE, generic REFURB 신규 제거) / DEFECTIVE 추가·정책 확정·FE 노출 / 외부반출 generic REFURB 필터 버그 수정 / 테스트 80+139 통과
-## 현재 상태
-- 묶음1~4 문서 커밋 완료(4커밋). 트리 dirty — SPEC-002 구현/반품 화면 6개/보류 문서가 미커밋 상태로 남아 있고 묶음5 운영문서 정합 진행 중. push 안 함.
-- 남은 것: P2(사진 컬럼 "후속" 표기 정합, 라벨 정책 표시 정리·연동은 후속), Phase 3 plan feature gate, 불량 전용 재고화(후속 TODO).
-## 확인 필요
-- 폐기(DISPOSAL)/제조사반품(MANUFACTURER_RETURN)의 일마감 재고반영(INVENTORY_REFLECTABLE) 포함 여부 — 코드 기준 재확인 후 decision-log 확정.
-## 원칙
-- 스펙 승인 전 구현 금지 / git add . 금지 / 커밋은 Codex가 사용자 승인 후
-## 반품처리 화면/권한 구조 주의사항
-- 반품처리 코어·API 먼저, 역할별 화면은 공통 컴포넌트를 감싸는 wrapper 구조. 복붙 화면 금지.
-- 권한·데이터 차단은 백엔드 API 강제. 프론트는 조회 필터·버튼 노출 수준의 UX만.
-- `owner_agency_id`(고객 소유권) ≠ `processing_agency_id`(처리 담당). 처리 의뢰 ≠ 고객 이관.
-- 반품 기본 흐름: 접수/수집 → 입고 → 검수 → 판정 → 처리완료 → 일마감 → 재고반영 → 정산.
+# SmartReturn Pro latest handoff
+
+- 작성 시각: 2026-06-30 KST
+- 대상 저장소: `C:\smartreturn-pro`
+- 브랜치: `smartreturn-pro`
+- upstream: 작업 시작 시 `origin/smartreturn-pro`와 동기 상태 확인
+- push 상태: push 금지, 로컬 선별 커밋만 수행
+
+## 현재 확정 상태
+
+- SPEC-002: 재고현황 `stock_status` 화면 구현, 검증, 사용자 인수 완료.
+- SPEC-003: scan-first 반품처리 흐름 spec/report 커밋 완료.
+- SPEC-004: 반품 재고원장 계약 확정 완료.
+- SPEC-005: 반품 재고반영 실행 구조 초안 커밋 완료. 사용자 게이트② 승인 전 구현 금지.
+- Tier 1 skills frontmatter 묶음: `docs(skills): add Tier 1 skill frontmatter` 커밋으로 완료 처리.
+
+## 분리 보류
+
+- `ai-harness/consensus-loop/**` 삭제 묶음은 커밋 금지/보류 상태다. 별도 지시와 검토가 필요하다.
+- 개인정보/약관/reference/AI-ready 관련 untracked 문서는 별도 검토 및 별도 커밋 대상이다.
+- `docs/business/**`, `docs/legal/**`, `docs/reference/**`, `docs/reports/privacy-*.md`, `docs/reports/terms-*.md`, `docs/reports/smartreturn-platform-expansion-direction-oms-wms-erp-ai-ready.md`는 이번 재개 커밋과 분리한다.
+
+## 다음 1수 후보
+
+- A. SPEC-005 게이트② 승인 여부 판단
+- B. AI-ready 플랫폼 데이터·판단 SPEC 착수 여부 판단
+
+두 후보를 동시에 실행하지 않는다. 다음 작업자는 사용자 선택을 받은 뒤 한 방향만 진행한다.

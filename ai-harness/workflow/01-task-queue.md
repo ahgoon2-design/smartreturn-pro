@@ -1,29 +1,42 @@
 # Task Queue
 
+## 기준 상태
+
+- 대상 저장소: `C:\smartreturn-pro`
+- 브랜치: `smartreturn-pro`
+- upstream: 작업 시작 시 `origin/smartreturn-pro`와 동기 상태 확인
+- push: 금지
+
 ## Pending
 
-- [ ] (P1) 판정 enum 정합 확정: FE의 `REFURB`(generic) vs 설계 7등급(`REFURB_A/B/C`) — 정본 enum 결정 후 FE/BE/문서 일치
-- [ ] (P1) `SmartDataGrid` 엑셀 다운로드 기능 추가 → 조회형 화면(반품 이력/마감·반출·보류·폐기 후보)에 적용 (Ctrl+C 복사는 이미 있음)
-- [ ] (P1) 반품처리 핵심 경로 backend 테스트 보강: `judge_return_processing_task`, `create_return_processing_manual_row`, 일마감 재고 반영(`confirm_return_closing`)
-- [ ] (P2) 라벨 출력 Local Agent 연동(현재 준비중 placeholder) — MVP 후속
-- [ ] (P2) 그리드 "사진" 컬럼이 "후속"으로 표기되나 첨부 업로드는 동작 → 표기 정합 정리
-- [ ] (P2) Basic/Pro/Ultra plan feature gate(반품 고급기능) — 후속 plan_limits 작업과 연계
-- [ ] SPEC-002 게이트④ 독립 검증(코덱) + 검증 보고서(docs/reports/SPEC-002-verify.md) — 다음 작업
-- [ ] (후속) DEFECTIVE vs DISPOSAL 재고 처리 일관성 — 불량 전용 재고화 여부 (D-004 후보)
+- [ ] (P1) SPEC-005 게이트② 승인 여부 판단
+  - 반품 재고반영 실행 구조 초안은 커밋 완료 상태다.
+  - 사용자 승인 전 구현을 시작하지 않는다.
+- [ ] (P1) AI-ready 플랫폼 데이터·판단 SPEC 착수 여부 판단
+  - 개인정보/약관/reference/AI-ready 관련 untracked 문서는 별도 검토 및 별도 커밋 대상으로 분리한다.
+  - SPEC-005 승인 판단과 동시에 실행하지 않는다.
+- [ ] (P2) `ai-harness/consensus-loop/**` 삭제 묶음 처리 방향 결정
+  - 현재 삭제 상태는 커밋 금지/보류다.
+  - 별도 지시 없이는 stage, 복구, 커밋하지 않는다.
 
 ## In Progress
 
-- [ ] (현재) 묶음5 운영문서 정합/커밋 (handoff·loop-state·task-queue)
+- [ ] 없음
 
 ## Done
 
-- [x] seed/login 테스트 계정 커밋(28bec5e7), 플랫폼 브랜치 규칙(0464a7ec), 로컬 산출물 ignore(d64c9794)
-- [x] Smart AI Dev Harness 구축(ee8913c3)
-- [x] 묶음1~4 문서 선별 커밋(4커밋): 하네스 구조/게이트, SPEC-001 폐기·결정, SPEC-002 스펙, 게이트·Agent Teams 정책
-- [x] SPEC-002 게이트③ 구현 + 빌드 보고서(docs/reports/SPEC-002-build.md) — 미커밋(트리 dirty)
+- [x] SPEC-002: 재고현황 `stock_status` 화면 구현, 검증, 사용자 인수 완료.
+- [x] SPEC-003: scan-first 반품처리 흐름 spec/report 커밋 완료.
+- [x] SPEC-004: 반품 재고원장 계약 확정 완료.
+- [x] SPEC-005: 반품 재고반영 실행 구조 초안 커밋 완료, 게이트② 승인 대기.
+- [x] Tier 1 skills frontmatter 묶음 선별 커밋 완료.
 
-## 보류 (미커밋)
+## Hold / Separate
 
-- SPEC-002 구현 코드 8개 + SPEC-002-build.md
-- 반품 화면 6개(ReturnClosing/Disposal/ExternalOutbound/Hold/IntakeHub/UnitAssignment)
-- docs/decisions/tenancy-and-permission-model.md, docs/reports/return-spine-status-audit.md
+- [ ] `ai-harness/consensus-loop/**` 삭제 묶음: 커밋 금지/보류.
+- [ ] `docs/business/**`: 별도 검토/별도 커밋 대상.
+- [ ] `docs/legal/**`: 별도 검토/별도 커밋 대상.
+- [ ] `docs/reference/**`: 별도 검토/별도 커밋 대상.
+- [ ] `docs/reports/privacy-*.md`: 별도 검토/별도 커밋 대상.
+- [ ] `docs/reports/terms-*.md`: 별도 검토/별도 커밋 대상.
+- [ ] `docs/reports/smartreturn-platform-expansion-direction-oms-wms-erp-ai-ready.md`: 별도 검토/별도 커밋 대상.
