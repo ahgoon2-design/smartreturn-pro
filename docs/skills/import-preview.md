@@ -1,3 +1,11 @@
+---
+name: import-preview
+description: >-
+  import preview, paste rows, validation 화면과 관련 API 흐름 작업 시 적용하는 import preview
+  스킬. POST /api/import-jobs, rows/paste, validate, rows/errors 표시 계약과 import job
+  생성·검증·표시 기준을 정리하므로 업로드/붙여넣기 preview 작업 시 반드시 이 스킬을 적용한다.
+---
+
 # Import Preview Skill
 
 ## 목적

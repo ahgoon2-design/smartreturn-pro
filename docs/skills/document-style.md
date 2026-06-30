@@ -1,3 +1,12 @@
+---
+name: document-style
+description: >-
+  문서 작성, closeout, 문서 인덱스 수정, 완료 보고 작성 시 적용하는 문서 스타일 스킬.
+  SmartReturn Pro 문서의 한글 작성 기준, 코드 식별자·DB 컬럼명·API path·enum 영문 유지
+  기준, closeout 구성과 표현 방식을 정리하므로 문서 산출물이 생기는 작업 시 반드시 이
+  스킬을 적용한다.
+---
+
 # Document Style Skill
 
 ## 목적

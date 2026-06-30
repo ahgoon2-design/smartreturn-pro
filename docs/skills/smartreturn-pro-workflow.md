@@ -1,3 +1,11 @@
+---
+name: smartreturn-pro-workflow
+description: >-
+  모든 SmartReturn Pro 작업을 시작하거나 마감할 때 적용하는 기본 작업 흐름 스킬. 저장소
+  루트·branch·remote·git status 확인, 진행 모드 판단, 중단 조건, 완료 보고 기준을
+  정리하므로 모든 작업 시작 전 반드시 이 스킬을 적용한다.
+---
+
 # SmartReturn Pro Workflow Skill
 
 ## 목적

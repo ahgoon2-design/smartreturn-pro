@@ -1,3 +1,11 @@
+---
+name: ui-grid
+description: >-
+  grid/table/preview 화면 작업 시 적용하는 UI Grid 스킬. SmartDataGrid,
+  SmartEditableDataGrid, SmartExcelPreviewGrid wrapper, row 순서, 상태 표시, copyable 셀
+  기준을 정리하므로 표·그리드·엑셀 preview 화면 작업 시 반드시 이 스킬을 적용한다.
+---
+
 # UI Grid Skill
 
 ## 목적

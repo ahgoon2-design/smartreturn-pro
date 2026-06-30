@@ -9,6 +9,7 @@
 3. ai-harness/handoff/latest-handoff.md
 
 절대 규칙:
+- AI 작업 기본 원칙(AGENTS.md §AI 작업 기본 원칙): 가정 금지 · 단순 우선 · 최소 수정 · 검증 확인.
 - 스펙 승인 전 구현 금지. 사용자 인수 전 커밋 금지.
 - 구현자(클코)와 검수자(코덱)를 분리한다. 검수 중 코드 수정 금지.
 - git add . 금지, 선별 stage. 커밋/push는 Codex가 사용자 승인 후.

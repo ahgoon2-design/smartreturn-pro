@@ -1,3 +1,13 @@
+---
+name: ui-design-system
+description: >-
+  Ant Design 기반 공통 컴포넌트 조합과 업무 화면 밀도·톤을 다루는 작업 시 적용하는 공통 UI 스킬.
+  SmartPage·SmartToolbar·SmartDataSection 등 공통 컴포넌트 조합 순서, 새 화면을 공통 컴포넌트로
+  조립하는 기준, 화면 밀도와 모달/폼/버튼 통일 기준을 정리한다. 색상·아이콘·레이아웃 철학은
+  smartreturn-screen-design-system을 따른다. 공통 컴포넌트 조합과 화면 밀도를 결정하는 작업 시
+  반드시 이 스킬을 적용한다.
+---
+
 # UI Design System Skill
 
 ## 목적

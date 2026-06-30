@@ -1,3 +1,13 @@
+---
+name: git-security-check
+description: >-
+  커밋·push·git add·stage·파일 변경·마감 커밋 전에 적용하는 보안 게이트.
+  backend/local.secret.json, .env, config.json, *.secret.json, logs/, dist/, build/,
+  node_modules 등 민감 파일이 staged/tracked 되지 않았는지와 git diff --check 통과를
+  반드시 먼저 검사한다. secret/token/password/password_hash/.env 노출 확인이 필요한 모든
+  작업에서 이 스킬을 무조건 먼저 적용한다.
+---
+
 # Git Security Check Skill
 
 ## 목적

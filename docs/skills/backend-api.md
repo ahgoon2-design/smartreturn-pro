@@ -1,3 +1,12 @@
+---
+name: backend-api
+description: >-
+  FastAPI backend API 작업 시 적용하는 백엔드 API 스킬. ApiResult,
+  router/schema/service/repository 계층, AuthContext, permission 유틸, client scope와
+  warehouse scope, 테스트 기준을 정리하므로 backend API를 만들거나 수정하는 작업 시 반드시
+  이 스킬을 적용한다.
+---
+
 # Backend API Skill
 
 ## 목적

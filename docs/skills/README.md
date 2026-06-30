@@ -13,9 +13,10 @@
 | 문서 | 언제 읽는가 | 역할 |
 | --- | --- | --- |
 | `smartreturn-pro-workflow.md` | 모든 작업 시작 전 | 저장소 확인, 진행 모드, 중단 조건, 완료 보고 기준을 정리한다. |
-| `git-security-check.md` | 커밋, push, 파일 변경 작업 전 | 민감 파일 staged/tracked 금지와 커밋 전 보안 체크를 정리한다. |
+| `git-security-check.md` | 커밋, push, git add, stage, 파일 변경, 마감 커밋 전 | 민감 파일 staged/tracked 금지와 커밋 전 보안 체크를 정리한다. |
 | `document-style.md` | 문서 작성, closeout, 인덱스 수정 시 | 한글 문서 작성 기준과 closeout 문서 구성을 정리한다. |
 | `ai-team-operation.md` | Codex/Claude/ChatGPT 동시 작업, 똘망이 운영 큐 작성, 충돌 방지, 보고/커밋 통제 작업 시 | Codex/Claude/ChatGPT를 똘망이 팀 큐 구조로 운영하기 위한 역할 분담, 충돌 방지, 보고, 커밋 통제 기준을 정리한다. |
+| `smartreturn-review.md` | 검수자(Codex)가 구현자 완료보고서를 검수할 때 | 실파일/git/test/build/secret 직접 확인, PASS/부분통과/FAIL 판단 기준 정리 |
 | `smartreturn-platform-business-architecture.md` | 신규 기능 설계, DB 테이블 추가, 메뉴/권한 변경, 고객사 포털/대리점 포털, 정산/청구, 채널연동, 대시보드/사업 지표 작업 시 | SmartReturn Pro의 최상위 사업/제품 방향, CJ대한통운 대리점 기반 OMS + WMS + Returns 통합 SaaS 플랫폼 구조, 사용자 유형, `agency_id`/`client_id`/`client_unit_id` 데이터 계층, MVP/확장 로드맵, 신규 기능 설계 체크리스트 기준을 정리한다. |
 | `backend-api.md` | FastAPI backend API 작업 시 | ApiResult, 인증/권한, client scope, 테스트 기준을 정리한다. |
 | `frontend-app.md` | React/Vite/TypeScript frontend 작업 시 | 앱 구조, 라우팅, 인증 context, API client 기준을 정리한다. |
@@ -35,6 +36,7 @@
 
 - 작업 시작 전 `AGENTS.md`를 먼저 읽는다.
 - 작업 유형이 정해지면 위 표의 관련 문서를 추가로 읽는다.
+- Codex가 구현자 완료보고서를 검수할 때는 `smartreturn-review.md`와 `git-security-check.md`를 함께 읽는다.
 - 문서가 여러 개 해당되면 공통 문서부터 읽고 도메인 문서를 읽는다.
 - 기존 SmartReturn 기준과 SmartReturn Pro 기준이 다르면 SmartReturn Pro 기준을 우선한다.
 - Codex/Claude/ChatGPT 동시 작업이나 똘망이 운영 큐 작성 작업은 `ai-team-operation.md`를 함께 읽는다.

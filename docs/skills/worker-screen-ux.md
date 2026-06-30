@@ -1,3 +1,11 @@
+---
+name: worker-screen-ux
+description: >-
+  스캔/검수/작업자 화면 작업 시 적용하는 작업자 UX 스킬. SmartScanPanel, 큰 입력, 정확도,
+  속도, 자동화 중심 피드백과 현장 작업 흐름 기준을 정리하므로 입고검수·출고검수·반품처리·반품마감
+  수량체크 같은 작업자 화면 작업 시 반드시 이 스킬을 적용한다.
+---
+
 # Worker Screen UX Skill
 
 ## 목적

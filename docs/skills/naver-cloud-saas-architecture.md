@@ -1,3 +1,12 @@
+---
+name: naver-cloud-saas-architecture
+description: >-
+  DB/파일/사진/로그/배포/채널 자동수집/백업/보안/대량 이력 테이블 작업 시 적용하는
+  네이버클라우드 SaaS 아키텍처 스킬. 단일 DB 멀티테넌트, Object Storage 파일 저장,
+  API/Worker/Scheduler 분리, 로그·백업·확장 기준을 정리하므로 인프라·저장소·대량 이력
+  설계 작업 시 반드시 이 스킬을 적용한다.
+---
+
 # 네이버클라우드 SaaS 인프라/DB 운영 스킬
 
 ## 목적

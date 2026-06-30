@@ -1,3 +1,13 @@
+---
+name: smartreturn-platform-business-architecture
+description: >-
+  신규 기능 설계, DB 테이블 추가, 메뉴/권한 변경, 고객사 포털·대리점 포털, 정산/청구,
+  채널연동, 대시보드/사업 지표 작업 시 적용하는 사업·제품 아키텍처 스킬. CJ대한통운 대리점
+  기반 OMS + WMS + Returns 통합 SaaS 플랫폼 방향, 사용자 유형,
+  agency_id/client_id/client_unit_id 데이터 계층, MVP/확장 로드맵 기준을 정리하므로 플랫폼
+  구조에 영향을 주는 작업 시 반드시 이 스킬을 적용한다.
+---
+
 # SmartReturn 플랫폼 사업/제품 아키텍처 스킬
 
 ## 목적

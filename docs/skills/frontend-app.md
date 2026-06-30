@@ -1,3 +1,11 @@
+---
+name: frontend-app
+description: >-
+  React/Vite/TypeScript frontend 작업 시 적용하는 프론트엔드 앱 스킬. 앱 구조, 라우팅, 인증
+  context, API client, frontend scaffold 기준을 정리하므로 frontend 화면·상태·통신 코드를
+  만들거나 수정하는 작업 시 반드시 이 스킬을 적용한다.
+---
+
 # Frontend App Skill
 
 ## 목적
