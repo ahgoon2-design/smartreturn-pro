@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -79,6 +79,15 @@ class ReturnIntakeRow(Base):
             "client_id",
             "disposal_status",
             "judgement_status",
+        ),
+        CheckConstraint(
+            "("
+            "is_over_review_required = false AND over_review_reason IS NULL"
+            ") OR ("
+            "is_over_review_required = true AND over_review_reason IN "
+            "('QUANTITY_OVER', 'DUPLICATE_SCAN', 'EXPECTED_MISMATCH', 'MANUAL_REVIEW')"
+            ")",
+            name="ck_return_intake_rows_over_review_reason",
         ),
     )
 
@@ -167,6 +176,10 @@ class ReturnIntakeRow(Base):
     disposal_memo: Mapped[str | None] = mapped_column(Text)
     disposal_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     disposal_confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    is_over_review_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    over_review_reason: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

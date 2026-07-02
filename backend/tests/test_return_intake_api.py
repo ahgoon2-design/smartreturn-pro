@@ -346,6 +346,7 @@ def _prepare_processing_task(
     login_id: str,
     client_id: int,
     rows_payload: dict | None = None,
+    assign_client_unit: bool = True,
 ) -> tuple[dict[str, str], int, int]:
     headers = _login(client, login_id)
     batch_id = _create_batch(client, db, login_id, client_id)
@@ -359,6 +360,12 @@ def _prepare_processing_task(
     tasks_response = client.get(f"/api/returns/processing/tasks?batch_id={batch_id}", headers=headers)
     assert tasks_response.status_code == 200
     task_id = tasks_response.json()["data"]["items"][0]["task_id"]
+    if assign_client_unit:
+        row = db.get(ReturnIntakeRow, task_id)
+        if row is not None and row.client_unit_id is None:
+            unit = _create_client_unit(db, client_id, code=f"AUTO_{task_id}")
+            row.client_unit_id = unit.id
+            db.commit()
     return headers, batch_id, task_id
 
 
@@ -376,6 +383,84 @@ def _judge_processing_task(
     )
     assert response.status_code == 200
     return response.json()["data"]
+
+
+def _mark_row_inventory_reflected_for_test(
+    db: Session,
+    *,
+    task_id: int,
+    stock_status: str,
+) -> InventoryEvent:
+    row = db.get(ReturnIntakeRow, task_id)
+    assert row is not None
+    product = None
+    if row.product_code:
+        product = (
+            db.query(Product)
+            .filter(Product.client_id == row.client_id, Product.product_code == row.product_code)
+            .one_or_none()
+        )
+    if product is None and row.barcode:
+        product_barcode = (
+            db.query(ProductBarcode)
+            .filter(ProductBarcode.client_id == row.client_id, ProductBarcode.barcode == row.barcode)
+            .one_or_none()
+        )
+        if product_barcode is not None:
+            product = db.get(Product, product_barcode.product_id)
+    if product is None:
+        product = db.query(Product).filter(Product.client_id == row.client_id).order_by(Product.id).first()
+    assert product is not None
+    if row.client_unit_id is None:
+        unit = _create_client_unit(db, row.client_id, code=f"AUTO_{task_id}")
+        row.client_unit_id = unit.id
+    if row.final_warehouse_id is None:
+        warehouse = _create_warehouse_setting(
+            db,
+            client_id=row.client_id,
+            usage_type=f"RETURN_{stock_status}_{task_id}",
+        )
+        row.final_warehouse_id = warehouse.id
+    else:
+        warehouse = db.get(Warehouse, row.final_warehouse_id)
+        assert warehouse is not None
+    qty = row.qty or 1
+    event = InventoryEvent(
+        event_no=f"RTN-CLOSE-TEST-{task_id}-{stock_status}",
+        agency_id=row.agency_id,
+        client_id=row.client_id,
+        warehouse_id=warehouse.id,
+        location_id=None,
+        product_id=product.id,
+        product_code=product.product_code,
+        stock_status=stock_status,
+        event_type="RETURN_JUDGEMENT_IN",
+        qty_delta=qty,
+        source_type="RETURN_CLOSING",
+        source_id=row.id,
+        source_line_id=row.id,
+        idempotency_key=f"return-closing-test:{row.id}:{stock_status.lower()}",
+        event_reason="test setup",
+        created_by=1,
+        raw_json={},
+    )
+    db.add(event)
+    db.flush()
+    row.inventory_reflected_yn = True
+    row.inventory_event_id = event.id
+    db.add(
+        CurrentInventory(
+            agency_id=row.agency_id,
+            client_id=row.client_id,
+            warehouse_id=warehouse.id,
+            location_id=None,
+            product_id=product.id,
+            stock_status=stock_status,
+            qty_on_hand=qty,
+        )
+    )
+    db.commit()
+    return event
 
 
 def _prepare_hold_ready_to_rejudge_task(
@@ -951,6 +1036,40 @@ def test_client_user_cannot_confirm_external_outbound(client: TestClient, db_ses
     assert response.json()["result_code"] == "PERMISSION_DENIED"
 
 
+def test_client_user_cannot_confirm_return_disposal(client: TestClient, db_session: Session):
+    client_row = _create_client(db_session, "CLIENT_BLOCK_DISPOSAL")
+    _create_product(db_session, client_row.id)
+    _create_user(
+        db_session,
+        login_id="disposal_owner_admin",
+        role_code="INTERNAL_ADMIN",
+        permissions=_return_permissions(),
+    )
+    _create_user(
+        db_session,
+        login_id="disposal_blocked_client_user",
+        role_code="CLIENT_USER",
+        permissions=_client_return_permissions(),
+        client_id=client_row.id,
+    )
+    headers, _batch_id, task_id = _prepare_processing_task(
+        client,
+        db_session,
+        login_id="disposal_owner_admin",
+        client_id=client_row.id,
+    )
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="DISPOSAL")
+
+    response = client.post(
+        f"/api/returns/disposal/tasks/{task_id}/confirm",
+        json={"disposal_reason": "blocked"},
+        headers=_login(client, "disposal_blocked_client_user"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["result_code"] == "PERMISSION_DENIED"
+
+
 def test_internal_worker_can_confirm_processing_with_operation_permission(client: TestClient, db_session: Session):
     client_row = _create_client(db_session, "WORKER_PROCESSING")
     _create_product(db_session, client_row.id)
@@ -1494,7 +1613,7 @@ def test_return_closing_confirm_good_creates_event_and_current_inventory(client:
         db_session.query(CurrentInventory)
         .filter(
             CurrentInventory.client_id == client_row.id,
-            CurrentInventory.warehouse_id == warehouse.id,
+            CurrentInventory.warehouse_id == event.warehouse_id,
             CurrentInventory.product_id == product.id,
             CurrentInventory.stock_status == "GOOD",
         )
@@ -1665,12 +1784,15 @@ def test_current_inventory_lists_good_closing_result_with_filters(client: TestCl
     )
     _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
     close_response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    event = db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).one()
+    actual_warehouse = db_session.get(Warehouse, event.warehouse_id)
+    assert actual_warehouse is not None
 
     response = client.get(
         (
             "/api/inventory/current"
             f"?client_id={client_row.id}"
-            f"&warehouse_id={warehouse.id}"
+            f"&warehouse_id={event.warehouse_id}"
             "&stock_status=GOOD"
             "&keyword=P001"
         ),
@@ -1687,8 +1809,8 @@ def test_current_inventory_lists_good_closing_result_with_filters(client: TestCl
     assert item["inventory_id"] is not None
     assert item["client_id"] == client_row.id
     assert item["client_name"] == client_row.client_name
-    assert item["warehouse_id"] == warehouse.id
-    assert item["warehouse_code"] == warehouse.warehouse_code
+    assert item["warehouse_id"] == event.warehouse_id
+    assert item["warehouse_code"] == actual_warehouse.warehouse_code
     assert item["product_id"] == product.id
     assert item["product_code"] == product.product_code
     assert item["product_name"] == product.product_name
@@ -1737,12 +1859,15 @@ def test_inventory_events_lists_good_closing_event_with_filters(client: TestClie
     )
     _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="GOOD")
     close_response = client.post("/api/returns/closing/confirm", json={"row_ids": [task_id]}, headers=headers)
+    event = db_session.query(InventoryEvent).filter(InventoryEvent.source_id == task_id).one()
+    actual_warehouse = db_session.get(Warehouse, event.warehouse_id)
+    assert actual_warehouse is not None
 
     response = client.get(
         (
             "/api/inventory/events"
             f"?client_id={client_row.id}"
-            f"&warehouse_id={warehouse.id}"
+            f"&warehouse_id={event.warehouse_id}"
             "&event_type=RETURN_GOOD_IN"
             "&source_type=RETURN_CLOSING"
             "&keyword=P001"
@@ -1762,8 +1887,8 @@ def test_inventory_events_lists_good_closing_event_with_filters(client: TestClie
     assert item["event_no"] == f"RTN-CLOSE-{task_id}"
     assert item["client_id"] == client_row.id
     assert item["client_name"] == client_row.client_name
-    assert item["warehouse_id"] == warehouse.id
-    assert item["warehouse_code"] == warehouse.warehouse_code
+    assert item["warehouse_id"] == event.warehouse_id
+    assert item["warehouse_code"] == actual_warehouse.warehouse_code
     assert item["product_id"] == product.id
     assert item["product_code"] == product.product_code
     assert item["product_name"] == product.product_name
@@ -1890,6 +2015,11 @@ def test_return_history_summarizes_outbound_hold_and_disposal_followup_statuses(
         headers=outbound_headers,
         judgement_status="MANUFACTURER_RETURN",
     )
+    _mark_row_inventory_reflected_for_test(
+        db_session,
+        task_id=outbound_task_id,
+        stock_status="MANUFACTURER_RETURN",
+    )
     outbound_confirm = client.post(
         "/api/returns/external-outbound/confirm",
         json={"row_ids": [outbound_task_id], "scanned_numbers": [outbound_judged["return_management_no"]]},
@@ -1922,6 +2052,11 @@ def test_return_history_summarizes_outbound_hold_and_disposal_followup_statuses(
         },
     )
     _judge_processing_task(client, task_id=disposal_task_id, headers=disposal_headers, judgement_status="DISPOSAL")
+    _mark_row_inventory_reflected_for_test(
+        db_session,
+        task_id=disposal_task_id,
+        stock_status="DISPOSAL",
+    )
     disposal_confirm = client.post(
         f"/api/returns/disposal/tasks/{disposal_task_id}/confirm",
         json={"disposal_reason": "테스트 폐기"},
@@ -1981,7 +2116,9 @@ def test_return_closing_confirm_followup_judgement_does_not_increase_inventory(
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["followup_rows"] == 1
+    assert data["followup_rows"] == 0
+    assert data["blocked_rows"] == 1
+    assert data["row_results"][0]["result"] == "BLOCKED_AMBIGUOUS_GRADE"
     assert data["reflected_rows"] == 0
     assert row.inventory_reflected_yn is False
     assert db_session.query(InventoryEvent).count() == 0
@@ -2053,7 +2190,7 @@ def test_return_external_outbound_candidates_exclude_good_hold_and_disposal(
     assert data["total_count"] == 0
 
 
-def test_return_external_outbound_confirm_marks_confirmed_without_inventory_change(
+def test_return_external_outbound_confirm_deducts_reflected_inventory(
     client: TestClient,
     db_session: Session,
 ):
@@ -2072,6 +2209,11 @@ def test_return_external_outbound_confirm_marks_confirmed_without_inventory_chan
         client_id=client_row.id,
     )
     judged = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="MANUFACTURER_RETURN")
+    _mark_row_inventory_reflected_for_test(
+        db_session,
+        task_id=task_id,
+        stock_status="MANUFACTURER_RETURN",
+    )
 
     response = client.post(
         "/api/returns/external-outbound/confirm",
@@ -2106,8 +2248,8 @@ def test_return_external_outbound_confirm_marks_confirmed_without_inventory_chan
     assert outbound_batch.confirmed_rows == 1
     assert outbound_batch.confirmed_by is not None
     assert outbound_batch.confirmed_at is not None
-    assert db_session.query(InventoryEvent).count() == 0
-    assert db_session.query(CurrentInventory).count() == 0
+    assert db_session.query(InventoryEvent).filter(InventoryEvent.event_type == "RETURN_EXTERNAL_OUTBOUND_OUT").count() == 1
+    assert db_session.query(CurrentInventory).one().qty_on_hand == 0
     assert retry_response.status_code == 200
     retry_data = retry_response.json()["data"]
     assert retry_data["batch_id"] is None
@@ -2130,7 +2272,12 @@ def test_return_external_outbound_batches_list_and_detail(client: TestClient, db
         login_id="return_outbound_batch_admin",
         client_id=client_row.id,
     )
-    judged = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB")
+    judged = _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB_A")
+    _mark_row_inventory_reflected_for_test(
+        db_session,
+        task_id=task_id,
+        stock_status="REFURB_A",
+    )
 
     confirm_response = client.post(
         "/api/returns/external-outbound/confirm",
@@ -2188,7 +2335,7 @@ def test_return_external_outbound_confirm_fails_for_untracked_or_wrong_judgement
         login_id="return_outbound_fail_admin",
         client_id=client_row.id,
     )
-    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB")
+    _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="REFURB_A")
     row = db_session.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == task_id).one()
     row.return_management_no = None
     row.return_label_no = None
@@ -2223,11 +2370,11 @@ def test_return_external_outbound_confirm_fails_for_untracked_or_wrong_judgement
     assert no_number_response.status_code == 200
     assert no_number_response.json()["data"]["total_count"] == 0
     assert failed_confirm_response.status_code == 200
-    assert failed_confirm_response.json()["data"]["failed_rows"] == 1
-    assert "반품관리번호" in failed_confirm_response.json()["data"]["row_results"][0]["message"]
+    assert failed_confirm_response.json()["data"]["blocked_rows"] == 1
+    assert failed_confirm_response.json()["data"]["row_results"][0]["result"] == "BLOCKED_INVALID_STATE"
     assert wrong_judgement_response.status_code == 200
-    assert wrong_judgement_response.json()["data"]["failed_rows"] == 1
-    assert "외부반출 대상 판정" in wrong_judgement_response.json()["data"]["row_results"][0]["message"]
+    assert wrong_judgement_response.json()["data"]["blocked_rows"] == 1
+    assert wrong_judgement_response.json()["data"]["row_results"][0]["result"] == "BLOCKED_INVALID_STATE"
     assert missing_response.status_code == 200
     assert missing_response.json()["data"]["failed_rows"] == 1
 
@@ -2678,7 +2825,10 @@ def test_return_disposal_candidates_exclude_non_disposal_judgements(
     assert response.json()["data"]["total_count"] == 0
 
 
-def test_return_disposal_confirm_saves_reason_memo_without_inventory_change(client: TestClient, db_session: Session):
+def test_return_disposal_confirm_deducts_reflected_inventory_and_saves_reason_memo(
+    client: TestClient,
+    db_session: Session,
+):
     client_row = _create_client(db_session)
     _create_product(db_session, client_row.id)
     _create_user(
@@ -2694,6 +2844,11 @@ def test_return_disposal_confirm_saves_reason_memo_without_inventory_change(clie
         client_id=client_row.id,
     )
     _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="DISPOSAL")
+    _mark_row_inventory_reflected_for_test(
+        db_session,
+        task_id=task_id,
+        stock_status="DISPOSAL",
+    )
 
     response = client.post(
         f"/api/returns/disposal/tasks/{task_id}/confirm",
@@ -2713,8 +2868,13 @@ def test_return_disposal_confirm_saves_reason_memo_without_inventory_change(clie
     assert row.disposal_status == "DISPOSAL_CONFIRMED"
     assert row.disposal_confirmed_at is not None
     assert row.disposal_confirmed_by is not None
-    assert db_session.query(CurrentInventory).count() == 0
-    assert db_session.query(InventoryEvent).count() == 0
+    assert db_session.query(CurrentInventory).one().qty_on_hand == 0
+    deduction_event = (
+        db_session.query(InventoryEvent)
+        .filter(InventoryEvent.event_type == "RETURN_DISPOSAL_OUT")
+        .one()
+    )
+    assert deduction_event.qty_delta == -(row.qty or 1)
     assert candidates_response.status_code == 200
     assert candidates_response.json()["data"]["total_count"] == 0
 
@@ -2738,6 +2898,11 @@ def test_return_disposal_confirm_blocks_already_confirmed_non_disposal_and_missi
         client_id=client_row.id,
     )
     _judge_processing_task(client, task_id=task_id, headers=headers, judgement_status="DISPOSAL")
+    _mark_row_inventory_reflected_for_test(
+        db_session,
+        task_id=task_id,
+        stock_status="DISPOSAL",
+    )
     first_response = client.post(
         f"/api/returns/disposal/tasks/{task_id}/confirm",
         json={"disposal_reason": "폐기"},

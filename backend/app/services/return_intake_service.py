@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy.exc import CompileError
 from sqlalchemy.orm import Session
 
 from app.core.auth_context import resolve_effective_agency_id, resolve_effective_client_id
@@ -138,9 +139,9 @@ RETURN_CLOSING_STOCK_STATUS_GOOD = "GOOD"
 RETURN_GOOD_WAREHOUSE_USAGE_PRIORITY = ("RETURN_GOOD", "INBOUND")
 RETURN_CLOSING_ACTION_INVENTORY_TARGET = "INVENTORY_REFLECT_TARGET"
 RETURN_CLOSING_ACTION_FOLLOWUP_TARGET = "FOLLOWUP_TARGET"
+# 잠금 3: REFURB generic은 AMBIGUOUS이므로 INVENTORY_REFLECTABLE에서 제외한다.
 INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES = {
     JUDGEMENT_GOOD,
-    JUDGEMENT_REFURB,
     JUDGEMENT_REFURB_A,
     JUDGEMENT_REFURB_B,
     JUDGEMENT_REFURB_C,
@@ -148,6 +149,40 @@ INVENTORY_REFLECTABLE_JUDGEMENT_STATUSES = {
     JUDGEMENT_MANUFACTURER_RETURN,
     JUDGEMENT_DISPOSAL,
 }
+# REFURB generic: BLOCKED_AMBIGUOUS_GRADE 반환 대상.
+AMBIGUOUS_JUDGEMENT_STATUSES = {JUDGEMENT_REFURB}
+
+# 폐기 확정 음수 이벤트
+RETURN_DISPOSAL_EVENT_TYPE = "RETURN_DISPOSAL_OUT"
+RETURN_DISPOSAL_SOURCE_TYPE = "RETURN_DISPOSAL"
+
+# 외부반출 확정 음수 이벤트
+RETURN_EXTERNAL_OUTBOUND_EVENT_TYPE = "RETURN_EXTERNAL_OUTBOUND_OUT"
+RETURN_EXTERNAL_OUTBOUND_SOURCE_TYPE = "RETURN_EXTERNAL_OUTBOUND"
+
+OVER_REVIEW_REASON_QUANTITY_OVER = "QUANTITY_OVER"
+OVER_REVIEW_REASON_DUPLICATE_SCAN = "DUPLICATE_SCAN"
+OVER_REVIEW_REASON_EXPECTED_MISMATCH = "EXPECTED_MISMATCH"
+OVER_REVIEW_REASON_MANUAL_REVIEW = "MANUAL_REVIEW"
+ALLOWED_OVER_REVIEW_REASONS = {
+    OVER_REVIEW_REASON_QUANTITY_OVER,
+    OVER_REVIEW_REASON_DUPLICATE_SCAN,
+    OVER_REVIEW_REASON_EXPECTED_MISMATCH,
+    OVER_REVIEW_REASON_MANUAL_REVIEW,
+}
+
+# 잠금 7: 재고반영 결과 코드
+RESULT_APPLIED = "APPLIED"
+RESULT_SKIPPED_ALREADY_APPLIED = "SKIPPED_ALREADY_APPLIED"
+RESULT_BLOCKED_OVER_REVIEW = "BLOCKED_OVER_REVIEW"
+RESULT_BLOCKED_AMBIGUOUS_GRADE = "BLOCKED_AMBIGUOUS_GRADE"
+RESULT_BLOCKED_MISSING_CLIENT_UNIT = "BLOCKED_MISSING_CLIENT_UNIT"
+RESULT_BLOCKED_INVALID_STATE = "BLOCKED_INVALID_STATE"
+RESULT_BLOCKED_NO_WAREHOUSE = "BLOCKED_NO_WAREHOUSE"
+RESULT_BLOCKED_NO_PRODUCT = "BLOCKED_NO_PRODUCT"
+RESULT_BLOCKED_INVENTORY_NOT_REFLECTED = "BLOCKED_INVENTORY_NOT_REFLECTED"
+RESULT_BLOCKED_SCOPE_MISMATCH = "BLOCKED_SCOPE_MISMATCH"
+RESULT_FAILED = "FAILED"
 
 # 일마감 재고반영 완료 메시지용 판정별 재고 라벨(표시 전용, 로직 무관).
 CLOSING_REFLECTED_STOCK_LABELS = {
@@ -284,6 +319,14 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_over_review_reason(row: ReturnIntakeRow) -> str:
+    reason = _safe_text(row.over_review_reason)
+    if reason in ALLOWED_OVER_REVIEW_REASONS:
+        return reason
+    row.over_review_reason = OVER_REVIEW_REASON_MANUAL_REVIEW
+    return OVER_REVIEW_REASON_MANUAL_REVIEW
 
 
 def _normalize_barcode(value: str | None) -> str | None:
@@ -441,6 +484,8 @@ def _row_response(row: ReturnIntakeRow) -> dict:
         disposal_memo=row.disposal_memo,
         disposal_confirmed_at=row.disposal_confirmed_at,
         disposal_confirmed_by=row.disposal_confirmed_by,
+        is_over_review_required=row.is_over_review_required,
+        over_review_reason=row.over_review_reason,
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump()
@@ -706,12 +751,12 @@ def _disposal_candidate_response(row: ReturnIntakeRow, client) -> dict:
 
 
 def _return_history_followup_status(row: ReturnIntakeRow) -> tuple[str, str]:
-    if row.inventory_reflected_yn:
-        return "INVENTORY_REFLECTED", "정상재고반영"
     if row.external_outbound_status == EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
         return "EXTERNAL_OUTBOUND_CONFIRMED", "외부반출완료"
     if row.disposal_status == DISPOSAL_STATUS_CONFIRMED:
         return "DISPOSAL_CONFIRMED", "폐기확정"
+    if row.inventory_reflected_yn:
+        return "INVENTORY_REFLECTED", "정상재고반영"
     if row.hold_status == HOLD_STATUS_READY_TO_REJUDGE:
         return "READY_TO_REJUDGE", "재판정준비"
     if row.judgement_status == JUDGEMENT_HOLD and row.hold_status != HOLD_STATUS_RESOLVED:
@@ -1601,6 +1646,7 @@ def confirm_return_closing(
     reflected_rows = 0
     skipped_rows = 0
     failed_rows = 0
+    blocked_rows = 0
     followup_rows = 0
     event_count = 0
 
@@ -1610,7 +1656,7 @@ def confirm_return_closing(
             row_results.append(
                 ReturnClosingRowResult(
                     row_id=row_id,
-                    result="FAILED",
+                    result=RESULT_FAILED,
                     message="마감 대상 row를 찾을 수 없습니다.",
                 )
             )
@@ -1618,29 +1664,75 @@ def confirm_return_closing(
     try:
         for row, _client in rows_with_clients:
             resolve_effective_client_id(auth, row.client_id)
+
+            # 잠금 8: row-level lock + double-check 패턴
+            locked_row = _lock_row_for_update(db, row.id)
+            if locked_row is None:
+                failed_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        result=RESULT_FAILED,
+                        message="처리 중 row를 찾을 수 없습니다.",
+                    )
+                )
+                continue
+            row = locked_row
+
+            # 잠금 9: 잠금 이후 최신 상태로 중복 반영 재확인(double-check)
             if row.inventory_reflected_yn:
                 skipped_rows += 1
                 row_results.append(
                     ReturnClosingRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="SKIPPED",
+                        result=RESULT_SKIPPED_ALREADY_APPLIED,
                         message="이미 재고반영된 row입니다.",
                         inventory_event_id=row.inventory_event_id,
                     )
                 )
                 continue
+
             if row.status != ROW_STATUS_COMPLETED or not row.judgement_status:
-                failed_rows += 1
+                blocked_rows += 1
                 row_results.append(
                     ReturnClosingRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="FAILED",
+                        result=RESULT_BLOCKED_INVALID_STATE,
                         message="판정 완료 상태의 row만 마감 확정할 수 있습니다.",
                     )
                 )
                 continue
+
+            # 잠금 2: 초과확인필요 row는 재고반영 차단
+            if row.is_over_review_required:
+                over_review_reason = _normalize_over_review_reason(row)
+                blocked_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result=RESULT_BLOCKED_OVER_REVIEW,
+                        reason=over_review_reason,
+                        message="초과확인필요 상태로 재고반영을 차단합니다. 수량/판정 확인 후 해제하세요.",
+                    )
+                )
+                continue
+
+            # 잠금 3: REFURB generic(등급 미지정)은 BLOCKED_AMBIGUOUS_GRADE
+            if row.judgement_status in AMBIGUOUS_JUDGEMENT_STATUSES:
+                blocked_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result=RESULT_BLOCKED_AMBIGUOUS_GRADE,
+                        message="REFURB 등급(A/B/C)을 지정하지 않으면 재고반영할 수 없습니다.",
+                    )
+                )
+                continue
+
             if request.confirm_good_only and row.judgement_status != JUDGEMENT_GOOD:
                 followup_rows += 1
                 row_results.append(
@@ -1664,12 +1756,12 @@ def confirm_return_closing(
                 )
                 continue
             if row.qty is None or row.qty < 1:
-                failed_rows += 1
+                blocked_rows += 1
                 row_results.append(
                     ReturnClosingRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="FAILED",
+                        result=RESULT_BLOCKED_INVALID_STATE,
                         message="수량이 없어 재고반영할 수 없습니다.",
                     )
                 )
@@ -1677,28 +1769,51 @@ def confirm_return_closing(
 
             product = _resolve_return_product(db, row)
             if product is None:
-                failed_rows += 1
+                blocked_rows += 1
                 row_results.append(
                     ReturnClosingRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="FAILED",
+                        result=RESULT_BLOCKED_NO_PRODUCT,
                         message="상품 마스터를 찾을 수 없어 재고반영할 수 없습니다.",
+                    )
+                )
+                continue
+
+            if row.client_unit_id is None:
+                blocked_rows += 1
+                row_results.append(
+                    ReturnClosingRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result=RESULT_BLOCKED_MISSING_CLIENT_UNIT,
+                        message="client_unit_id 미보정 상태에서는 재고반영할 수 없습니다.",
                     )
                 )
                 continue
 
             warehouse = _resolve_final_return_warehouse(db, row)
             if warehouse is None:
-                failed_rows += 1
-                row_results.append(
-                    ReturnClosingRowResult(
-                        row_id=row.id,
-                        judgement_status=row.judgement_status,
-                        result="FAILED",
-                        message="고객사 기본 반품/입고 창고 설정이 없어 재고반영할 수 없습니다.",
+                blocked_rows += 1
+                # 잠금 4: client_unit_id 미지정으로 창고 경로를 확정할 수 없는 경우 구분
+                if row.final_warehouse_id is None and row.client_unit_id is None:
+                    row_results.append(
+                        ReturnClosingRowResult(
+                            row_id=row.id,
+                            judgement_status=row.judgement_status,
+                            result=RESULT_BLOCKED_MISSING_CLIENT_UNIT,
+                            message="client_unit_id 미지정으로 창고 경로를 확정할 수 없습니다.",
+                        )
                     )
-                )
+                else:
+                    row_results.append(
+                        ReturnClosingRowResult(
+                            row_id=row.id,
+                            judgement_status=row.judgement_status,
+                            result=RESULT_BLOCKED_NO_WAREHOUSE,
+                            message="고객사 기본 반품/입고 창고 설정이 없어 재고반영할 수 없습니다.",
+                        )
+                    )
                 continue
 
             stock_status = row.judgement_status or RETURN_CLOSING_STOCK_STATUS_GOOD
@@ -1708,6 +1823,7 @@ def confirm_return_closing(
                 else RETURN_CLOSING_EVENT_TYPE_JUDGEMENT_IN
             )
             idempotency_key = f"return-closing:{row.id}:{stock_status.lower()}"
+            # 잠금 9: 잠금 이후 멱등성 이중확인
             existing_event = inventory_repository.find_event_by_idempotency_key(db, idempotency_key)
             if existing_event is not None:
                 row.inventory_reflected_yn = True
@@ -1718,7 +1834,7 @@ def confirm_return_closing(
                     ReturnClosingRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="SKIPPED",
+                        result=RESULT_SKIPPED_ALREADY_APPLIED,
                         message="이미 생성된 재고 이벤트가 있어 중복 반영하지 않았습니다.",
                         inventory_event_id=existing_event.id,
                         warehouse_id=existing_event.warehouse_id,
@@ -1726,6 +1842,7 @@ def confirm_return_closing(
                 )
                 continue
 
+            # 잠금 9: inventory_events 먼저 생성 후 current_inventory 변경(동일 transaction)
             event = InventoryEvent(
                 event_no=f"RTN-CLOSE-{row.id}",
                 agency_id=row.agency_id or master_repository.get_client_agency_id(db, row.client_id),
@@ -1759,6 +1876,7 @@ def confirm_return_closing(
             inventory_repository.create_inventory_event(db, event)
             inventory_repository.increase_current_inventory(
                 db,
+                inventory_event_id=event.id,
                 agency_id=event.agency_id,
                 client_id=row.client_id,
                 warehouse_id=warehouse.id,
@@ -1776,7 +1894,7 @@ def confirm_return_closing(
                 ReturnClosingRowResult(
                     row_id=row.id,
                     judgement_status=row.judgement_status,
-                    result="REFLECTED",
+                    result=RESULT_APPLIED,
                     message=_closing_reflected_message(row.judgement_status),
                     inventory_event_id=event.id,
                     warehouse_id=warehouse.id,
@@ -1793,6 +1911,7 @@ def confirm_return_closing(
         reflected_rows=reflected_rows,
         skipped_rows=skipped_rows,
         failed_rows=failed_rows,
+        blocked_rows=blocked_rows,
         followup_rows=followup_rows,
         event_count=event_count,
         message="반품 일마감 처리를 완료했습니다.",
@@ -1866,11 +1985,18 @@ def confirm_return_external_outbound(
         client_id=effective_client_id,
     )
     found_ids = {row.id for row, _client in rows_with_clients}
+    found_client_ids = {row.client_id for row, _client in rows_with_clients}
+    if len(found_client_ids) > 1:
+        raise _business_error(
+            RESULT_BLOCKED_SCOPE_MISMATCH,
+            "서로 다른 client_id의 외부반출 row는 하나의 confirm 요청으로 처리할 수 없습니다.",
+        )
 
     row_results: list[ReturnExternalOutboundRowResult] = []
     confirmed_rows = 0
     skipped_rows = 0
     failed_rows = 0
+    blocked_rows = 0
     confirmed_row_refs: list[ReturnIntakeRow] = []
     outbound_batch_id: int | None = None
     outbound_batch_no: str | None = None
@@ -1881,7 +2007,7 @@ def confirm_return_external_outbound(
             row_results.append(
                 ReturnExternalOutboundRowResult(
                     row_id=row_id,
-                    result="FAILED",
+                    result=RESULT_FAILED,
                     message="외부반출 대상 row를 찾을 수 없습니다.",
                 )
             )
@@ -1889,37 +2015,49 @@ def confirm_return_external_outbound(
     try:
         for row, _client in rows_with_clients:
             resolve_effective_client_id(auth, row.client_id)
+            locked_row = _lock_row_for_update(db, row.id)
+            if locked_row is None:
+                failed_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        result=RESULT_FAILED,
+                        message="처리 중 row를 찾을 수 없습니다.",
+                    )
+                )
+                continue
+            row = locked_row
             if row.external_outbound_status == EXTERNAL_OUTBOUND_STATUS_CONFIRMED:
                 skipped_rows += 1
                 row_results.append(
                     ReturnExternalOutboundRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="SKIPPED",
+                        result=RESULT_SKIPPED_ALREADY_APPLIED,
                         message="이미 외부반출 확정된 row입니다.",
                         external_outbound_status=row.external_outbound_status,
                     )
                 )
                 continue
             if row.status != ROW_STATUS_COMPLETED:
-                failed_rows += 1
+                blocked_rows += 1
                 row_results.append(
                     ReturnExternalOutboundRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="FAILED",
+                        result=RESULT_BLOCKED_INVALID_STATE,
                         message="판정 완료된 row만 외부반출 확정할 수 있습니다.",
                         external_outbound_status=row.external_outbound_status,
                     )
                 )
                 continue
             if row.judgement_status not in EXTERNAL_OUTBOUND_JUDGEMENT_STATUSES:
-                failed_rows += 1
+                blocked_rows += 1
                 row_results.append(
                     ReturnExternalOutboundRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="FAILED",
+                        result=RESULT_BLOCKED_INVALID_STATE,
                         message="외부반출 대상 판정이 아닙니다.",
                         external_outbound_status=row.external_outbound_status,
                     )
@@ -1927,29 +2065,128 @@ def confirm_return_external_outbound(
                 continue
             identifier = _external_outbound_identifier(row)
             if identifier is None:
-                failed_rows += 1
+                blocked_rows += 1
                 row_results.append(
                     ReturnExternalOutboundRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="FAILED",
+                        result=RESULT_BLOCKED_INVALID_STATE,
                         message="반품관리번호 또는 라벨번호가 없어 외부반출 확정할 수 없습니다.",
                         external_outbound_status=row.external_outbound_status,
                     )
                 )
                 continue
             if scanned_numbers and _normalize_scan_number(identifier) not in scanned_numbers:
-                failed_rows += 1
+                blocked_rows += 1
                 row_results.append(
                     ReturnExternalOutboundRowResult(
                         row_id=row.id,
                         judgement_status=row.judgement_status,
-                        result="FAILED",
+                        result=RESULT_BLOCKED_INVALID_STATE,
                         message="스캔 검수된 번호와 일치하지 않습니다.",
                         external_outbound_status=row.external_outbound_status,
                     )
                 )
                 continue
+
+            # 잠금 6: 재고반영(일마감) 완료 row만 재고 차감 가능
+            if row.client_unit_id is None:
+                blocked_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result=RESULT_BLOCKED_MISSING_CLIENT_UNIT,
+                        message="client_unit_id 미보정 상태에서는 외부반출 확정 재고차감을 할 수 없습니다.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+
+            if not row.inventory_reflected_yn or row.inventory_event_id is None:
+                blocked_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result=RESULT_BLOCKED_INVENTORY_NOT_REFLECTED,
+                        message="재고반영(일마감)이 완료되지 않은 row는 외부반출 확정할 수 없습니다.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+
+            original_event = inventory_repository.get_inventory_event_by_id(db, row.inventory_event_id)
+            if original_event is None:
+                failed_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result=RESULT_FAILED,
+                        message="원본 재고 이벤트를 찾을 수 없습니다. 데이터 무결성을 확인하세요.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+            if original_event.client_id != row.client_id or (
+                row.final_warehouse_id is not None and original_event.warehouse_id != row.final_warehouse_id
+            ):
+                blocked_rows += 1
+                row_results.append(
+                    ReturnExternalOutboundRowResult(
+                        row_id=row.id,
+                        judgement_status=row.judgement_status,
+                        result=RESULT_BLOCKED_SCOPE_MISMATCH,
+                        message="inventory_event scope does not match return row scope.",
+                        external_outbound_status=row.external_outbound_status,
+                    )
+                )
+                continue
+
+            # 잠금 9: 외부반출 음수 이벤트(inventory_events 먼저 생성)
+            outbound_deduction_key = f"return-external-outbound:{row.id}:{original_event.stock_status.lower()}"
+            existing_deduction = inventory_repository.find_event_by_idempotency_key(db, outbound_deduction_key)
+            outbound_event_id: int | None = None
+            if existing_deduction is None:
+                deduction_event = InventoryEvent(
+                    event_no=f"RTN-OUTBOUND-{row.id}",
+                    agency_id=original_event.agency_id,
+                    client_id=original_event.client_id,
+                    warehouse_id=original_event.warehouse_id,
+                    location_id=original_event.location_id,
+                    product_id=original_event.product_id,
+                    product_code=original_event.product_code,
+                    stock_status=original_event.stock_status,
+                    event_type=RETURN_EXTERNAL_OUTBOUND_EVENT_TYPE,
+                    qty_delta=-original_event.qty_delta,
+                    source_type=RETURN_EXTERNAL_OUTBOUND_SOURCE_TYPE,
+                    source_id=row.id,
+                    source_line_id=row.id,
+                    idempotency_key=outbound_deduction_key,
+                    event_reason="반품 외부반출 확정 재고 차감",
+                    memo=None,
+                    created_by=auth.user_id,
+                    raw_json={
+                        "return_intake_row_id": row.id,
+                        "original_event_id": original_event.id,
+                    },
+                )
+                inventory_repository.create_inventory_event(db, deduction_event)
+                inventory_repository.decrease_current_inventory(
+                    db,
+                    inventory_event_id=deduction_event.id,
+                    agency_id=original_event.agency_id,
+                    client_id=original_event.client_id,
+                    warehouse_id=original_event.warehouse_id,
+                    location_id=original_event.location_id,
+                    product_id=original_event.product_id,
+                    stock_status=original_event.stock_status,
+                    qty_delta=original_event.qty_delta,
+                )
+                outbound_event_id = deduction_event.id
+            else:
+                outbound_event_id = existing_deduction.id
 
             row.external_outbound_required = True
             row.external_outbound_status = EXTERNAL_OUTBOUND_STATUS_CONFIRMED
@@ -1962,8 +2199,9 @@ def confirm_return_external_outbound(
                     row_id=row.id,
                     judgement_status=row.judgement_status,
                     result="CONFIRMED",
-                    message="외부반출을 확정했습니다. 현재고는 변경하지 않았습니다.",
+                    message="외부반출을 확정하고 재고를 차감했습니다.",
                     external_outbound_status=row.external_outbound_status,
+                    inventory_event_id=outbound_event_id,
                 )
             )
 
@@ -2006,6 +2244,7 @@ def confirm_return_external_outbound(
         confirmed_rows=confirmed_rows,
         skipped_rows=skipped_rows,
         failed_rows=failed_rows,
+        blocked_rows=blocked_rows,
         message="반품 외부반출 확정 처리를 완료했습니다.",
         row_results=row_results,
     ).model_dump()
@@ -2294,6 +2533,10 @@ def confirm_return_disposal_task(
         raise _business_error("RETURN_DISPOSAL_TASK_NOT_FOUND", "반품 폐기 대상을 찾을 수 없습니다.", 404)
     row, client = task_row
     resolve_effective_client_id(auth, row.client_id)
+    locked_row = _lock_row_for_update(db, row.id)
+    if locked_row is None:
+        raise _business_error(RESULT_FAILED, "처리 중 row를 찾을 수 없습니다.")
+    row = locked_row
 
     if row.judgement_status != JUDGEMENT_DISPOSAL:
         raise _business_error("RETURN_DISPOSAL_INVALID_JUDGEMENT", "DISPOSAL 판정 row만 폐기 확정할 수 있습니다.")
@@ -2302,22 +2545,109 @@ def confirm_return_disposal_task(
     if row.disposal_status == DISPOSAL_STATUS_CONFIRMED:
         raise _business_error("RETURN_DISPOSAL_ALREADY_CONFIRMED", "이미 폐기 확정된 항목입니다.")
 
+    # 잠금 5: 재고반영 여부 확인 — inventory_reflected_yn = True인 경우만 재고 차감 가능
+    if row.client_unit_id is None:
+        raise _business_error(
+            RESULT_BLOCKED_MISSING_CLIENT_UNIT,
+            "client_unit_id 미보정 상태에서는 폐기 확정 재고차감을 할 수 없습니다.",
+        )
+
+    if not row.inventory_reflected_yn or row.inventory_event_id is None:
+        raise _business_error(
+            RESULT_BLOCKED_INVENTORY_NOT_REFLECTED,
+            "재고반영(일마감)이 완료되지 않은 row는 폐기 확정할 수 없습니다.",
+        )
+
+    original_event = inventory_repository.get_inventory_event_by_id(db, row.inventory_event_id)
+    if original_event is None:
+        raise _business_error(
+            RESULT_FAILED,
+            "원본 재고 이벤트를 찾을 수 없습니다. 데이터 무결성을 확인하세요.",
+        )
+    if original_event.client_id != row.client_id or (
+        row.final_warehouse_id is not None and original_event.warehouse_id != row.final_warehouse_id
+    ):
+        raise _business_error(
+            RESULT_BLOCKED_SCOPE_MISMATCH,
+            "inventory_event scope does not match return row scope.",
+        )
+
     row.disposal_status = DISPOSAL_STATUS_CONFIRMED
     row.disposal_reason = _safe_text(request.disposal_reason)
     row.disposal_memo = _safe_text(request.disposal_memo)
     row.disposal_confirmed_at = datetime.now(timezone.utc)
     row.disposal_confirmed_by = auth.user_id
 
+    deduction_key = f"return-disposal:{row.id}:{original_event.stock_status.lower()}"
+    existing_deduction = inventory_repository.find_event_by_idempotency_key(db, deduction_key)
+
+    deduction_event_id: int | None = None
     try:
+        if existing_deduction is None:
+            # 잠금 9: inventory_events 먼저 생성 후 current_inventory 차감(동일 transaction)
+            deduction_event = InventoryEvent(
+                event_no=f"RTN-DISPOSAL-{row.id}",
+                agency_id=original_event.agency_id,
+                client_id=original_event.client_id,
+                warehouse_id=original_event.warehouse_id,
+                location_id=original_event.location_id,
+                product_id=original_event.product_id,
+                product_code=original_event.product_code,
+                stock_status=original_event.stock_status,
+                event_type=RETURN_DISPOSAL_EVENT_TYPE,
+                qty_delta=-original_event.qty_delta,
+                source_type=RETURN_DISPOSAL_SOURCE_TYPE,
+                source_id=row.id,
+                source_line_id=row.id,
+                idempotency_key=deduction_key,
+                event_reason="반품 폐기 확정 재고 차감",
+                memo=_safe_text(request.disposal_memo),
+                created_by=auth.user_id,
+                raw_json={
+                    "return_intake_row_id": row.id,
+                    "original_event_id": original_event.id,
+                    "disposal_reason": _safe_text(request.disposal_reason),
+                },
+            )
+            inventory_repository.create_inventory_event(db, deduction_event)
+            inventory_repository.decrease_current_inventory(
+                db,
+                inventory_event_id=deduction_event.id,
+                agency_id=original_event.agency_id,
+                client_id=original_event.client_id,
+                warehouse_id=original_event.warehouse_id,
+                location_id=original_event.location_id,
+                product_id=original_event.product_id,
+                stock_status=original_event.stock_status,
+                qty_delta=original_event.qty_delta,
+            )
+            deduction_event_id = deduction_event.id
+        else:
+            deduction_event_id = existing_deduction.id
+
         db.commit()
         db.refresh(row)
         return ReturnDisposalConfirmResponse(
             **_disposal_candidate_response(row, client),
-            message="반품 폐기를 확정했습니다. 정상재고는 변경하지 않았습니다.",
+            message="반품 폐기를 확정하고 재고를 차감했습니다.",
+            deduction_event_id=deduction_event_id,
         ).model_dump()
     except Exception:
         db.rollback()
         raise
+
+
+def _lock_row_for_update(db: Session, row_id: int) -> ReturnIntakeRow | None:
+    """잠금 8: PostgreSQL에서 SELECT FOR UPDATE로 row-level lock을 건다. SQLite(테스트)에서는 일반 SELECT로 fallback."""
+    try:
+        return (
+            db.query(ReturnIntakeRow)
+            .filter(ReturnIntakeRow.id == row_id)
+            .with_for_update()
+            .one_or_none()
+        )
+    except CompileError:
+        return db.query(ReturnIntakeRow).filter(ReturnIntakeRow.id == row_id).one_or_none()
 
 
 def _external_outbound_identifier(row: ReturnIntakeRow) -> str | None:

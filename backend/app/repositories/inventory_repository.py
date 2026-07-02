@@ -19,6 +19,10 @@ def create_inventory_event(db: Session, event: InventoryEvent) -> InventoryEvent
     return event
 
 
+def get_inventory_event_by_id(db: Session, event_id: int) -> InventoryEvent | None:
+    return db.get(InventoryEvent, event_id)
+
+
 def get_current_inventory(
     db: Session,
     *,
@@ -44,6 +48,7 @@ def get_current_inventory(
 def increase_current_inventory(
     db: Session,
     *,
+    inventory_event_id: int | None,
     agency_id: int | None = None,
     client_id: int,
     warehouse_id: int,
@@ -52,6 +57,8 @@ def increase_current_inventory(
     stock_status: str,
     qty_delta: int,
 ) -> CurrentInventory:
+    if inventory_event_id is None:
+        raise ValueError("current_inventory cannot be changed without inventory_event_id")
     current = get_current_inventory(
         db,
         client_id=client_id,
@@ -75,6 +82,48 @@ def increase_current_inventory(
         if current.agency_id is None and agency_id is not None:
             current.agency_id = agency_id
         current.qty_on_hand += qty_delta
+    db.flush()
+    return current
+
+
+def decrease_current_inventory(
+    db: Session,
+    *,
+    inventory_event_id: int | None,
+    agency_id: int | None = None,
+    client_id: int,
+    warehouse_id: int,
+    location_id: int | None,
+    product_id: int,
+    stock_status: str,
+    qty_delta: int,
+) -> CurrentInventory:
+    """qty_delta(양수값)만큼 현재고를 차감한다."""
+    if inventory_event_id is None:
+        raise ValueError("current_inventory cannot be changed without inventory_event_id")
+    current = get_current_inventory(
+        db,
+        client_id=client_id,
+        warehouse_id=warehouse_id,
+        location_id=location_id,
+        product_id=product_id,
+        stock_status=stock_status,
+    )
+    if current is None:
+        current = CurrentInventory(
+            agency_id=agency_id,
+            client_id=client_id,
+            warehouse_id=warehouse_id,
+            location_id=location_id,
+            product_id=product_id,
+            stock_status=stock_status,
+            qty_on_hand=-qty_delta,
+        )
+        db.add(current)
+    else:
+        if current.agency_id is None and agency_id is not None:
+            current.agency_id = agency_id
+        current.qty_on_hand -= qty_delta
     db.flush()
     return current
 

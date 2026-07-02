@@ -161,6 +161,8 @@ class ReturnIntakeRowResponse(BaseModel):
     disposal_memo: str | None = None
     disposal_confirmed_at: datetime | None = None
     disposal_confirmed_by: int | None = None
+    is_over_review_required: bool = False
+    over_review_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -427,6 +429,7 @@ class ReturnClosingRowResult(BaseModel):
     message: str
     inventory_event_id: int | None = None
     warehouse_id: int | None = None
+    reason: str | None = None
 
 
 class ReturnClosingConfirmResponse(BaseModel):
@@ -434,6 +437,7 @@ class ReturnClosingConfirmResponse(BaseModel):
     reflected_rows: int
     skipped_rows: int
     failed_rows: int
+    blocked_rows: int = 0
     followup_rows: int
     event_count: int
     message: str
@@ -491,6 +495,8 @@ class ReturnExternalOutboundRowResult(BaseModel):
     message: str
     external_outbound_status: str | None = None
     external_outbound_batch_id: int | None = None
+    inventory_event_id: int | None = None
+    reason: str | None = None
 
 
 class ReturnExternalOutboundConfirmResponse(BaseModel):
@@ -500,6 +506,7 @@ class ReturnExternalOutboundConfirmResponse(BaseModel):
     confirmed_rows: int
     skipped_rows: int
     failed_rows: int
+    blocked_rows: int = 0
     message: str
     row_results: list[ReturnExternalOutboundRowResult]
 
@@ -703,6 +710,7 @@ class ReturnDisposalConfirmRequest(BaseModel):
 
 class ReturnDisposalConfirmResponse(ReturnDisposalCandidateResponse):
     message: str
+    deduction_event_id: int | None = None
 
 
 class ReturnHistoryItemResponse(BaseModel):
