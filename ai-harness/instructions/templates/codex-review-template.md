@@ -4,6 +4,7 @@
 선행: Claude 제작 + 똘망이 브라우저 검증 완료
 
 > `<PROJECT_ROOT>/AGENTS.md`, `CODEX.md`를 먼저 읽는다. 브랜치 `smartreturn-pro` 기준. main 병합/동기화 제안 금지, push 금지. 검수 결과만 보고(임의 수정 금지, 수정 필요 시 항목별 보고).
+> Karpathy 보강분 A~D를 검수 체크리스트로 적용 (AGENTS.md 참조)
 
 ## 1. 변경 파일 검토
 - [ ] `git diff` 전수 확인 — 지시 범위 밖 파일 변경 없는지(무관 cleanup/리팩터 혼입 금지)

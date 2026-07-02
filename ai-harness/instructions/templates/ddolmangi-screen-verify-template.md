@@ -4,6 +4,7 @@
 선행: Claude 화면 제작 완료(build 통과 상태)
 
 > 서버 5173/8000 가동 확인 후 진행. 쓰기(저장/확정)는 테스트 식별자 데이터만 사용. 기존 실데이터 클릭/확정 금지. 10~15분 이상 막히면 중단·보고.
+> Karpathy 보강분 A~D 적용 (AGENTS.md 참조)
 
 ## 1. 로그인 계정
 - 내부: `ahgoon`(SUPER_ADMIN) / 대리점: `517593`(AGENCY_ADMIN) / 고객: `ESPMARKETING` 등(CLIENT_ADMIN) — 검증할 role별로 명시

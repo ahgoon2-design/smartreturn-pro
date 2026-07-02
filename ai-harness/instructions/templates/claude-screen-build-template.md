@@ -5,6 +5,7 @@
 검수 예정: Codex + 똘망이
 
 > 시작 전 `<PROJECT_ROOT>/AGENTS.md`, `CLAUDE.md`를 읽는다. 브랜치 `smartreturn-pro`(SmartReturn Pro 라인) 기준. main 병합/동기화 제안 금지, push 금지, 커밋은 승인 전 금지.
+> Karpathy 보강분 A~D 적용 (AGENTS.md 참조)
 
 ## 1. 화면 목표
 - (이 화면의 업무 목적 1개만 작성. 업로드/조회/처리/판정/설정을 한 화면에 섞지 않는다.)

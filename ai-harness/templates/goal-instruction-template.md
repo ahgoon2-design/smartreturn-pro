@@ -11,6 +11,7 @@
 3. Codex로 실행 중이면 `<PROJECT_ROOT>/CODEX.md`를 읽는다.
 4. 모든 경로는 `<PROJECT_ROOT>` 기준 상대경로로 처리한다.
 5. 로컬 절대경로를 하드코딩하지 않는다.
+6. Karpathy 보강분 A~D 적용 (AGENTS.md 참조)
 
 ## 목표
 
