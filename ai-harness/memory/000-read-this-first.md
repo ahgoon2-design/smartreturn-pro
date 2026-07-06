@@ -17,5 +17,6 @@
 - 권한/테넌시: agency_id → client_id → client_unit_id → warehouse_id scope, 백엔드 강제.
 - 반품처리 화면 구조: 백엔드/공통 코어 먼저 → 역할별 화면은 wrapper만. 권한·데이터 차단은 백엔드. `owner_agency_id`(소유권) ≠ `processing_agency_id`(처리 담당). 처리 의뢰 ≠ 고객 이관.
 - 모든 경로는 <PROJECT_ROOT> 기준.
+- 운영 루프 압축형: 지시문은 짧게, 한 번에 작업 하나만, 보고는 신호등(🟢/🟡/🔴) 형식으로. 새 SPEC 착수 전 완료된 작업 상태를 `latest-handoff`에 먼저 닫는다. (구현자↔독립검수자 분리·commit/push 별도 승인은 위 절대 규칙대로.)
 
 정체성: "똘망이"는 한 명이 아니라 클코·코덱·spec-writer를 게이트로 굴리는 운영 체계의 별칭이다.

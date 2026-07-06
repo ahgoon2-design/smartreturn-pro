@@ -11,7 +11,7 @@
 - SPEC-002: 재고현황 `stock_status` 화면 구현, 검증, 사용자 인수 완료.
 - SPEC-003: scan-first 반품처리 흐름 spec/report 커밋 완료.
 - SPEC-004: 반품 재고원장 계약 확정 완료.
-- SPEC-005: 반품 재고반영 실행 구조 구현·독립검수·수문장 커밋·push 완료(잠금 10개 충족).
+- SPEC-005: 반품 재고반영 실행 구조 구현·독립검수·수문장 커밋·push + 백엔드 실행계약 인수 완료(잠금 10개 충족). 1366×768 현장 UX 인수는 후속 프론트 슬라이스로 분리.
 - Tier 1 skills frontmatter 묶음: `docs(skills): add Tier 1 skill frontmatter` 커밋으로 완료 처리.
 
 ## SPEC-005 완료 상세
@@ -30,6 +30,13 @@
   - `backend/tests/test_return_intake_api.py`
   - `backend/tests/test_spec005_return_inventory_apply.py`
 
+### 후속 인수검증 결과 (read-only, 2026-07-02)
+
+- 판정: 백엔드 실행계약 인수 완료. SPEC-005 자체는 재오픈하지 않는다.
+- 재검증: SPEC-005 전용 15 passed, 반품 API 87 passed, alembic heads 단일 head, `git diff --check` 통과, secret 실값 0, working tree clean, ahead/behind 0/0.
+- 계약 확인: 처리완료 즉시 `current_inventory`/`inventory_events` 미변경 / 일마감 이후 양수 반영 / 폐기 확정 음수 차감 / 외부반출 확정 음수 이벤트+`current_inventory` 차감(동일 transaction) / OVER·BLOCKED·REFURB generic·`client_unit_id` 관문 차단 / 중복 마감·중복 확정·중복 `inventory_event` 차단.
+- 브라우저/1366×768 UX 인수: 미수행 — 프론트 배선 미포함 + 안전한 throwaway dev 데이터 미확인으로 후속 프론트 슬라이스로 분리.
+
 ## 분리 보류
 
 - `ai-harness/consensus-loop/**` 삭제 묶음은 커밋 금지/보류 상태다. 별도 지시와 검토가 필요하다.
@@ -40,6 +47,6 @@
 
 - A. AI-ready 플랫폼 데이터·판단 SPEC 착수
 - B. privacy/legal/reference 보류 문서 정리
-- C. SPEC-005 후속 인수/브라우저 확인
+- C. 후속 프론트 슬라이스 SPEC 착수 (후보명: SPEC-006 return inventory apply result UX wiring / 범위: BLOCKED_* 문구, over_review 표시, 마감·폐기·외부반출 confirm 화면, 1366×768 인수)
 
 셋 중 하나만 사장님 선택 후 진행한다. 동시에 실행하지 않으며, 선택 전에는 임의 착수하지 않는다.
